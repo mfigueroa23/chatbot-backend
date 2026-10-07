@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 98/100 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 99/100 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -341,7 +341,7 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "router or slow or reply"` pasa: 401 sin token, respuesta `hostAppDataAction` y publicación diferida en el hilo original.
 
 ## Fase 22 — Rediseño: pruebas de rigor y documentación
-- [ ] **T-100 — Ejecutar las pruebas de rigor y actualizar el README** · todos · ~30 min
+- [x] **T-100 — Ejecutar las pruebas de rigor y actualizar el README** · todos · ~30 min
   En local contra el servidor: `jailbreak_check`, la demo web, 10 preguntas legítimas y una ronda de carga de 50 sesiones; README con `google_chat_addon_service_account`, `agent_history_messages`, sin `agent_max_steps` y la modalidad de complemento.
   Hecho cuando: `jailbreak_check` termina con código 0, la demo pasa entera, las 10 preguntas legítimas se responden, el p95 de la carga queda registrado en R2 del plan y `README.md` contiene las properties nuevas (comprobado con `grep`).
 

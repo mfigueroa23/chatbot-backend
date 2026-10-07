@@ -11,8 +11,9 @@ from src.models.business_area import AreaScope
 from src.models.web_session import WebPhase, WebSession
 from src.services.business_data import get_official_channels
 from src.services.live_chat import enqueue
-from src.services.area_notifier import AreaNotifier
+from src.services.area_notifier import AreaNotifier, Requester
 from src.services.message_validation import MAX_MESSAGE_LENGTH, validate_user_message
+from src.services.property import get_int_property
 from src.services.web_session import answer_offer, reset_to_bot, start_offer, submit_contact, touch_last_message
 from src.utils.clock import Clock
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
@@ -29,15 +30,21 @@ WAITING_EXECUTIVE = "Tu chat está en espera. Un ejecutivo te atenderá en cuant
 OFFER_REJECTED = "De acuerdo. Puedes reformular tu consulta o contactarnos por nuestros canales oficiales."
 CONTACT_EXHAUSTED = "No pudimos validar tus datos de contacto. Puedes contactarnos por nuestros canales oficiales."
 HUMAN_REQUESTED = "El cliente pidió hablar con un ejecutivo."
+INTERNAL_NOTIFICATION_FAILED = "No pude avisar al área de tu solicitud. Por favor, contacta directamente con el área."
+WEB_NOTIFICATION_FAILED = "No pude enviar tu solicitud al área. Puedes contactarnos por nuestros canales oficiales."
 
 # El canal interno no tiene memoria: su grafo no lleva checkpointer.
 internal_graph = build_graph(AreaScope.internal)
 
-async def build_agent_context(session: AsyncSession) -> AgentContext:
+async def build_agent_context(session: AsyncSession, requester: Requester | None) -> AgentContext:
     return AgentContext(
         llm=await build_gemini_llm(session),
         retriever=await build_faq_retriever(session, SessionLocal),
         load_catalog=load_catalog_in_own_session,
+        notifier=AreaNotifier(SessionLocal),
+        requester=requester,
+        max_steps=await get_int_property(session, "agent_max_steps", 4),
+        max_attempts=await get_int_property(session, "procedure_max_attempts", 3),
     )
 
 async def load_catalog_in_own_session(scope: AreaScope) -> Catalog:
@@ -58,11 +65,13 @@ async def handle_internal_message(session: AsyncSession, text: str, user_name: s
     except MessageTooLongError:
         return TOO_LONG_MESSAGE
     try:
-        context = await build_agent_context(session)
+        context = await build_agent_context(session, Requester(user_name, user_email, "google_chat"))
         await release_connection(session)
         result = await run_agent(internal_graph, question, context)
         if result.outcome == "mixed_scope":
             return MIXED_SCOPE
+        if result.outcome == "notification_failed":
+            return INTERNAL_NOTIFICATION_FAILED
         if result.reply is not None:
             return result.reply
         strategy = InternalStrategy(session, AreaNotifier(SessionLocal))
@@ -89,7 +98,7 @@ async def handle_web_message(
     if web_session.phase == WebPhase.queued:
         return [bot(WAITING_EXECUTIVE)]
     try:
-        context = await build_agent_context(session)
+        context = await build_agent_context(session, None)
         await release_connection(session)
         result = await run_agent(graph, question, context, str(web_session.id))
         touch_last_message(web_session, clock)
@@ -97,6 +106,8 @@ async def handle_web_message(
         reset_to_bot(web_session)
         if result.outcome == "mixed_scope":
             replies: list[ServerMessage] = [bot(MIXED_SCOPE)]
+        elif result.outcome == "notification_failed":
+            replies = [bot(WEB_NOTIFICATION_FAILED), await official_channels(session)]
         elif result.reply is not None:
             replies = [bot(result.reply)]
         else:

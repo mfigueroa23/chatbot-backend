@@ -4,7 +4,7 @@ import pytest
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 from src.agents.llm import (
-    AgentLLM, AreaAnswer, AreaInfo, FaqHit, FinalText, GeminiAgentLLM, ToolCall, ToolCalls, ToolSpec, build_answer_messages,
+    AgentLLM, AreaAnswer, AreaInfo, FaqHit, FinalText, GeminiAgentLLM, ToolCall, ToolCalls, ToolSpec,
     build_area_messages, build_combine_messages, build_gemini_llm)
 from src.models.business_area import AreaScope
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
@@ -50,20 +50,6 @@ async def test_error_del_proveedor_se_convierte_en_llm_no_disponible():
 
     with pytest.raises(LlmUnavailableError):
         await llm.classify("Clasifica", "¿Plazo del crédito?", [], [])
-
-
-def test_la_respuesta_de_un_area_solo_incluye_su_prompt_y_sus_faq():
-    area = AreaInfo(1, "Créditos", "Créditos automotrices", AreaScope.external, "Eres el área de Créditos")
-    faqs = [FaqHit("¿Cuál es el plazo máximo?", "Hasta 48 meses", 0.9)]
-
-    messages = build_answer_messages(area, "Reglas comunes desde la BD", "¿Cuántos meses puedo pagar?", faqs, [])
-    content = "\n".join(str(message.content) for message in messages)
-
-    assert "Eres el área de Créditos" in content
-    assert "Reglas comunes desde la BD" in content
-    assert "¿Cuál es el plazo máximo?" in content and "Hasta 48 meses" in content
-    assert "Cobranza" not in content
-    assert content.count("Respuesta:") == 1
 
 
 def test_las_instrucciones_de_combinar_vienen_solo_del_prompt_del_agente():

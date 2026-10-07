@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 74/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 77/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -263,13 +263,13 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k "guardrail or steps or answered or confirm"` pasa: texto sin tools ⇒ descartado; tool sin resultados ⇒ descartado; 5 pasos ⇒ `no_answer`; FAQ ⇒ `answered`; notificación entregada ⇒ confirmación.
 
 ## Fase 16 — Ampliación: integración en el grafo y los orquestadores
-- [ ] **T-77 — Usar `run_sub_agent` en el grafo** · RF-5, RF-6, RF-7, RF-8, RF-9, RF-94, RF-101 · ~30 min (depende de T-76)
+- [x] **T-77 — Usar `run_sub_agent` en el grafo** · RF-5, RF-6, RF-7, RF-8, RF-9, RF-94, RF-101 · ~30 min (depende de T-76)
   `answer_area` construye el toolbox del área y llama a `run_sub_agent`; el estado añade `procedure_attempts`; nuevos outcomes `notification_failed` y `wants_human` desde el sub-agente.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py` pasa entero con pasos guionizados, incluidos los casos `follow_up` (la consulta de búsqueda la redacta el modelo), `attempts` (persisten entre mensajes con `InMemorySaver`) y `rnf3`.
-- [ ] **T-78 — Pasar el notificador y la identidad en el contexto del agente** · RF-96, RF-97, RF-98 · ~25 min
+- [x] **T-78 — Pasar el notificador y la identidad en el contexto del agente** · RF-96, RF-97, RF-98 · ~25 min
   `AgentContext` añade `notifier` y `requester`; `build_agent_context` los arma para cada canal (colaborador de Google Chat o cliente web).
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k requester` pasa en ambos canales.
-- [ ] **T-79 — Traducir los nuevos outcomes en el canal web** · RF-25, RF-101 · ~20 min
+- [x] **T-79 — Traducir los nuevos outcomes en el canal web** · RF-25, RF-101 · ~20 min
   `handle_web_message`: `notification_failed` ⇒ mensaje y `official_channels`; `wants_human` del sub-agente ⇒ flujo de oferta existente.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "web and (notification or derivar)"` pasa.
 

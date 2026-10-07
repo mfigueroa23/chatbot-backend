@@ -6,19 +6,23 @@ from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents import strategies
 from src.agents.graph import AgentContext, Catalog, build_graph
-from src.agents.llm import AreaInfo, Classification, FaqHit
+from src.agents.llm import AreaInfo, Classification, FaqHit, FinalText
+from src.agents.retriever import ProcedureHit
 from src.models.business_area import AreaScope
+from src.models.procedure_field import FieldKind
+from src.services.area_notifier import Requester
+from src.services.procedures import FieldSpec
 from src.models.official_channel import OfficialChannel
 from src.models.web_session import WebPhase, WebSession
 from src.services import chat_orchestrator
 from src.services.chat_orchestrator import MIXED_SCOPE, UNAVAILABLE, handle_internal_message, handle_web_message
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
-from tests.fakes import FakeAgentLLM, FakeClock, FakeNotifier, FakeRetriever, property_session, web_session
+from tests.fakes import FakeAgentLLM, FakeClock, FakeNotifier, FakeRetriever, property_session, tool_call, web_session
 
 SESSION = property_session({})
 PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos", AreaScope.internal, "Eres Remuneraciones", "spaces/RRHH")
-CREDITS = AreaInfo(1, "Créditos", "Créditos automotrices", AreaScope.external, "Eres Créditos")
+CREDITS = AreaInfo(1, "Créditos", "Créditos automotrices", AreaScope.external, "Eres Créditos", "spaces/CREDITOS")
 HITS = {10: [FaqHit("¿Cuándo pagan?", "El día 30", 0.9)]}
 
 
@@ -39,8 +43,8 @@ def notifier(monkeypatch: pytest.MonkeyPatch) -> FakeNotifier:
 
 
 def use_llm(monkeypatch: pytest.MonkeyPatch, llm: FakeAgentLLM, hits=HITS):
-    async def build_agent_context(session):
-        return AgentContext(llm, FakeRetriever(hits), load_catalog)
+    async def build_agent_context(session, requester):
+        return AgentContext(llm, FakeRetriever(hits), load_catalog, FakeNotifier(), requester)
 
     monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
 
@@ -76,7 +80,7 @@ async def test_internal_sin_respuesta_avisa_al_responsable(monkeypatch: pytest.M
 
 @pytest.mark.anyio
 async def test_internal_llm_no_configurado_responde_no_disponible(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
-    async def build_agent_context(session):
+    async def build_agent_context(session, requester):
         raise LlmNotConfiguredError("gemini_api_key")
 
     monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
@@ -113,11 +117,18 @@ def schedule(monkeypatch: pytest.MonkeyPatch):
 
     monkeypatch.setattr(strategies, "load_schedule", load_schedule)
     monkeypatch.setattr(strategies, "get_official_channels", get_official_channels)
+    monkeypatch.setattr(chat_orchestrator, "get_official_channels", get_official_channels)
 
 
-def use_external_llm(monkeypatch: pytest.MonkeyPatch, llm: FakeAgentLLM):
-    async def build_agent_context(session):
-        return AgentContext(llm, FakeRetriever(EXTERNAL_HITS), load_external_catalog)
+CONTRACT = ProcedureHit(7, "Copia del contrato", "El área envía la copia", [FieldSpec("rut", "RUT del titular", FieldKind.rut)], 0.9)
+PROCEDURES = {1: [CONTRACT]}
+
+
+def use_external_llm(monkeypatch: pytest.MonkeyPatch, llm: FakeAgentLLM, notifier_for_tools: FakeNotifier | None = None):
+    notifier_for_tools = notifier_for_tools or FakeNotifier()
+
+    async def build_agent_context(session, requester):
+        return AgentContext(llm, FakeRetriever(EXTERNAL_HITS, PROCEDURES), load_external_catalog, notifier_for_tools, requester)
 
     monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
 
@@ -192,7 +203,7 @@ async def test_web_llm_caido_responde_no_disponible(monkeypatch: pytest.MonkeyPa
 async def test_web_bd_caida_responde_no_disponible_y_lo_registra(
     monkeypatch: pytest.MonkeyPatch, schedule, caplog: pytest.LogCaptureFixture
 ):
-    async def build_agent_context(session):
+    async def build_agent_context(session, requester):
         raise DatabaseUnavailableError("conexión rechazada")
 
     monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
@@ -249,3 +260,52 @@ async def test_internal_libera_la_conexion_antes_de_llamar_al_modelo(monkeypatch
     await handle_internal_message(cast(AsyncSession, session), "¿Cuándo pagan?", "Ana Pérez", "ana@autofin.cl")
 
     assert llm.commits_at_classify >= 1
+
+
+
+# --- Ampliación: identidad, notificación fallida y derivación ----------------------------------------------------
+
+@pytest.mark.anyio
+async def test_requester_cada_canal_pasa_su_identidad(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier, schedule):
+    seen: list[Requester | None] = []
+    llm = FakeAgentLLM(area_ids=[1], answers={1: "Hasta 48 meses"})
+
+    async def build_agent_context(session, requester):
+        seen.append(requester)
+        return AgentContext(llm, FakeRetriever(EXTERNAL_HITS), load_external_catalog, FakeNotifier(), requester)
+
+    monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
+    await ask()
+    await ask_web(web_session())
+
+    assert seen == [Requester("Ana Pérez", "ana@autofin.cl", "google_chat"), None]
+
+
+RUT_OK = [{"campo": "rut", "valor": "12.345.678-5"}, {"campo": "nombre", "valor": "Ana"}, {"campo": "contacto", "valor": "ana@correo.cl"}]
+
+
+@pytest.mark.anyio
+async def test_web_notification_fallida_muestra_los_canales_oficiales(monkeypatch: pytest.MonkeyPatch, schedule):
+    llm = FakeAgentLLM(area_ids=[1], steps={"Créditos": [tool_call("notificar_area", procedimiento_id=7, datos=RUT_OK)]})
+    use_external_llm(monkeypatch, llm, FakeNotifier(fail=True))
+
+    messages = dumps(await ask_web(web_session(), "Quiero copia de mi contrato"))
+
+    assert [m["type"] for m in messages] == ["message", "official_channels"]
+
+
+@pytest.mark.anyio
+async def test_web_derivar_desde_el_sub_agente_ofrece_un_ejecutivo(monkeypatch: pytest.MonkeyPatch, schedule):
+    use_external_llm(monkeypatch, FakeAgentLLM(area_ids=[1], steps={"Créditos": [tool_call("derivar_a_ejecutivo")]}))
+
+    assert [m["type"] for m in dumps(await ask_web(web_session()))] == ["message", "offer_human"]
+
+
+@pytest.mark.anyio
+async def test_web_procedimiento_notificado_confirma_al_cliente(monkeypatch: pytest.MonkeyPatch, schedule):
+    use_external_llm(monkeypatch, FakeAgentLLM(area_ids=[1], steps={"Créditos": [
+        tool_call("notificar_area", procedimiento_id=7, datos=RUT_OK), FinalText("Listo, el área gestionará tu solicitud.")]}))
+
+    messages = dumps(await ask_web(web_session(), "Quiero copia de mi contrato"))
+
+    assert messages == [{"type": "message", "from": "bot", "text": "Listo, el área gestionará tu solicitud."}]

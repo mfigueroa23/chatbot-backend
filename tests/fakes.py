@@ -69,30 +69,32 @@ class FakeAgentLLM:
         # Pasos guionizados por nombre de área: lo que "decide" el modelo en cada vuelta del bucle de tools.
         self.steps = {area: list(script) for area, script in (steps or {}).items()}
         self.step_tools: list[tuple[str, list[str]]] = []
+        self.area_ids_by_name: dict[str, int] = {}
         self.step_messages: list[list[BaseMessage]] = []
         self.combined = combined
         self.calls: list[str] = []
         self.classified_areas: list[AreaInfo] = []
         self.histories: list[list[BaseMessage]] = []
         self.combined_parts: list[AreaAnswer] = []
-        self.area_rules: list[str] = []
 
     async def classify(self, prompt: str, question: str, areas: list[AreaInfo], history: list[BaseMessage]) -> Classification:
         self.calls.append("classify")
         self.classified_areas = areas
+        self.area_ids_by_name = {area.name: area.id for area in areas}
         self.histories.append(history)
         return self.classification
-
-    async def answer(self, area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer:
-        self.calls.append("answer")
-        self.area_rules.append(rules)
-        return AreaAnswer(area.id, area.name, self.answers.get(area.id))
 
     async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep:
         self.calls.append("step")
         area = area_name_of(messages)
         self.step_tools.append((area, [tool.name for tool in tools]))
         self.step_messages.append(list(messages))
+        if area not in self.steps and self.area_ids_by_name.get(area) in self.answers:
+            # Atajo de los tests: answers={id: texto} equivale a buscar en las FAQ y responder ese texto,
+            # y answers={id: None} a buscar y marcar la consulta como sin respuesta.
+            text = self.answers[self.area_ids_by_name[area]]
+            search = tool_call("buscar_faq", consulta=str(messages[-1].content))
+            self.steps[area] = [search, FinalText(text) if text is not None else tool_call("sin_respuesta", "c2")]
         script = self.steps.get(area, [])
         return script.pop(0) if script else FinalText("sin más pasos guionizados")
 

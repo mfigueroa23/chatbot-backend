@@ -1,7 +1,7 @@
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Protocol, cast
+from typing import Any, Literal, Protocol, cast
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -39,6 +39,8 @@ class AreaAnswer:
     area_id: int
     area_name: str
     text: str | None  # None: el área no pudo responder
+    # Resultados del sub-agente que cambian el flujo del canal en lugar de dar una respuesta.
+    outcome: Literal["wants_human", "notification_failed"] | None = None
 
 @dataclass(frozen=True)
 class ToolSpec:
@@ -64,7 +66,6 @@ AgentStep = ToolCalls | FinalText
 
 class AgentLLM(Protocol):
     async def classify(self, prompt: str, question: str, areas: list[AreaInfo], history: list[BaseMessage]) -> Classification: ...
-    async def answer(self, area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer: ...
     async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep: ...
     async def combine(self, prompt: str, question: str, parts: list[AreaAnswer]) -> str: ...
 
@@ -72,21 +73,9 @@ class ClassificationOutput(BaseModel):
     area_ids: list[int] = Field(description="Ids de las áreas a las que corresponde la pregunta; vacío si ninguna")
     wants_human: bool = Field(description="True si el usuario pide hablar con una persona")
 
-class AnswerOutput(BaseModel):
-    answered: bool = Field(description="False si las preguntas frecuentes no responden la pregunta")
-    text: str = Field(description="Respuesta al usuario, basada solo en las preguntas frecuentes")
-
 def build_classify_messages(prompt: str, question: str, areas: list[AreaInfo], history: list[BaseMessage]) -> list[BaseMessage]:
     catalog = "\n".join(f"- id {area.id}: {area.name}. {area.description}" for area in areas)
     return [SystemMessage(f"{prompt}\n\nÁreas disponibles:\n{catalog}"), *history, HumanMessage(question)]
-
-def build_answer_messages(
-    area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]
-) -> list[BaseMessage]:
-    # Las instrucciones (prompt del área y reglas comunes) vienen de la BD; aquí solo se añaden las FAQ recuperadas.
-    faq_text = "\n\n".join(f"Pregunta: {faq.question}\nRespuesta: {faq.answer}" for faq in faqs)
-    instructions = f"{area.system_prompt}\n\n{rules}\n\nPreguntas frecuentes:\n\n{faq_text}"
-    return [SystemMessage(instructions), *history, HumanMessage(question)]
 
 def build_area_messages(area: AreaInfo, rules: str, question: str, history: list[BaseMessage]) -> list[BaseMessage]:
     # Las instrucciones vienen de la BD (prompt del área y reglas comunes); las FAQ y procedimientos los traen las tools.
@@ -109,11 +98,6 @@ class GeminiAgentLLM:
         output = cast(ClassificationOutput, await self._invoke_structured(
             ClassificationOutput, build_classify_messages(prompt, question, areas, history)))
         return Classification(output.area_ids, output.wants_human)
-
-    async def answer(self, area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer:
-        output = cast(AnswerOutput, await self._invoke_structured(
-            AnswerOutput, build_answer_messages(area, rules, question, faqs, history)))
-        return AreaAnswer(area.id, area.name, output.text if output.answered else None)
 
     async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep:
         declarations = [{"name": tool.name, "description": tool.description, "parameters": tool.parameters} for tool in tools]

@@ -121,6 +121,8 @@ class AreaToolbox:
         procedure = await self._retriever.get_procedure(self.area.id, procedure_id)
         if procedure is None:
             return "El procedimiento indicado no existe en esta área."
+        # El procedimiento viene de la BD: pedir de nuevo un dato o confirmar se apoya en él.
+        self.evidence = True
         data = {str(item.get("campo")): str(item.get("valor")) for item in args.get("datos") or [] if isinstance(item, dict)}
         check = missing_or_invalid(self._required_fields(procedure), data)
         if check.invalid:
@@ -143,8 +145,8 @@ class AreaToolbox:
             logger.error("No se pudo notificar la solicitud %s al área: %s", procedure.name, exc)
             self.outcome = "notification_failed"
             return "No se pudo notificar al área."
-        self.attempts.pop(procedure.id, None)
-        self.evidence = True
+        # A 0 en lugar de borrarlo: el estado del grafo fusiona los contadores de las áreas en paralelo.
+        self.attempts[procedure.id] = 0
         return "Solicitud notificada al área. Confirma al usuario que el área gestionará su solicitud."
 
 def describe_procedure(procedure: ProcedureHit, fields: list[FieldSpec]) -> str:

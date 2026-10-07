@@ -1,9 +1,12 @@
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from src.agents.graph import AgentContext, AgentResult, Catalog, build_graph, run_agent
-from src.agents.llm import AreaInfo, FaqHit
+from src.agents.llm import AreaInfo, FaqHit, FinalText
+from src.agents.retriever import ProcedureHit
 from src.models.business_area import AreaScope
-from tests.fakes import FakeAgentLLM, FakeRetriever
+from src.models.procedure_field import FieldKind
+from src.services.procedures import FieldSpec
+from tests.fakes import FakeAgentLLM, FakeNotifier, FakeRetriever, tool_call
 
 CREDITS = AreaInfo(1, "Créditos", "Créditos automotrices", AreaScope.external, "Eres el área de Créditos")
 INSURANCE = AreaInfo(2, "Seguros", "Seguros del vehículo", AreaScope.external, "Eres el área de Seguros")
@@ -24,9 +27,10 @@ async def run(
     question: str = "¿Cuál es el plazo del crédito?",
     graph=None,
     thread_id: str | None = None,
+    notifier: FakeNotifier | None = None,
 ) -> AgentResult:
     graph = graph or build_graph(scope)
-    context = AgentContext(llm, retriever or FakeRetriever(HITS), load_catalog)
+    context = AgentContext(llm, retriever or FakeRetriever(HITS), load_catalog, notifier or FakeNotifier(), None)
     return await run_agent(graph, question, context, thread_id)
 
 
@@ -79,18 +83,18 @@ async def test_answer_area_responde_solo_con_las_faq_de_su_area():
     assert retriever.searched_area_ids == [1]
     assert retriever.refreshed_area_ids == [1]
     assert result.areas == [CREDITS]
-    assert llm.area_rules == ["Reglas comunes de los sub-agentes"]
+    assert "Reglas comunes de los sub-agentes" in str(llm.step_messages[0][0].content)
 
 
 @pytest.mark.anyio
-async def test_no_faq_es_no_answer_sin_llamar_al_llm():
+async def test_no_faq_descarta_la_respuesta_del_modelo():
     llm = FakeAgentLLM(area_ids=[1], answers={1: "inventada"})
 
     result = await run(llm, FakeRetriever({}))
 
     assert result.outcome == "no_answer"
+    assert result.reply is None
     assert result.areas == [CREDITS]
-    assert llm.calls.count("answer") == 0
 
 
 @pytest.mark.anyio
@@ -102,7 +106,7 @@ async def test_no_prompt_es_no_answer_sin_buscar_ni_llamar_al_llm():
 
     assert result.outcome == "no_answer"
     assert retriever.searched_area_ids == []
-    assert llm.calls.count("answer") == 0
+    assert llm.calls.count("step") == 0
 
 
 @pytest.mark.anyio
@@ -151,7 +155,7 @@ async def test_rnf3_el_agente_externo_nunca_consulta_areas_internas():
     assert result.outcome == "no_answer"
     assert result.reply is None
     assert retriever.searched_area_ids == []
-    assert llm.calls.count("answer") == 0
+    assert llm.calls.count("step") == 0
 
 
 @pytest.mark.anyio
@@ -162,3 +166,67 @@ async def test_answer_area_pasa_la_pregunta_como_str_exacto():
     await run(FakeAgentLLM(area_ids=[1], answers={1: "Hasta 48 meses"}), retriever)
 
     assert [type(question) for question in retriever.searched_questions] == [str]
+
+
+
+CONTRACT = ProcedureHit(7, "Copia del contrato", "El área envía la copia", [FieldSpec("rut", "RUT del titular", FieldKind.rut)], 0.9)
+
+
+@pytest.mark.anyio
+async def test_follow_up_la_consulta_de_busqueda_la_redacta_el_modelo():
+    retriever = FakeRetriever(HITS)
+    llm = FakeAgentLLM(area_ids=[1], steps={"Créditos": [
+        tool_call("buscar_faq", consulta="convenio de pago en Caja Vecina"), FinalText("Convenio 15389")]})
+
+    result = await run(llm, retriever, question="¿Y cuál es el de Caja Vecina?")
+
+    assert retriever.searched_questions == ["convenio de pago en Caja Vecina"]
+    assert result.reply == "Convenio 15389"
+
+
+def invalid_rut_turn():
+    return [tool_call("notificar_area", procedimiento_id=7, datos=[{"campo": "rut", "valor": "mal"}]), FinalText("Ese RUT no es válido")]
+
+
+@pytest.mark.anyio
+async def test_attempts_los_intentos_persisten_entre_mensajes_del_mismo_hilo():
+    graph = build_graph(AreaScope.external, InMemorySaver())
+    retriever = FakeRetriever(HITS, {1: [CONTRACT]})
+
+    results = [await run(FakeAgentLLM(area_ids=[1], steps={"Créditos": invalid_rut_turn()}), retriever, graph=graph,
+                         thread_id="t-1", question="Mi RUT es mal") for _ in range(2)]
+    result = results[-1]
+
+    state = await graph.aget_state({"configurable": {"thread_id": "t-1"}})
+    assert state.values["procedure_attempts"] == {7: 2}
+    assert result.outcome == "answered" and result.reply == "Ese RUT no es válido"
+
+
+@pytest.mark.anyio
+async def test_attempts_al_tercer_intento_se_aplica_el_flujo_sin_respuesta():
+    graph = build_graph(AreaScope.external, InMemorySaver())
+    retriever = FakeRetriever(HITS, {1: [CONTRACT]})
+
+    results = [await run(FakeAgentLLM(area_ids=[1], steps={"Créditos": invalid_rut_turn()}), retriever, graph=graph,
+                         thread_id="t-2", question="Mi RUT es mal") for _ in range(3)]
+
+    assert results[-1].outcome == "no_answer"
+
+
+@pytest.mark.anyio
+async def test_notification_failed_cuando_no_se_puede_avisar_al_area():
+    retriever = FakeRetriever(HITS, {1: [CONTRACT]})
+    datos = [{"campo": "rut", "valor": "12.345.678-5"}, {"campo": "nombre", "valor": "Ana"}, {"campo": "contacto", "valor": "ana@correo.cl"}]
+    llm = FakeAgentLLM(area_ids=[1], steps={"Créditos": [tool_call("notificar_area", procedimiento_id=7, datos=datos)]})
+
+    result = await run(llm, retriever, notifier=FakeNotifier(fail=True))
+
+    assert result.outcome == "notification_failed"
+    assert result.reply is None
+
+
+@pytest.mark.anyio
+async def test_wants_human_cuando_el_sub_agente_deriva():
+    llm = FakeAgentLLM(area_ids=[1], steps={"Créditos": [tool_call("derivar_a_ejecutivo")]})
+
+    assert (await run(llm)).outcome == "wants_human"

@@ -14,12 +14,16 @@ from langgraph.types import Send
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import AgentLLM, AreaAnswer, AreaInfo
 from src.agents.retriever import Retriever
+from src.agents.strategies import Notifier
+from src.agents.sub_agent import run_sub_agent
+from src.agents.tools import AreaToolbox
+from src.services.area_notifier import Requester
 from src.models.business_area import AreaScope
 from src.services.business_data import get_agent_prompt, get_areas
 
 logger = logging.getLogger(__name__)
 
-Outcome = Literal["answered", "partial", "no_answer", "mixed_scope", "wants_human"]
+Outcome = Literal["answered", "partial", "no_answer", "mixed_scope", "wants_human", "notification_failed"]
 
 @dataclass(frozen=True)
 class Catalog:
@@ -34,6 +38,10 @@ class AgentContext:
     llm: AgentLLM
     retriever: Retriever
     load_catalog: Callable[[AreaScope], Awaitable[Catalog]]
+    notifier: Notifier
+    requester: Requester | None  # None en el canal web: el cliente es anónimo y da sus datos en el procedimiento
+    max_steps: int = 4
+    max_attempts: int = 3
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -44,6 +52,10 @@ class AgentResult:
 def merge_answers(current: list[AreaAnswer], update: list[AreaAnswer]) -> list[AreaAnswer]:
     # Una lista vacía reinicia las respuestas al empezar cada mensaje; el fan-out las va acumulando.
     return current + update if update else []
+
+def merge_attempts(current: dict[int, int], update: dict[int, int]) -> dict[int, int]:
+    # Las áreas corren en paralelo y cada una devuelve los contadores de sus procedimientos.
+    return {**current, **update}
 
 class AgentInput(TypedDict):
     messages: list[BaseMessage]
@@ -56,6 +68,8 @@ class AgentState(TypedDict):
     area_rules: str
     selected_areas: list[AreaInfo]
     area_answers: Annotated[list[AreaAnswer], merge_answers]
+    # Intentos fallidos por procedimiento; persiste entre mensajes del mismo hilo con el checkpointer.
+    procedure_attempts: Annotated[dict[int, int], merge_attempts]
     outcome: Outcome | None
     reply: str | None
 
@@ -68,6 +82,7 @@ class AreaTask(TypedDict):
     rules: str
     question: str
     history: list[BaseMessage]
+    attempts: dict[int, int]
 
 AgentGraph = CompiledStateGraph[AgentState, AgentContext, AgentInput, AgentState]
 
@@ -91,6 +106,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
             "area_rules": catalog.area_rules,
             "selected_areas": [],
             "area_answers": [],
+            "procedure_attempts": {},
             "outcome": None,
             "reply": None,
         }
@@ -113,23 +129,28 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if state["outcome"] is not None:
             return END
         *history, question = state["messages"]
-        return [Send("answer_area", AreaTask(area=area, rules=state["area_rules"], question=text_of(question), history=history))
+        return [Send("answer_area", AreaTask(area=area, rules=state["area_rules"], question=text_of(question), history=history,
+                                             attempts=state["procedure_attempts"]))
                 for area in state["selected_areas"]]
 
     async def answer_area(state: AreaTask, runtime: Runtime[AgentContext]) -> dict:
-        area = state["area"]
-        # Sin prompt o sin FAQ sobre el umbral el área no responde y no se llama al LLM: nunca inventa.
-        if not area.system_prompt:
-            return {"area_answers": [AreaAnswer(area.id, area.name, None)]}
-        await runtime.context.retriever.refresh_stale_embeddings([area.id])
-        faqs = await runtime.context.retriever.search_faq(area.id, state["question"])
-        if not faqs:
-            return {"area_answers": [AreaAnswer(area.id, area.name, None)]}
-        answer = await runtime.context.llm.answer(area, state["rules"], state["question"], faqs, state["history"])
-        return {"area_answers": [answer]}
+        area, context = state["area"], runtime.context
+        toolbox = AreaToolbox(area, context.retriever, context.notifier, context.requester, state["question"],
+                              state["attempts"], context.max_attempts)
+        if area.system_prompt:
+            await context.retriever.refresh_stale_embeddings([area.id])
+        result = await run_sub_agent(context.llm, area, state["rules"], state["question"], state["history"], toolbox,
+                                     context.max_steps)
+        outcome = result.kind if result.kind in ("wants_human", "notification_failed") else None
+        text = result.text if result.kind == "answered" else None
+        return {"area_answers": [AreaAnswer(area.id, area.name, text, outcome)], "procedure_attempts": result.attempts}
 
     async def combine(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
         answers = state["area_answers"]
+        # No poder avisar al área o derivar a un ejecutivo cambian el flujo del canal: tienen prioridad sobre el texto.
+        for special in ("notification_failed", "wants_human"):
+            if any(answer.outcome == special for answer in answers):
+                return {"outcome": special}
         answered = [answer for answer in answers if answer.text is not None]
         if not answered:
             return {"outcome": "no_answer"}

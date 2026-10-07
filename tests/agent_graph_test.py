@@ -14,7 +14,7 @@ HITS = {area.id: [FaqHit(f"Pregunta de {area.name}", f"Respuesta de {area.name}"
 
 
 async def load_catalog(scope: AreaScope) -> Catalog:
-    return Catalog(AREAS, "Clasifica la pregunta", f"Eres el agente {scope}")
+    return Catalog(AREAS, "Clasifica la pregunta", f"Eres el agente {scope}", "Reglas comunes de los sub-agentes")
 
 
 async def run(
@@ -79,6 +79,7 @@ async def test_answer_area_responde_solo_con_las_faq_de_su_area():
     assert retriever.searched_area_ids == [1]
     assert retriever.refreshed_area_ids == [1]
     assert result.areas == [CREDITS]
+    assert llm.area_rules == ["Reglas comunes de los sub-agentes"]
 
 
 @pytest.mark.anyio
@@ -151,3 +152,13 @@ async def test_rnf3_el_agente_externo_nunca_consulta_areas_internas():
     assert result.reply is None
     assert retriever.searched_area_ids == []
     assert llm.calls.count("answer") == 0
+
+
+@pytest.mark.anyio
+async def test_answer_area_pasa_la_pregunta_como_str_exacto():
+    # message.text de langchain-core es una subclase de str que el cliente de Gemini serializa mal (500 en embeddings).
+    retriever = FakeRetriever(HITS)
+
+    await run(FakeAgentLLM(area_ids=[1], answers={1: "Hasta 48 meses"}), retriever)
+
+    assert [type(question) for question in retriever.searched_questions] == [str]

@@ -69,6 +69,7 @@ class FakeAgentLLM:
         self.classified_areas: list[AreaInfo] = []
         self.histories: list[list[BaseMessage]] = []
         self.combined_parts: list[AreaAnswer] = []
+        self.area_rules: list[str] = []
 
     async def classify(self, prompt: str, question: str, areas: list[AreaInfo], history: list[BaseMessage]) -> Classification:
         self.calls.append("classify")
@@ -76,8 +77,9 @@ class FakeAgentLLM:
         self.histories.append(history)
         return self.classification
 
-    async def answer(self, area: AreaInfo, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer:
+    async def answer(self, area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer:
         self.calls.append("answer")
+        self.area_rules.append(rules)
         return AreaAnswer(area.id, area.name, self.answers.get(area.id))
 
     async def combine(self, prompt: str, question: str, parts: list[AreaAnswer]) -> str:
@@ -104,10 +106,12 @@ class FakeRetriever:
     def __init__(self, hits: dict[int, list[FaqHit]] | None = None):
         self.hits = hits or {}
         self.searched_area_ids: list[int] = []
+        self.searched_questions: list[str] = []
         self.refreshed_area_ids: list[int] = []
 
     async def search(self, area_id: int, question: str) -> list[FaqHit]:
         self.searched_area_ids.append(area_id)
+        self.searched_questions.append(question)
         return self.hits.get(area_id, [])
 
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:

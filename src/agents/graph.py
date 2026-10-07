@@ -26,6 +26,7 @@ class Catalog:
     areas: list[AreaInfo]  # de ambos ámbitos: el clasificador los necesita para detectar las preguntas mixtas
     classifier_prompt: str
     agent_prompt: str
+    area_rules: str  # reglas comunes de todos los sub-agentes
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -52,13 +53,19 @@ class AgentState(TypedDict):
     areas: list[AreaInfo]
     classifier_prompt: str
     agent_prompt: str
+    area_rules: str
     selected_areas: list[AreaInfo]
     area_answers: Annotated[list[AreaAnswer], merge_answers]
     outcome: Outcome | None
     reply: str | None
 
+def text_of(message: BaseMessage) -> str:
+    # message.text es una subclase de str que el cliente de Gemini serializa mal (500 en los embeddings).
+    return str(message.text)
+
 class AreaTask(TypedDict):
     area: AreaInfo
+    rules: str
     question: str
     history: list[BaseMessage]
 
@@ -81,6 +88,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
             "areas": catalog.areas,
             "classifier_prompt": catalog.classifier_prompt,
             "agent_prompt": catalog.agent_prompt,
+            "area_rules": catalog.area_rules,
             "selected_areas": [],
             "area_answers": [],
             "outcome": None,
@@ -90,7 +98,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
     async def classify(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
         *history, question = state["messages"]
         classification = await runtime.context.llm.classify(
-            state["classifier_prompt"], question.text, state["areas"], history)
+            state["classifier_prompt"], text_of(question), state["areas"], history)
         if classification.wants_human:
             return {"outcome": "wants_human"}
         selected = [area for area in state["areas"] if area.id in classification.area_ids]
@@ -105,7 +113,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if state["outcome"] is not None:
             return END
         *history, question = state["messages"]
-        return [Send("answer_area", AreaTask(area=area, question=question.text, history=history))
+        return [Send("answer_area", AreaTask(area=area, rules=state["area_rules"], question=text_of(question), history=history))
                 for area in state["selected_areas"]]
 
     async def answer_area(state: AreaTask, runtime: Runtime[AgentContext]) -> dict:
@@ -117,7 +125,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         faqs = await runtime.context.retriever.search(area.id, state["question"])
         if not faqs:
             return {"area_answers": [AreaAnswer(area.id, area.name, None)]}
-        answer = await runtime.context.llm.answer(area, state["question"], faqs, state["history"])
+        answer = await runtime.context.llm.answer(area, state["rules"], state["question"], faqs, state["history"])
         return {"area_answers": [answer]}
 
     async def combine(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
@@ -128,7 +136,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if len(answers) == 1:
             reply = answered[0].text
         else:
-            reply = await runtime.context.llm.combine(state["agent_prompt"], state["messages"][-1].text, answers)
+            reply = await runtime.context.llm.combine(state["agent_prompt"], text_of(state["messages"][-1]), answers)
         outcome = "answered" if len(answered) == len(answers) else "partial"
         return {"outcome": outcome, "reply": reply, "messages": [AIMessage(reply)]}
 
@@ -151,12 +159,13 @@ async def run_agent(graph: AgentGraph, question: str, context: AgentContext, thr
 
 async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     areas = [*await get_areas(session, AreaScope.internal), *await get_areas(session, AreaScope.external)]
-    classifier_prompt = await get_agent_prompt(session, "classifier")
-    agent_prompt = await get_agent_prompt(session, f"{scope}_agent")
-    if classifier_prompt is None or agent_prompt is None:
-        logger.warning("Falta el prompt del clasificador o del agente %s en agent_prompt", scope)
+    prompts = {key: await get_agent_prompt(session, key) for key in ("classifier", f"{scope}_agent", "area_rules")}
+    missing = [key for key, value in prompts.items() if value is None]
+    if missing:
+        logger.warning("Faltan prompts en agent_prompt: %s", ", ".join(missing))
     return Catalog(
         [AreaInfo(area.id, area.name, area.description, area.scope, area.system_prompt, area.owner_email) for area in areas],
-        classifier_prompt or "",
-        agent_prompt or "",
+        prompts["classifier"] or "",
+        prompts[f"{scope}_agent"] or "",
+        prompts["area_rules"] or "",
     )

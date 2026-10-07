@@ -1,5 +1,6 @@
 import logging
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Protocol, cast
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -41,7 +42,7 @@ class AreaAnswer:
 
 class AgentLLM(Protocol):
     async def classify(self, prompt: str, question: str, areas: list[AreaInfo], history: list[BaseMessage]) -> Classification: ...
-    async def answer(self, area: AreaInfo, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer: ...
+    async def answer(self, area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer: ...
     async def combine(self, prompt: str, question: str, parts: list[AreaAnswer]) -> str: ...
 
 class ClassificationOutput(BaseModel):
@@ -56,12 +57,12 @@ def build_classify_messages(prompt: str, question: str, areas: list[AreaInfo], h
     catalog = "\n".join(f"- id {area.id}: {area.name}. {area.description}" for area in areas)
     return [SystemMessage(f"{prompt}\n\nÁreas disponibles:\n{catalog}"), *history, HumanMessage(question)]
 
-def build_answer_messages(area: AreaInfo, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> list[BaseMessage]:
+def build_answer_messages(
+    area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]
+) -> list[BaseMessage]:
+    # Las instrucciones (prompt del área y reglas comunes) vienen de la BD; aquí solo se añaden las FAQ recuperadas.
     faq_text = "\n\n".join(f"Pregunta: {faq.question}\nRespuesta: {faq.answer}" for faq in faqs)
-    instructions = (
-        f"{area.system_prompt}\n\nResponde únicamente con la información de estas preguntas frecuentes. "
-        f"Si no alcanzan para responder, indica que no puedes responder.\n\n{faq_text}"
-    )
+    instructions = f"{area.system_prompt}\n\n{rules}\n\nPreguntas frecuentes:\n\n{faq_text}"
     return [SystemMessage(instructions), *history, HumanMessage(question)]
 
 def build_combine_messages(prompt: str, question: str, parts: list[AreaAnswer]) -> list[BaseMessage]:
@@ -69,8 +70,9 @@ def build_combine_messages(prompt: str, question: str, parts: list[AreaAnswer]) 
     unanswered = ", ".join(part.area_name for part in parts if part.text is None)
     content = f"Pregunta del usuario: {question}\n\nRespuestas de las áreas:\n{answered}"
     if unanswered:
-        content += f"\n\nIndica al usuario que no hay respuesta disponible para la parte de: {unanswered}"
-    return [SystemMessage(f"{prompt}\n\nCombina las respuestas en una sola, sin añadir información nueva."), HumanMessage(content)]
+        content += f"\n\nÁreas sin respuesta: {unanswered}"
+    # Cómo combinar e indicar lo que falta lo dice el prompt del agente (BD).
+    return [SystemMessage(prompt), HumanMessage(content)]
 
 class GeminiAgentLLM:
     def __init__(self, chat: BaseChatModel):
@@ -81,9 +83,9 @@ class GeminiAgentLLM:
             ClassificationOutput, build_classify_messages(prompt, question, areas, history)))
         return Classification(output.area_ids, output.wants_human)
 
-    async def answer(self, area: AreaInfo, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer:
+    async def answer(self, area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer:
         output = cast(AnswerOutput, await self._invoke_structured(
-            AnswerOutput, build_answer_messages(area, question, faqs, history)))
+            AnswerOutput, build_answer_messages(area, rules, question, faqs, history)))
         return AreaAnswer(area.id, area.name, output.text if output.answered else None)
 
     async def combine(self, prompt: str, question: str, parts: list[AreaAnswer]) -> str:
@@ -91,7 +93,7 @@ class GeminiAgentLLM:
             message = await self._chat.ainvoke(build_combine_messages(prompt, question, parts))
         except Exception as exc:
             raise LlmUnavailableError(str(exc)) from exc
-        return message.text
+        return str(message.text)
 
     async def _invoke_structured(self, schema: type[BaseModel], messages: list[BaseMessage]) -> object:
         try:
@@ -113,6 +115,11 @@ async def build_gemini_llm(session: AsyncSession) -> GeminiAgentLLM:
     model = await get_llm_property(session, "gemini_model")
     api_key = await get_llm_property(session, "gemini_api_key")
     timeout = await get_float_property(session, "llm_timeout_seconds", 20)
+    return GeminiAgentLLM(gemini_chat(model, api_key, timeout))
+
+# Se reutiliza el cliente mientras no cambie la configuración: uno nuevo por mensaje abre conexiones TLS nuevas y,
+# con 50 sesiones a la vez, parte de ellas fallan al conectar.
+@lru_cache(maxsize=4)
+def gemini_chat(model: str, api_key: str, timeout: float) -> ChatGoogleGenerativeAI:
     # Un solo reintento: con más, un proveedor caído tardaría minutos en responder "no disponible".
-    chat = ChatGoogleGenerativeAI(model=model, google_api_key=SecretStr(api_key), timeout=timeout, max_retries=1)
-    return GeminiAgentLLM(chat)
+    return ChatGoogleGenerativeAI(model=model, google_api_key=SecretStr(api_key), timeout=timeout, max_retries=1)

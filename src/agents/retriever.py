@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from functools import lru_cache
 from typing import Protocol
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from pydantic import SecretStr
@@ -87,10 +88,15 @@ class FaqRetriever:
 async def build_faq_retriever(session: AsyncSession, session_factory: SessionFactory) -> FaqRetriever:
     api_key = await get_llm_property(session, "gemini_api_key")
     model = await get_llm_property(session, "gemini_embedding_model")
-    embeddings = GoogleGenerativeAIEmbeddings(model=model, api_key=SecretStr(api_key))
     return FaqRetriever(
         session_factory,
-        GeminiEmbedder(embeddings),
+        GeminiEmbedder(gemini_embeddings(model, api_key)),
         top_k=await get_int_property(session, "rag_top_k", 4),
-        min_similarity=await get_float_property(session, "rag_min_similarity", 0.75),
+        # Calibrado con las FAQ de Servicio al Cliente (R3 del plan de la spec 001).
+        min_similarity=await get_float_property(session, "rag_min_similarity", 0.68),
     )
+
+# Mismo motivo que gemini_chat: reutilizar las conexiones mientras no cambie la configuración.
+@lru_cache(maxsize=4)
+def gemini_embeddings(model: str, api_key: str) -> GoogleGenerativeAIEmbeddings:
+    return GoogleGenerativeAIEmbeddings(model=model, api_key=SecretStr(api_key))

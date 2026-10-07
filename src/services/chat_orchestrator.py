@@ -1,7 +1,6 @@
 import logging
-from functools import partial
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agents.graph import AgentContext, AgentGraph, build_graph, load_catalog, run_agent
+from src.agents.graph import AgentContext, AgentGraph, Catalog, build_graph, load_catalog, run_agent
 from src.agents.llm import build_gemini_llm
 from src.agents.retriever import build_faq_retriever
 from src.agents.strategies import ExternalStrategy, InternalStrategy, NoAnswerContext
@@ -38,8 +37,18 @@ async def build_agent_context(session: AsyncSession) -> AgentContext:
     return AgentContext(
         llm=await build_gemini_llm(session),
         retriever=await build_faq_retriever(session, SessionLocal),
-        load_catalog=partial(load_catalog, session),
+        load_catalog=load_catalog_in_own_session,
     )
+
+async def load_catalog_in_own_session(scope: AreaScope) -> Catalog:
+    # Sesión propia y breve: la de la petición ya liberó su conexión antes de llamar al modelo.
+    async with SessionLocal() as session:
+        return await load_catalog(session, scope)
+
+async def release_connection(session: AsyncSession) -> None:
+    # Cierra la transacción para devolver la conexión al pool mientras se espera al modelo (varios segundos):
+    # retenerla con 50 sesiones a la vez agota el pool de la BD. La sesión sigue usable después.
+    await commit(session)
 
 async def handle_internal_message(session: AsyncSession, text: str, user_name: str | None, user_email: str | None) -> str:
     try:
@@ -49,7 +58,9 @@ async def handle_internal_message(session: AsyncSession, text: str, user_name: s
     except MessageTooLongError:
         return TOO_LONG_MESSAGE
     try:
-        result = await run_agent(internal_graph, question, await build_agent_context(session))
+        context = await build_agent_context(session)
+        await release_connection(session)
+        result = await run_agent(internal_graph, question, context)
         if result.outcome == "mixed_scope":
             return MIXED_SCOPE
         if result.reply is not None:
@@ -78,7 +89,9 @@ async def handle_web_message(
     if web_session.phase == WebPhase.queued:
         return [bot(WAITING_EXECUTIVE)]
     try:
-        result = await run_agent(graph, question, await build_agent_context(session), str(web_session.id))
+        context = await build_agent_context(session)
+        await release_connection(session)
+        result = await run_agent(graph, question, context, str(web_session.id))
         touch_last_message(web_session, clock)
         # Escribir texto libre cancela una oferta de ejecutivo pendiente: se atiende como pregunta nueva.
         reset_to_bot(web_session)

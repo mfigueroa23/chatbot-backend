@@ -16,7 +16,7 @@ from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableErro
 from src.utils.exceptions.database import DatabaseUnavailableError
 from tests.fakes import FakeAgentLLM, FakeClock, FakeMailer, FakeRetriever, property_session, web_session
 
-SESSION = cast(AsyncSession, object())
+SESSION = property_session({})
 PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos", AreaScope.internal, "Eres Remuneraciones", "rrhh@autofin.cl")
 CREDITS = AreaInfo(1, "Créditos", "Créditos automotrices", AreaScope.external, "Eres Créditos")
 HITS = {10: [FaqHit("¿Cuándo pagan?", "El día 30", 0.9)]}
@@ -28,7 +28,7 @@ class DownLLM(FakeAgentLLM):
 
 
 async def load_catalog(scope: AreaScope) -> Catalog:
-    return Catalog([PAYROLL, CREDITS], "Clasifica", "Eres el agente interno")
+    return Catalog([PAYROLL, CREDITS], "Clasifica", "Eres el agente interno", "Reglas")
 
 
 @pytest.fixture
@@ -100,7 +100,7 @@ OUT_OF_HOURS = datetime(2026, 10, 7, 23, tzinfo=UTC)
 
 
 async def load_external_catalog(scope: AreaScope) -> Catalog:
-    return Catalog([CREDITS, INSURANCE, PAYROLL], "Clasifica", "Eres el agente externo")
+    return Catalog([CREDITS, INSURANCE, PAYROLL], "Clasifica", "Eres el agente externo", "Reglas")
 
 
 @pytest.fixture
@@ -200,3 +200,52 @@ async def test_web_bd_caida_responde_no_disponible_y_lo_registra(
 
     assert dumps(await ask_web(web_session())) == [{"type": "error", "code": "service_unavailable", "text": UNAVAILABLE}]
     assert "conexión rechazada" in caplog.text
+
+
+class CountingSession:
+    def __init__(self):
+        self.commits = 0
+
+    async def execute(self, statement):
+        return []
+
+    async def scalar(self, statement):
+        return None
+
+    async def commit(self):
+        self.commits += 1
+
+
+class CommitAwareLLM(FakeAgentLLM):
+    def __init__(self, session: CountingSession):
+        super().__init__(area_ids=[1], answers={1: "Hasta 48 meses"})
+        self.session = session
+        self.commits_at_classify = -1
+
+    async def classify(self, prompt, question, areas, history) -> Classification:
+        self.commits_at_classify = self.session.commits
+        return await super().classify(prompt, question, areas, history)
+
+
+@pytest.mark.anyio
+async def test_web_libera_la_conexion_antes_de_llamar_al_modelo(monkeypatch: pytest.MonkeyPatch, schedule):
+    # Con 50 sesiones a la vez, retener la conexión durante la llamada al modelo agota el pool de la BD.
+    session = CountingSession()
+    llm = CommitAwareLLM(session)
+    use_external_llm(monkeypatch, llm)
+
+    graph = build_graph(AreaScope.external, InMemorySaver())
+    await handle_web_message(cast(AsyncSession, session), graph, web_session(), "¿Plazo?", FakeClock(IN_HOURS))
+
+    assert llm.commits_at_classify >= 1
+
+
+@pytest.mark.anyio
+async def test_internal_libera_la_conexion_antes_de_llamar_al_modelo(monkeypatch: pytest.MonkeyPatch, mailer: FakeMailer):
+    session = CountingSession()
+    llm = CommitAwareLLM(session)
+    use_llm(monkeypatch, llm)
+
+    await handle_internal_message(cast(AsyncSession, session), "¿Cuándo pagan?", "Ana Pérez", "ana@autofin.cl")
+
+    assert llm.commits_at_classify >= 1

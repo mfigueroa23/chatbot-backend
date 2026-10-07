@@ -1,13 +1,13 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 5/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 13/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
 archivo de tests.
 
 ## Fase 0 — Verificaciones previas
-- [ ] **T-1 — Verificar pgvector en el servidor PostgreSQL** · (habilita RF-9) · ~15 min
+- [x] **T-1 — Verificar pgvector en el servidor PostgreSQL** · (habilita RF-9) · ~15 min
   Consultar `pg_available_extensions` (nombre `vector`) y comprobar que el usuario de la app puede crear extensiones (o pedírselo al DBA). Anotar el resultado en R1 del plan.
   Hecho cuando: R1 del plan dice "vector disponible y creada" o enlaza la solicitud al DBA; con una solicitud abierta, T-9 queda bloqueada.
 - [x] **T-2 — Verificar zoneinfo en la imagen base** · (habilita RF-21) · ~10 min [P]
@@ -29,25 +29,25 @@ archivo de tests.
   Hecho cuando: `uv run pyright` da 0 errores y cada clase hereda de `Exception` con docstring en español.
 
 ## Fase 2 — Modelo de datos
-- [ ] **T-7 — Crear los modelos de negocio de áreas y FAQ** · (habilita RF-3–11) · ~25 min
+- [x] **T-7 — Crear los modelos de negocio de áreas y FAQ** · (habilita RF-3–11) · ~25 min
   `src/models/business_area.py` (enum `AreaScope`), `faq_category.py`, `faq.py` (`Vector(768)`, `content_hash` como `Computed`) y `agent_prompt.py`.
   Hecho cuando: `uv run pyright` da 0 errores y los 4 modelos se importan sin error.
-- [ ] **T-8 — Crear los modelos de horario y contactos** · (habilita RF-19–24, RF-59) · ~15 min
+- [x] **T-8 — Crear los modelos de horario y contactos** · (habilita RF-19–24, RF-59) · ~15 min
   Crear `service_schedule.py` (CHECK 0–6 y apertura < cierre), `holiday.py`, `official_channel.py` y `fallback_contact.py` en `src/models/`.
   Hecho cuando: `uv run pyright` da 0 errores.
-- [ ] **T-9 — Generar y revisar la migración A** · (habilita RF-3–11, RF-19–24, RF-59) · ~30 min (depende de T-1)
+- [x] **T-9 — Generar y revisar la migración A** · (habilita RF-3–11, RF-19–24, RF-59) · ~30 min (depende de T-1)
   Importar los modelos en `alembic/env.py` y ejecutar `alembic revision --autogenerate -m "create business tables"`. Añadir a mano `CREATE EXTENSION IF NOT EXISTS vector`, la creación y el borrado de los enums, el índice HNSW `vector_cosine_ops` y la columna generada.
   Hecho cuando: en una BD local, `alembic upgrade head`, `alembic downgrade -1` y `alembic upgrade head` terminan con código 0, y `\d faq` muestra el índice HNSW y `content_hash` generada.
-- [ ] **T-10 — Crear los modelos de ejecutivos** · (habilita RF-70–75) · ~15 min
+- [x] **T-10 — Crear los modelos de ejecutivos** · (habilita RF-70–75) · ~15 min
   `src/models/executive.py` y `executive_session.py`, según la sección 3 del plan.
   Hecho cuando: `uv run pyright` da 0 errores.
-- [ ] **T-11 — Generar y revisar la migración B** · (habilita RF-70–75) · ~20 min
+- [x] **T-11 — Generar y revisar la migración B** · (habilita RF-70–75) · ~20 min
   `alembic revision --autogenerate -m "create executive tables"`, con el índice único sobre `lower(username)` añadido a mano.
   Hecho cuando: el ciclo upgrade/downgrade -1/upgrade termina con código 0 y `\d executive` muestra el índice único sobre `lower(username)`.
-- [ ] **T-12 — Crear los modelos del chat web** · (habilita RF-25–56, RF-76–81) · ~25 min
+- [x] **T-12 — Crear los modelos del chat web** · (habilita RF-25–56, RF-76–81) · ~25 min
   `src/models/web_session.py` (enum `WebPhase`), `live_chat.py` (enums `LiveChatStatus` y `CloseReason`) y `live_chat_message.py`.
   Hecho cuando: `uv run pyright` da 0 errores.
-- [ ] **T-13 — Generar y revisar la migración C** · (habilita RF-25–56, RF-76–81) · ~25 min
+- [x] **T-13 — Generar y revisar la migración C** · (habilita RF-25–56, RF-76–81) · ~25 min
   `alembic revision --autogenerate -m "create web chat tables"`, con el índice único parcial `(web_session_id) WHERE status <> 'closed'` y el índice parcial de `executive_id`.
   Hecho cuando: el ciclo upgrade/downgrade -1/upgrade termina con código 0 y `\d live_chat` muestra ambos índices parciales.
 

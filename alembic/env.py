@@ -6,7 +6,20 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from alembic import context
 from src.config import settings
 from src.models.base import Base
+from src.models.agent_prompt import AgentPrompt
+from src.models.business_area import BusinessArea
+from src.models.executive import Executive
+from src.models.executive_session import ExecutiveSession
+from src.models.fallback_contact import FallbackContact
+from src.models.faq import Faq
+from src.models.faq_category import FaqCategory
+from src.models.holiday import Holiday
+from src.models.live_chat import LiveChat
+from src.models.live_chat_message import LiveChatMessage
+from src.models.official_channel import OfficialChannel
 from src.models.property import Property
+from src.models.service_schedule import ServiceSchedule
+from src.models.web_session import WebSession
 
 config = context.config
 

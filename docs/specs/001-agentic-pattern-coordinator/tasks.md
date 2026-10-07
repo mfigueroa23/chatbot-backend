@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 85/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 86/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -302,7 +302,7 @@ archivo de tests.
   Hecho cuando: `jailbreak_check` termina con código 0 (20/20 sin fugas) y el procedimiento web llega a la notificación (o a `official_channels` si no hay space de prueba); el resultado queda registrado en R16 del plan.
 
 ## Cierre final
-- [ ] **T-88 — Actualizar el README de la ampliación** · todos · ~25 min
+- [x] **T-88 — Actualizar el README de la ampliación** · todos · ~25 min
   Tablas `procedure`, `procedure_field`, `chat_space` y `fallback_space`; properties `google_chat_retention_days`, `agent_max_steps` y `procedure_max_attempts`; sin `smtp_*`; `prompts.md`, `jailbreak_check` y el requisito de añadir la app de Google Chat a los spaces de las áreas (R14).
   Hecho cuando: `README.md` contiene cada tabla y property nuevas y `jailbreak_check`, y no contiene `smtp_` (comprobado con `grep`).
 - [ ] **T-56 — Ejecutar la prueba de carga del RNF-2** · RNF-1, RNF-2 · ~30 min

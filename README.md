@@ -3,11 +3,16 @@
 Backend de ChatBot, construido con FastAPI, SQLAlchemy (async) y PostgreSQL.
 
 Es un asistente virtual con un patrón agéntico coordinador ([spec 001](docs/specs/001-agentic-pattern-coordinator/spec.md)):
-un grafo de LangGraph por ámbito clasifica cada pregunta, la delega en un sub-agente por área de negocio que responde
-solo con las FAQ de su área (RAG con pgvector y Gemini) y combina las respuestas. Atiende dos canales:
+un grafo de LangGraph por ámbito clasifica cada mensaje y lo delega en sub-agentes por área de negocio. Cada sub-agente
+usa tools para consultar las FAQ y los procedimientos de su área (RAG con pgvector y Gemini), notificar al área y, en
+el chat web, derivar a un ejecutivo; un guardarraíl en código descarta las respuestas que no se apoyan en lo recuperado.
+Atiende dos canales:
 
 - **Chat web** (clientes, áreas externas) por WebSocket, con memoria por sesión y derivación a un ejecutivo en vivo.
-- **Google Chat** (colaboradores, áreas internas), con aviso al space de Google Chat del área cuando no hay respuesta.
+- **Google Chat** (colaboradores, áreas internas), con memoria por conversación y aviso al space de Google Chat del área cuando no hay respuesta.
+
+Si existe un procedimiento, el asistente explica los pasos, pide los datos que exige (validados en código) y publica la
+solicitud en el space del área para que una persona la ejecute.
 
 ## Requisitos
 
@@ -61,8 +66,11 @@ Properties usadas actualmente:
 | `login_lock_minutes` | Minutos de bloqueo de la cuenta | `15` |
 | `executive_reconnect_minutes` | Plazo para que un ejecutivo desconectado retome sus chats | `60` |
 | `google_chat_audience` | URL pública de `POST /api/v1/google-chat/events` (audiencia del token de Google) | — |
-| `google_chat_service_account_json` | JSON de la cuenta de servicio con permiso `chat.bot` (respuestas diferidas) | — |
+| `google_chat_service_account_json` | JSON de la cuenta de servicio con permiso `chat.bot` (respuestas diferidas y avisos a los spaces de las áreas) | — |
 | `google_chat_sync_timeout_seconds` | Segundos que se espera la respuesta antes de contestar "procesando" | `25` |
+| `google_chat_retention_days` | Días que se conserva la memoria de una conversación de Google Chat desde su último mensaje | `30` |
+| `agent_max_steps` | Pasos máximos (llamadas al modelo) del bucle de tools de cada sub-agente | `4` |
+| `procedure_max_attempts` | Intentos para entregar datos válidos de un procedimiento antes de abandonarlo | `3` |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
 
@@ -88,7 +96,8 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 |---|---|
 | `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y `chat_space` (space de Google Chat del área, `spaces/…`) |
 | `faq_category`, `faq` | Categorías y preguntas frecuentes de cada área. El embedding se calcula solo al usarlas |
-| `agent_prompt` | Prompts con las keys `classifier` (clasificador), `internal_agent` y `external_agent` (agente de cada canal, incluye cómo combinar respuestas de varias áreas) y `area_rules` (reglas comunes de todos los sub-agentes) |
+| `procedure`, `procedure_field` | Procedimientos de cada área (nombre y pasos que se explican al usuario) y los datos que exige cada uno, con su tipo (`text`, `email`, `phone`, `rut`, `number`, `date`). El embedding se calcula solo al usarlos |
+| `agent_prompt` | Prompts con las keys `classifier` (clasificador), `internal_agent` y `external_agent` (agente de cada canal, incluye cómo combinar respuestas de varias áreas) y `area_rules` (reglas comunes de todos los sub-agentes). El texto recomendado, con las cláusulas de protección frente a manipulación, está en [`prompts.md`](docs/specs/001-agentic-pattern-coordinator/prompts.md) |
 | `service_schedule` | Franja de atención por día (`weekday` 0 = lunes … 6 = domingo), en hora de Santiago |
 | `holiday` | Fechas sin atención |
 | `official_channel` | Canales oficiales que se muestran al cliente |
@@ -99,7 +108,20 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 uv run python -m src.cli.hash_password   # pide la contraseña sin mostrarla e imprime el hash Argon2
 ```
 
-Los cambios en áreas, FAQ y prompts se aplican desde el siguiente mensaje, sin reiniciar.
+Los cambios en áreas, FAQ, procedimientos y prompts se aplican desde el siguiente mensaje, sin reiniciar.
+
+La app de Google Chat debe ser **miembro del space de cada área** (y del space general) para poder publicar en él; si no
+lo es, el aviso falla y se pide al usuario contactar directamente con el área. Es configuración de Google Workspace.
+
+### Protección frente a manipulación
+
+```bash
+uv run python -m src.cli.jailbreak_check --url ws://127.0.0.1:8000/ws/v1/chat
+```
+
+Envía una batería de más de 20 intentos de manipulación (revelar el prompt, las herramientas o las áreas internas,
+"ignora tus instrucciones", juegos de rol…) y falla (código de salida 1) si alguna respuesta contiene fragmentos de los
+prompts de la BD, nombres de herramientas o áreas internas. Ejecútalo tras cambiar los prompts.
 
 ## Ejecución
 

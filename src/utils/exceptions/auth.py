@@ -9,3 +9,6 @@ class AccountLockedError(Exception):
 
 class InvalidSessionError(Exception):
     """La sesión no existe, está caducada o fue revocada."""
+
+class AuthNotConfiguredError(Exception):
+    """Falta la clave de firma de los tokens de ejecutivo o es demasiado corta."""

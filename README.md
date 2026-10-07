@@ -56,6 +56,7 @@ Properties usadas actualmente:
 | `web_max_sessions` | Sesiones web activas simultáneas | `50` |
 | `executive_max_chats` | Chats en vivo simultáneos por ejecutivo | `3` |
 | `executive_session_hours` | Duración de la sesión de un ejecutivo | `8` |
+| `jwt_secret` | Clave HS256 con la que se firman los JWT de los ejecutivos; al menos 32 caracteres (obligatoria). Cambiarla invalida todas las sesiones | — |
 | `login_max_attempts` | Intentos de login fallidos antes de bloquear la cuenta | `5` |
 | `login_lock_minutes` | Minutos de bloqueo de la cuenta | `15` |
 | `executive_reconnect_minutes` | Plazo para que un ejecutivo desconectado retome sus chats | `60` |
@@ -119,7 +120,7 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 |---|---|---|
 | `GET` | `/` | Liveness: responde `true` si el proceso está vivo, sin consultar la base de datos |
 | `GET` | `/health` | Verifica la base de datos. `200` si está disponible, `503` si no |
-| `POST` | `/api/v1/executives/login` | Login de ejecutivo: `{username, password}` → `{token, expires_at}`; `401` genérico |
+| `POST` | `/api/v1/executives/login` | Login de ejecutivo: `{username, password}` → `{token, expires_at}` (`token` es un JWT); `401` genérico |
 | `POST` | `/api/v1/executives/logout` | Revoca la sesión del `Authorization: Bearer` |
 | `GET` | `/api/v1/live-chats?status=waiting` | Chats en espera de la cola web, en orden de llegada (Bearer) |
 | `POST` | `/api/v1/live-chats/{id}/take` | Toma un chat en espera; devuelve el resumen del cliente (`409` si ya está asignado o se alcanzó el máximo) |
@@ -130,6 +131,9 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 |---|---|
 | `/ws/v1/chat?session_id=<uuid opcional>` | Chat web del cliente: bot, oferta de ejecutivo, datos de contacto, cola y chat en vivo |
 | `/ws/v1/executive` | Chat en vivo del ejecutivo; el primer mensaje debe ser `{type: "auth", token}` (si no, cierra con `4401`) |
+
+Los endpoints protegidos declaran el esquema HTTP Bearer (JWT) en OpenAPI: en `/docs`, el botón **Authorize** permite
+pegar el token del login. El JWT se valida también contra la sesión guardada, así que el logout lo revoca.
 
 Los mensajes de cada WebSocket están en la sección 4 del [plan](docs/specs/001-agentic-pattern-coordinator/plan.md).
 

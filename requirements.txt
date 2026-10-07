@@ -231,6 +231,8 @@ pydantic-settings==2.15.0
     #   fastapi
 pygments==2.21.0
     # via rich
+pyjwt==2.15.1
+    # via chatbot-backend
 python-dotenv==1.2.4
     # via
     #   pydantic-settings

@@ -31,12 +31,12 @@ async def get_chat_certs(http: httpx.AsyncClient) -> dict[str, str]:
         _certs_expire_at = time.monotonic() + (int(max_age.group(1)) if max_age else 0)
     return _certs
 
-async def verify_chat_token(authorization: str | None, audience: str, http: httpx.AsyncClient) -> None:
-    if not authorization or not authorization.startswith("Bearer "):
+async def verify_chat_token(token: str | None, audience: str, http: httpx.AsyncClient) -> None:
+    if not token:
         raise InvalidGoogleTokenError("Falta el token Bearer")
     try:
         certs = await get_chat_certs(http)
-        claims = jwt.decode(authorization.removeprefix("Bearer "), certs=certs, audience=audience)
+        claims = jwt.decode(token, certs=certs, audience=audience)
     except (ValueError, exceptions.GoogleAuthError, httpx.HTTPError) as exc:
         raise InvalidGoogleTokenError(str(exc)) from exc
     if claims.get("iss") != CHAT_ISSUER:

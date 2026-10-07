@@ -2,10 +2,12 @@ import asyncio
 import logging
 from typing import Annotated
 import httpx
-from fastapi import APIRouter, Header, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.database.session import SessionFactoryDep
 from src.interfaces.google_chat import ChatEvent
+from src.routers.executive import bearer_scheme
 from src.services.google_chat import build_chat_api_client, handle_event, verify_chat_token
 from src.services.property import get_float_property, get_str_property
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -22,14 +24,15 @@ async def google_chat_events(
     event: ChatEvent,
     request: Request,
     session_factory: SessionFactoryDep,
-    authorization: Annotated[str | None, Header()] = None,
+    # Mismo esquema Bearer JWT que los ejecutivos, pero el token lo firma Google Chat.
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)],
 ) -> dict[str, str]:
     logger.debug("Evento de Google Chat recibido: %s", event.type)
     try:
         async with session_factory() as session, httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as http:
             audience = await get_str_property(session, "google_chat_audience")
             timeout = await get_float_property(session, "google_chat_sync_timeout_seconds", 25)
-            await verify_chat_token(authorization, audience, http)
+            await verify_chat_token(credentials.credentials if credentials else None, audience, http)
     except InvalidGoogleTokenError as exc:
         logger.warning("Petición de Google Chat rechazada: %s", exc)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token de Google Chat no válido") from exc

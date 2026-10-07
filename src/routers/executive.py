@@ -1,7 +1,8 @@
 import logging
 from datetime import timedelta
 from typing import Annotated
-from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.database.session import SessionDep, SessionFactoryDep, commit
@@ -12,19 +13,22 @@ from src.interfaces.live_chat import ChatSummary
 from src.models.executive import Executive
 from src.models.live_chat_message import MessageSender
 from src.services.executive_auth import (
-    ExecutiveRepository, SqlExecutiveRepository, authenticate, load_auth_settings, login, logout)
+    ExecutiveRepository, SqlExecutiveRepository, authenticate, load_auth_settings, load_jwt_secret, login, logout)
 from src.services.live_chat import (
     executive_heartbeat, get_assigned_chat, get_message, mark_executive_disconnected, post_message, resume)
 from src.services.property import get_int_property
 from src.services.realtime import ConnectionHub, Event, get_hub
 from src.utils.clock import Clock, get_clock
-from src.utils.exceptions.auth import AccountLockedError, InvalidCredentialsError, InvalidSessionError
+from src.utils.exceptions.auth import (
+    AccountLockedError, AuthNotConfiguredError, InvalidCredentialsError, InvalidSessionError)
 from src.utils.exceptions.database import DatabaseUnavailableError
 
 router = APIRouter(tags=["Ejecutivos"])
 logger = logging.getLogger(__name__)
 
 INVALID_CREDENTIALS = "Usuario o contraseña incorrectos"
+# auto_error=False: sin token se responde 401 con WWW-Authenticate (el error automático de FastAPI es 403).
+bearer_scheme = HTTPBearer(bearerFormat="JWT", auto_error=False)
 
 def get_executive_repository(session: SessionDep) -> ExecutiveRepository:
     return SqlExecutiveRepository(session)
@@ -33,18 +37,23 @@ RepositoryDep = Annotated[ExecutiveRepository, Depends(get_executive_repository)
 ClockDep = Annotated[Clock, Depends(get_clock)]
 HubDep = Annotated[ConnectionHub, Depends(get_hub)]
 
-def bearer_token(authorization: str | None) -> str:
-    if not authorization or not authorization.startswith("Bearer "):
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sesión no válida")
-    return authorization.removeprefix("Bearer ")
+BearerDep = Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]
 
-async def get_current_executive(
-    repo: RepositoryDep, clock: ClockDep, authorization: Annotated[str | None, Header()] = None
-) -> Executive:
+def unauthorized() -> HTTPException:
+    return HTTPException(status.HTTP_401_UNAUTHORIZED, "Sesión no válida", headers={"WWW-Authenticate": "Bearer"})
+
+def bearer_token(credentials: HTTPAuthorizationCredentials | None) -> str:
+    if credentials is None:
+        raise unauthorized()
+    return credentials.credentials
+
+async def get_current_executive(session: SessionDep, repo: RepositoryDep, clock: ClockDep, credentials: BearerDep) -> Executive:
     try:
-        return await authenticate(repo, clock, bearer_token(authorization))
+        return await authenticate(repo, clock, await load_jwt_secret(session), bearer_token(credentials))
     except InvalidSessionError as exc:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Sesión no válida") from exc
+        raise unauthorized() from exc
+    except AuthNotConfiguredError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Servicio no disponible") from exc
     except DatabaseUnavailableError as exc:
         logger.error("Autenticación de ejecutivo: base de datos no disponible (%s)", exc)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Servicio no disponible") from exc
@@ -61,16 +70,18 @@ async def executive_login(body: LoginRequest, session: SessionDep, repo: Reposit
         # El mismo mensaje para todo: no se revela si el usuario existe o está bloqueado.
         logger.warning("Login de ejecutivo rechazado: %s", type(exc).__name__)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, INVALID_CREDENTIALS) from exc
+    except AuthNotConfiguredError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Servicio no disponible") from exc
     except DatabaseUnavailableError as exc:
         logger.error("Login de ejecutivo: base de datos no disponible (%s)", exc)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Servicio no disponible") from exc
 
 @router.post("/api/v1/executives/logout", status_code=status.HTTP_204_NO_CONTENT, responses={401: {}, 503: {}})
-async def executive_logout(
-    executive: CurrentExecutive, repo: RepositoryDep, authorization: Annotated[str | None, Header()] = None
-) -> None:
+async def executive_logout(executive: CurrentExecutive, session: SessionDep, repo: RepositoryDep, credentials: BearerDep) -> None:
     try:
-        await logout(repo, bearer_token(authorization))
+        await logout(repo, await load_jwt_secret(session), bearer_token(credentials))
+    except AuthNotConfiguredError as exc:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Servicio no disponible") from exc
     except DatabaseUnavailableError as exc:
         logger.error("Logout de ejecutivo: base de datos no disponible (%s)", exc)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Servicio no disponible") from exc
@@ -84,15 +95,16 @@ async def executive_ws(websocket: WebSocket, session_factory: SessionFactoryDep,
     try:
         token = ExecutiveAuth.model_validate(await websocket.receive_json()).token
         async with session_factory() as session:
-            executive = await authenticate(SqlExecutiveRepository(session), clock, token)
+            secret = await load_jwt_secret(session)
+            executive = await authenticate(SqlExecutiveRepository(session), clock, secret, token)
             window = timedelta(minutes=await get_int_property(session, "executive_reconnect_minutes", 60))
             chats = await resume(session, executive.id, clock.now(), window)
             await commit(session)
     except (ValidationError, InvalidSessionError):
         await websocket.close(code=CLOSE_UNAUTHORIZED)
         return
-    except DatabaseUnavailableError as exc:
-        logger.error("WebSocket de ejecutivo: base de datos no disponible al conectar (%s)", exc)
+    except (AuthNotConfiguredError, DatabaseUnavailableError) as exc:
+        logger.error("WebSocket de ejecutivo: no se pudo autenticar al conectar (%s)", type(exc).__name__)
         await websocket.close(code=CLOSE_INTERNAL_ERROR)
         return
 
@@ -119,7 +131,7 @@ async def executive_ws(websocket: WebSocket, session_factory: SessionFactoryDep,
                 continue
             async with session_factory() as session:
                 # La sesión puede caducar en mitad de un chat: se trata como una desconexión del ejecutivo.
-                await authenticate(SqlExecutiveRepository(session), clock, token)
+                await authenticate(SqlExecutiveRepository(session), clock, secret, token)
                 if isinstance(message, ExecutivePing):
                     await executive_heartbeat(session, executive_id, clock.now())
                 else:

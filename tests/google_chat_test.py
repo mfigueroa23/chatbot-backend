@@ -65,19 +65,19 @@ def reset_certs_cache():
 @pytest.mark.anyio
 async def test_token_valido_se_acepta():
     async with certs_client() as http:
-        await verify_chat_token(f"Bearer {chat_token()}", AUDIENCE, http)
+        await verify_chat_token(chat_token(), AUDIENCE, http)
 
 
 @pytest.mark.anyio
 @pytest.mark.parametrize(
-    "authorization",
-    [None, f"Bearer {chat_token(key=OTHER_KEY)}", f"Bearer {chat_token(audience='https://otra.app')}"],
+    "token",
+    [None, chat_token(key=OTHER_KEY), chat_token(audience="https://otra.app")],
     ids=["ausente", "firma_invalida", "audiencia_distinta"],
 )
-async def test_token_invalido_se_rechaza(authorization: str | None):
+async def test_token_invalido_se_rechaza(token: str | None):
     async with certs_client() as http:
         with pytest.raises(InvalidGoogleTokenError):
-            await verify_chat_token(authorization, AUDIENCE, http)
+            await verify_chat_token(token, AUDIENCE, http)
 
 
 def message_event(text: str, argument_text: str | None = None, space_type: str = "DIRECT_MESSAGE") -> ChatEvent:
@@ -180,7 +180,7 @@ def test_slow_responde_procesando_y_publica_en_el_hilo_original(monkeypatch: pyt
     async def build_chat_api_client(session, http):
         return FakeChatApiClient()
 
-    async def verify_chat_token(authorization, audience, http):
+    async def verify_chat_token(token, audience, http):
         return None
 
     async def slow_handle_event(event, session):

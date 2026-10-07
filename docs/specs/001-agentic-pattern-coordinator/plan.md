@@ -146,7 +146,7 @@ El backend es el dueño de los contratos. El frontend web y el panel de ejecutiv
 - **D10 — Temporizadores con un barrido periódico de 30 s y advisory lock.** Sobrevive al reinicio de pods y reutiliza el patrón de `alembic/env.py`. El cierre ocurre como mucho 30 s después del plazo. *Descartada:* `asyncio` timers por chat — se pierden si el pod muere.
 - **D11 — Detección de desconexiones por cierre del WebSocket más heartbeat (`last_seen_at`, umbral 90 s).** Un pod que muere no avisa del cierre de sus sockets. *Descartada:* confiar solo en el evento de cierre — dejaría sesiones "conectadas" que bloquean el límite de 50.
 - **D12 — Límite de 50 contado en la BD bajo `pg_advisory_xact_lock`.** Es global entre pods y evita que dos conexiones simultáneas lo superen. *Descartada:* un contador en memoria por pod — no es global.
-- **D13 — Sesión del ejecutivo con un token opaco aleatorio de 32 bytes, guardado como sha256.** Se puede revocar (logout) y no necesita otra librería. *Descartada:* JWT — exige una dependencia más y no se revoca sin tabla.
+- **D13 — Sesión del ejecutivo con un JWT HS256 (`sub`, `jti`, `exp`) firmado con la property `jwt_secret`, revocable porque la BD guarda el sha256 del `jti`.** Cambiada el 2026-10-07 a petición del usuario (antes: token opaco aleatorio), para declarar el esquema Bearer JWT en OpenAPI; añade la dependencia PyJWT, aprobada por el usuario. El JWT se valida y además se busca su sesión, así el logout lo invalida. *Descartada:* JWT sin tabla de sesiones — no se podría revocar.
 - **D14 — Login con respuesta genérica, también para cuentas bloqueadas o inexistentes, y verificación con un hash ficticio.** Cumple RF-71 y evita enumerar usuarios por tiempos de respuesta. *Descartada:* un mensaje "cuenta bloqueada" — revela que el usuario existe.
 - **D15 — Google Chat como app de eventos de interacción, con audiencia = URL del endpoint.** Es el formato documentado del objeto `Event` y el más simple de validar. *Descartada:* complemento de Google Workspace — otro formato de eventos y de respuestas sin beneficio para esta spec.
 - **D16 — Token de Google verificado con `google.auth.jwt.decode` y certificados cacheados por httpx; OAuth de la cuenta de servicio por JWT-bearer.** No requiere `requests` y no bloquea el event loop. *Descartada:* `google.auth.transport.requests` — añade `requests` y es síncrono.
@@ -160,6 +160,7 @@ El backend es el dueño de los contratos. El frontend web y el panel de ejecutiv
   - `gemini_model`, `gemini_api_key`, `gemini_embedding_model` (`gemini-embedding-001`).
   - `google_chat_audience` (URL pública del endpoint) y `google_chat_service_account_json`.
   - `smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`, `smtp_from`, `smtp_starttls`.
+  - `jwt_secret` (clave HS256 de al menos 32 caracteres).
 - **Con valor por defecto:**
   - **RAG y LLM:** `rag_top_k` (4), `rag_min_similarity` (0.75), `llm_timeout_seconds` (20).
   - **Sesiones web:** `web_session_retention_days` (30), `web_max_sessions` (50).

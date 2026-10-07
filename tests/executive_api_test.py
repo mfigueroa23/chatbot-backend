@@ -15,6 +15,7 @@ from tests.fakes import FakeClock, FakeExecutiveRepository, FakeHub, assigned_ch
 
 PASSWORD = "Clave-Segura-123"
 GENERIC_ERROR = {"detail": "Usuario o contraseña incorrectos"}
+JWT_SECRET = "clave-de-firma-de-pruebas-con-32-caracteres"
 
 
 class DownRepository(FakeExecutiveRepository):
@@ -27,7 +28,7 @@ def repo():
     repo = FakeExecutiveRepository([executive(password_hasher.hash(PASSWORD))])
     app.dependency_overrides[get_executive_repository] = lambda: repo
     app.dependency_overrides[get_clock] = lambda: FakeClock(datetime(2026, 10, 7, 12, tzinfo=UTC))
-    app.dependency_overrides[get_session] = lambda: property_session({"login_max_attempts": "2"})
+    app.dependency_overrides[get_session] = lambda: property_session({"login_max_attempts": "2", "jwt_secret": JWT_SECRET})
     yield repo
     app.dependency_overrides.clear()
 
@@ -67,7 +68,31 @@ def test_logout_revoca_la_sesion(repo: FakeExecutiveRepository):
 
 
 def test_logout_sin_token_responde_401(repo: FakeExecutiveRepository):
-    assert TestClient(app).post("/api/v1/executives/logout").status_code == 401
+    response = TestClient(app).post("/api/v1/executives/logout")
+
+    assert response.status_code == 401
+    assert response.headers["WWW-Authenticate"] == "Bearer"
+
+
+def test_login_sin_clave_jwt_configurada_responde_503(repo: FakeExecutiveRepository):
+    app.dependency_overrides[get_session] = lambda: property_session({"jwt_secret": "corta"})
+
+    assert login().status_code == 503
+
+
+def test_openapi_declara_el_bearer_jwt_en_los_endpoints_protegidos():
+    schema = TestClient(app).get("/openapi.json").json()
+    secured = {(path, method) for path, methods in schema["paths"].items()
+               for method, operation in methods.items() if operation.get("security")}
+
+    assert schema["components"]["securitySchemes"]["HTTPBearer"] == {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}
+    assert secured == {
+        ("/api/v1/executives/logout", "post"),
+        ("/api/v1/live-chats", "get"),
+        ("/api/v1/live-chats/{chat_id}/take", "post"),
+        ("/api/v1/live-chats/{chat_id}/close", "post"),
+        ("/api/v1/google-chat/events", "post"),
+    }
 
 
 # --- live-chats ---------------------------------------------------------------------------------------------------

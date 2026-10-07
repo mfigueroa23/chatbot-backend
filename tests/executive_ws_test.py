@@ -26,7 +26,7 @@ class Calls:
 def calls(monkeypatch: pytest.MonkeyPatch):
     calls = Calls()
 
-    async def authenticate(repo, clock, token):
+    async def authenticate(repo, clock, secret, token):
         if token not in calls.valid_tokens:
             raise InvalidSessionError()
         return EXECUTIVE
@@ -53,7 +53,7 @@ def calls(monkeypatch: pytest.MonkeyPatch):
                            ("get_assigned_chat", get_assigned_chat), ("post_message", post_message),
                            ("get_message", get_message)]:
         monkeypatch.setattr(executive_router, name, function)
-    app.dependency_overrides[get_session_factory] = lambda: lambda: property_session({})
+    app.dependency_overrides[get_session_factory] = lambda: lambda: property_session({"jwt_secret": "clave-de-firma-de-pruebas-con-32-caracteres"})
     app.dependency_overrides[get_hub] = lambda: calls.hub
     yield calls
     app.dependency_overrides.clear()

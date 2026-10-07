@@ -6,6 +6,7 @@ from typing import Protocol
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from src.models.chat_thread import ChatThread
 from src.models.executive import Executive
 from src.models.live_chat import CloseReason, LiveChat, LiveChatStatus
 from src.models.web_session import WebPhase, WebSession
@@ -60,6 +61,12 @@ async def run_sweep(session: AsyncSession, clock: Clock, hub: ConnectionHub, che
         if expired:
             # El borrado en cascada se lleva también sus chats en vivo y mensajes.
             await session.execute(delete(WebSession).where(WebSession.id.in_(expired)))
+        chat_retention_days = await get_int_property(session, "google_chat_retention_days", 30)
+        expired_threads = await expired_chat_thread_ids(session, now, chat_retention_days)
+        for thread_id in expired_threads:
+            await checkpointer.adelete_thread(thread_id)
+        if expired_threads:
+            await session.execute(delete(ChatThread).where(ChatThread.conversation_id.in_(expired_threads)))
         await session.commit()
         return True
     except (SQLAlchemyError, OSError) as exc:
@@ -99,6 +106,10 @@ async def disconnect_stale(session: AsyncSession, hub: ConnectionHub, now: datet
 async def expired_session_ids(session: AsyncSession, now: datetime, retention_days: int) -> list[uuid.UUID]:
     return list(await session.scalars(select(WebSession.id).where(
         WebSession.last_message_at <= now - timedelta(days=retention_days))))
+
+async def expired_chat_thread_ids(session: AsyncSession, now: datetime, retention_days: int) -> list[str]:
+    return list(await session.scalars(select(ChatThread.conversation_id).where(
+        ChatThread.last_message_at <= now - timedelta(days=retention_days))))
 
 async def sweep_forever(
     session_factory: async_sessionmaker[AsyncSession], clock: Clock, hub: ConnectionHub, checkpointer: Checkpointer

@@ -3,6 +3,7 @@ from datetime import UTC, datetime, time
 from typing import cast
 import pytest
 from langgraph.checkpoint.memory import InMemorySaver
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents import strategies
 from src.agents.graph import AgentContext, Catalog, build_graph
@@ -15,7 +16,8 @@ from src.services.procedures import FieldSpec
 from src.models.official_channel import OfficialChannel
 from src.models.web_session import WebPhase, WebSession
 from src.services import chat_orchestrator
-from src.services.chat_orchestrator import MIXED_SCOPE, UNAVAILABLE, handle_internal_message, handle_web_message
+from src.services.chat_orchestrator import (
+    INTERNAL_NOTIFICATION_FAILED, MIXED_SCOPE, UNAVAILABLE, handle_internal_message, handle_web_message)
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
 from tests.fakes import FakeAgentLLM, FakeClock, FakeNotifier, FakeRetriever, property_session, tool_call, web_session
@@ -49,8 +51,12 @@ def use_llm(monkeypatch: pytest.MonkeyPatch, llm: FakeAgentLLM, hits=HITS):
     monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
 
 
-async def ask(text: str = "¿Cuándo pagan el sueldo?") -> str:
-    return await handle_internal_message(SESSION, text, "Ana Pérez", "ana@autofin.cl")
+ANA = Requester("Ana Pérez", "ana@autofin.cl", "google_chat")
+INTERNAL_GRAPH = build_graph(AreaScope.internal)
+
+
+async def ask(text: str = "¿Cuándo pagan el sueldo?", graph=INTERNAL_GRAPH, conversation_id: str = "spaces/AAA") -> str:
+    return await handle_internal_message(SESSION, graph, text, ANA, conversation_id)
 
 
 @pytest.mark.anyio
@@ -122,6 +128,7 @@ def schedule(monkeypatch: pytest.MonkeyPatch):
 
 CONTRACT = ProcedureHit(7, "Copia del contrato", "El área envía la copia", [FieldSpec("rut", "RUT del titular", FieldKind.rut)], 0.9)
 PROCEDURES = {1: [CONTRACT]}
+LOAD = ProcedureHit(9, "Cargar documento", "Gestión lo carga", [FieldSpec("documento", "Número de documento", FieldKind.number)], 0.9)
 
 
 def use_external_llm(monkeypatch: pytest.MonkeyPatch, llm: FakeAgentLLM, notifier_for_tools: FakeNotifier | None = None):
@@ -257,7 +264,7 @@ async def test_internal_libera_la_conexion_antes_de_llamar_al_modelo(monkeypatch
     llm = CommitAwareLLM(session)
     use_llm(monkeypatch, llm)
 
-    await handle_internal_message(cast(AsyncSession, session), "¿Cuándo pagan?", "Ana Pérez", "ana@autofin.cl")
+    await handle_internal_message(cast(AsyncSession, session), INTERNAL_GRAPH, "¿Cuándo pagan?", ANA, "spaces/AAA")
 
     assert llm.commits_at_classify >= 1
 
@@ -309,3 +316,57 @@ async def test_web_procedimiento_notificado_confirma_al_cliente(monkeypatch: pyt
     messages = dumps(await ask_web(web_session(), "Quiero copia de mi contrato"))
 
     assert messages == [{"type": "message", "from": "bot", "text": "Listo, el área gestionará tu solicitud."}]
+
+
+
+# --- Memoria del canal interno -----------------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_internal_thread_recuerda_la_conversacion_y_aisla_otros_hilos(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
+    llm = FakeAgentLLM(area_ids=[10], answers={10: "El día 30"})
+    use_llm(monkeypatch, llm)
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    await ask("¿Cuándo pagan?", graph, "spaces/AAA/threads/T1")
+    await ask("¿Y el bono?", graph, "spaces/AAA/threads/T1")
+    await ask("Hola", graph, "spaces/AAA/threads/T2")
+
+    assert [str(m.content) for m in llm.histories[1]] == ["¿Cuándo pagan?", "El día 30"]
+    assert llm.histories[2] == []
+
+
+@pytest.mark.anyio
+async def test_internal_notification_fallida_pide_contactar_al_area(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
+    llm = FakeAgentLLM(area_ids=[10], steps={"Remuneraciones": [
+        tool_call("notificar_area", procedimiento_id=9, datos=[{"campo": "documento", "valor": "123"}])]})
+
+    async def build_agent_context(session, requester):
+        return AgentContext(llm, FakeRetriever(HITS, {10: [LOAD]}), load_catalog, FakeNotifier(fail=True), requester)
+
+    monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
+
+    assert await ask("Carga el documento 123") == INTERNAL_NOTIFICATION_FAILED
+
+
+class StatementSession(CountingSession):
+    def __init__(self):
+        super().__init__()
+        self.statements = []
+
+    async def execute(self, statement):
+        self.statements.append(statement)
+        return []
+
+
+@pytest.mark.anyio
+async def test_internal_registra_la_actividad_en_chat_thread(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
+    use_llm(monkeypatch, FakeAgentLLM(area_ids=[10], answers={10: "El día 30"}))
+    session = StatementSession()
+
+    await handle_internal_message(cast(AsyncSession, session), INTERNAL_GRAPH, "¿Cuándo pagan?", ANA, "spaces/AAA/threads/T1")
+
+    upsert = next(statement for statement in session.statements if "chat_thread" in str(statement))
+    compiled = upsert.compile(dialect=postgresql.dialect())
+    assert "INSERT INTO chat_thread" in str(compiled)
+    assert "ON CONFLICT (conversation_id) DO UPDATE SET last_message_at" in str(compiled)
+    assert compiled.params["conversation_id"] == "spaces/AAA/threads/T1"

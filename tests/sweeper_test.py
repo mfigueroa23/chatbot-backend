@@ -99,7 +99,11 @@ def steps(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     monkeypatch.setattr(sweeper, "close_waiting_chats", step("fin de horario"))
     monkeypatch.setattr(sweeper, "close_timed_out_chats", step("plazo del ejecutivo"))
     monkeypatch.setattr(sweeper, "disconnect_stale", step("heartbeats"))
+    async def expired_chat_thread_ids(session, now, retention_days):
+        return []
+
     monkeypatch.setattr(sweeper, "expired_session_ids", expired_session_ids)
+    monkeypatch.setattr(sweeper, "expired_chat_thread_ids", expired_chat_thread_ids)
     return steps
 
 
@@ -126,3 +130,23 @@ async def test_runner_con_el_lock_borra_el_hilo_de_cada_sesion_caducada(steps: l
     assert steps == ["fin de horario", "plazo del ejecutivo", "heartbeats"]
     assert checkpointer.deleted == [str(session_id) for session_id in EXPIRED]
     assert session.committed
+
+
+
+@pytest.mark.anyio
+async def test_runner_chat_thread_caducado_borra_su_memoria(steps: list[str], monkeypatch: pytest.MonkeyPatch):
+    seen_retention: list[int] = []
+
+    async def expired_chat_thread_ids(session, now, retention_days):
+        seen_retention.append(retention_days)
+        return ["spaces/AAA", "spaces/BBB/threads/T1"]
+
+    monkeypatch.setattr(sweeper, "expired_chat_thread_ids", expired_chat_thread_ids)
+    session = LockSession(locked=True)
+    checkpointer = FakeCheckpointer()
+
+    await run_sweep(cast(AsyncSession, session), FakeClock(CLOSING_TIME), FakeHub(), checkpointer)
+
+    assert checkpointer.deleted == [*map(str, EXPIRED), "spaces/AAA", "spaces/BBB/threads/T1"]
+    assert seen_retention == [30]
+    assert any("DELETE FROM chat_thread" in str(statement) for statement in session.statements)

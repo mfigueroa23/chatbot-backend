@@ -30,6 +30,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ) as pool:
         app.state.checkpointer = AsyncPostgresSaver(pool, serde=checkpoint_serializer())
         app.state.external_graph = build_graph(AreaScope.external, app.state.checkpointer)
+        app.state.internal_graph = build_graph(AreaScope.internal, app.state.checkpointer)
         app.state.hub = ConnectionHub()
         sweeper = asyncio.create_task(sweep_forever(SessionLocal, SystemClock(), app.state.hub, app.state.checkpointer))
         yield

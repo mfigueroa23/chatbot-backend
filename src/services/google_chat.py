@@ -3,8 +3,10 @@ import time
 import httpx
 from google.auth import exceptions, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.agents.graph import AgentGraph
 from src.interfaces.google_chat import ChatEvent
 from src.models.business_area import AreaScope
+from src.services.area_notifier import Requester
 from src.services.business_data import get_areas
 from src.services.chat_orchestrator import handle_internal_message
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
@@ -37,7 +39,15 @@ async def verify_chat_token(token: str | None, audience: str, http: httpx.AsyncC
     if claims.get("iss") != CHAT_ISSUER:
         raise InvalidGoogleTokenError("El emisor del token no es Google Chat")
 
-async def handle_event(event: ChatEvent, session: AsyncSession) -> dict[str, str]:
+def conversation_id(event: ChatEvent) -> str:
+    # En un mensaje directo cada mensaje trae un hilo nuevo: la conversación es el space. En un space de grupo, el hilo.
+    space = event.space.name if event.space else ""
+    if event.space is not None and event.space.space_type == "DIRECT_MESSAGE":
+        return space
+    thread = event.message.thread if event.message else None
+    return thread.name if thread else space
+
+async def handle_event(event: ChatEvent, session: AsyncSession, graph: AgentGraph) -> dict[str, str]:
     if event.type == "ADDED_TO_SPACE":
         areas = await get_areas(session, AreaScope.internal)
         names = ", ".join(area.name for area in areas)
@@ -48,5 +58,5 @@ async def handle_event(event: ChatEvent, session: AsyncSession) -> dict[str, str
     # En un space solo cuenta el texto que acompaña a la mención; en un mensaje directo, el texto completo.
     text = event.message.text if is_dm else event.message.argument_text
     user = event.user
-    return {"text": await handle_internal_message(
-        session, text or "", user.display_name if user else None, user.email if user else None)}
+    requester = Requester(user.display_name if user else None, user.email if user else None, "google_chat")
+    return {"text": await handle_internal_message(session, graph, text or "", requester, conversation_id(event))}

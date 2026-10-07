@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 77/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 81/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -274,16 +274,16 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "web and (notification or derivar)"` pasa.
 
 ## Fase 17 — Ampliación: memoria de Google Chat
-- [ ] **T-80 — Calcular la conversación y la identidad en `handle_event`** · RF-97, RF-103, RF-104 · ~20 min
+- [x] **T-80 — Calcular la conversación y la identidad en `handle_event`** · RF-97, RF-103, RF-104 · ~20 min
   `conversation_id(event)`: el space en un mensaje directo y el hilo en un space de grupo; se pasa con la identidad al orquestador.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k conversation` pasa con un mensaje directo y una mención en un space.
-- [ ] **T-81 — Dar memoria al grafo interno** · RF-61, RF-103, RF-104 · ~30 min (depende de T-80)
+- [x] **T-81 — Dar memoria al grafo interno** · RF-61, RF-103, RF-104 · ~30 min (depende de T-80)
   `app.state.internal_graph` con el checkpointer en el lifespan; `handle_internal_message(session, graph, text, requester, conversation_id)` con `thread_id = conversation_id`; `notification_failed` ⇒ "contacta directamente".
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "internal and (thread or notification)"` pasa: el segundo mensaje del mismo hilo ve el primero, otro hilo del mismo space no lo ve, y el fallo de notificación da el mensaje de RF-61.
-- [ ] **T-82 — Registrar la actividad de cada conversación de Google Chat** · RF-105 · ~20 min
+- [x] **T-82 — Registrar la actividad de cada conversación de Google Chat** · RF-105 · ~20 min
   Actualizar `chat_thread.last_message_at` en cada mensaje interno (insert o update).
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k chat_thread` pasa, comprobando sobre la sentencia compilada el upsert por `conversation_id`.
-- [ ] **T-83 — Borrar en el barrido las conversaciones caducadas** · RF-105 · ~25 min
+- [x] **T-83 — Borrar en el barrido las conversaciones caducadas** · RF-105 · ~25 min
   `run_sweep` borra los hilos con `last_message_at` anterior a `google_chat_retention_days` (30 por defecto): `adelete_thread` y la fila de `chat_thread`.
   Hecho cuando: `uv run pytest -q tests/sweeper_test.py -k chat_thread` pasa: `adelete_thread` se llama una vez por conversación caducada.
 

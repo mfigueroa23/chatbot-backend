@@ -1,4 +1,7 @@
 import logging
+from datetime import datetime
+from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.graph import AgentContext, AgentGraph, Catalog, build_graph, load_catalog, run_agent
 from src.agents.llm import build_gemini_llm
@@ -8,6 +11,7 @@ from src.database.session import SessionLocal, commit
 from src.interfaces.web_chat import (
     Channel, ErrorMessage, OfferHuman, OfficialChannels, Queued, RequestContact, ServerMessage, TextMessage)
 from src.models.business_area import AreaScope
+from src.models.chat_thread import ChatThread
 from src.models.web_session import WebPhase, WebSession
 from src.services.business_data import get_official_channels
 from src.services.live_chat import enqueue
@@ -15,7 +19,7 @@ from src.services.area_notifier import AreaNotifier, Requester
 from src.services.message_validation import MAX_MESSAGE_LENGTH, validate_user_message
 from src.services.property import get_int_property
 from src.services.web_session import answer_offer, reset_to_bot, start_offer, submit_contact, touch_last_message
-from src.utils.clock import Clock
+from src.utils.clock import Clock, SystemClock
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.message import EmptyMessageError, MessageTooLongError
@@ -33,8 +37,6 @@ HUMAN_REQUESTED = "El cliente pidió hablar con un ejecutivo."
 INTERNAL_NOTIFICATION_FAILED = "No pude avisar al área de tu solicitud. Por favor, contacta directamente con el área."
 WEB_NOTIFICATION_FAILED = "No pude enviar tu solicitud al área. Puedes contactarnos por nuestros canales oficiales."
 
-# El canal interno no tiene memoria: su grafo no lleva checkpointer.
-internal_graph = build_graph(AreaScope.internal)
 
 async def build_agent_context(session: AsyncSession, requester: Requester | None) -> AgentContext:
     return AgentContext(
@@ -57,7 +59,19 @@ async def release_connection(session: AsyncSession) -> None:
     # retenerla con 50 sesiones a la vez agota el pool de la BD. La sesión sigue usable después.
     await commit(session)
 
-async def handle_internal_message(session: AsyncSession, text: str, user_name: str | None, user_email: str | None) -> str:
+async def touch_chat_thread(session: AsyncSession, conversation_id: str, now: datetime) -> None:
+    # La última actividad decide cuándo el barrido borra la memoria de la conversación.
+    statement = insert(ChatThread).values(conversation_id=conversation_id, last_message_at=now)
+    try:
+        await session.execute(statement.on_conflict_do_update(
+            index_elements=[ChatThread.conversation_id], set_={"last_message_at": now}))
+    except (SQLAlchemyError, OSError) as exc:
+        raise DatabaseUnavailableError(str(exc)) from exc
+
+async def handle_internal_message(
+    session: AsyncSession, graph: AgentGraph, text: str, requester: Requester, conversation_id: str,
+    clock: Clock = SystemClock(),
+) -> str:
     try:
         question = validate_user_message(text)
     except EmptyMessageError:
@@ -65,9 +79,10 @@ async def handle_internal_message(session: AsyncSession, text: str, user_name: s
     except MessageTooLongError:
         return TOO_LONG_MESSAGE
     try:
-        context = await build_agent_context(session, Requester(user_name, user_email, "google_chat"))
+        await touch_chat_thread(session, conversation_id, clock.now())
+        context = await build_agent_context(session, requester)
         await release_connection(session)
-        result = await run_agent(internal_graph, question, context)
+        result = await run_agent(graph, question, context, conversation_id)
         if result.outcome == "mixed_scope":
             return MIXED_SCOPE
         if result.outcome == "notification_failed":
@@ -75,7 +90,7 @@ async def handle_internal_message(session: AsyncSession, text: str, user_name: s
         if result.reply is not None:
             return result.reply
         strategy = InternalStrategy(session, AreaNotifier(SessionLocal))
-        reply = await strategy.on_no_answer(NoAnswerContext(question, result.areas, user_name, user_email))
+        reply = await strategy.on_no_answer(NoAnswerContext(question, result.areas, requester.name, requester.contact))
         return reply.text
     except LlmNotConfiguredError:
         return UNAVAILABLE

@@ -43,7 +43,7 @@ async def google_chat_events(
 
     async def process() -> dict[str, str]:
         async with session_factory() as session:
-            return await handle_event(event, session)
+            return await handle_event(event, session, request.app.state.internal_graph)
 
     task = asyncio.create_task(process())
     try:

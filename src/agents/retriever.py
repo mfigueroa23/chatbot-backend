@@ -34,6 +34,7 @@ class ProcedureHit:
 class Retriever(Protocol):
     async def search_faq(self, area_id: int, query: str) -> list[FaqHit]: ...
     async def search_procedures(self, area_id: int, query: str) -> list[ProcedureHit]: ...
+    async def get_procedure(self, area_id: int, procedure_id: int) -> ProcedureHit | None: ...
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None: ...
 
 class GeminiEmbedder:
@@ -105,6 +106,23 @@ class FaqRetriever:
                          [FieldSpec(f.name, f.label, f.kind) for f in fields if f.procedure_id == row.id], 1 - row.distance)
             for row in rows
         ]
+
+    async def get_procedure(self, area_id: int, procedure_id: int) -> ProcedureHit | None:
+        # Solo procedimientos activos del área del sub-agente: el modelo no puede pedir los de otra área.
+        try:
+            async with self._session_factory() as session:
+                procedure = await session.scalar(select(Procedure).where(
+                    Procedure.id == procedure_id, Procedure.area_id == area_id, Procedure.active))
+                if procedure is None:
+                    return None
+                fields = list((await session.execute(
+                    select(ProcedureField).where(ProcedureField.procedure_id == procedure_id)
+                    .order_by(ProcedureField.position, ProcedureField.id)
+                )).scalars())
+        except (SQLAlchemyError, OSError) as exc:
+            raise DatabaseUnavailableError(str(exc)) from exc
+        return ProcedureHit(procedure.id, procedure.name, procedure.steps,
+                            [FieldSpec(f.name, f.label, f.kind) for f in fields], 1.0)
 
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
         stale_faqs = (

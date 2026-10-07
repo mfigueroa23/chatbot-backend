@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 68/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 74/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -243,22 +243,22 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k refresh` pasa con un caso en el que el embedder falso solo recibe los procedimientos desactualizados.
 
 ## Fase 15 — Ampliación: sub-agentes con tools
-- [ ] **T-71 — Definir `AgentLLM.step` y sus tipos** · (habilita RF-84–90) · ~25 min
+- [x] **T-71 — Definir `AgentLLM.step` y sus tipos** · (habilita RF-84–90) · ~25 min
   En `src/agents/llm.py`: `ToolSpec`, `ToolCall`, `ToolCalls`, `FinalText` y `AgentStep`; `step` sustituye a `answer`. `FakeAgentLLM` guionizado con una lista de pasos por área.
   Hecho cuando: `uv run pyright` da 0 errores con `FakeAgentLLM` tipado como `AgentLLM`, y `uv run pytest -q tests/gemini_llm_test.py -k fake` pasa.
-- [ ] **T-72 — Implementar `GeminiAgentLLM.step` y `build_area_messages`** · RF-9, RF-10 · ~30 min
+- [x] **T-72 — Implementar `GeminiAgentLLM.step` y `build_area_messages`** · RF-9, RF-10 · ~30 min
   `step` con `bind_tools`: convierte `AIMessage.tool_calls` en `ToolCalls` y el texto en `FinalText`; los errores pasan a `LlmUnavailableError`. `build_area_messages` une el prompt del área y `area_rules` y no incluye FAQ. Se eliminan `AnswerOutput` y `build_answer_messages`.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k "step or area_messages"` pasa con un chat falso que devuelve tool calls, texto o una excepción.
-- [ ] **T-73 — Implementar `AreaToolbox` con `buscar_faq` y `buscar_procedimiento`** · RF-84, RF-85, RF-86, RF-87, RF-88, RF-91, RF-100 · ~30 min (depende de T-69, T-71)
+- [x] **T-73 — Implementar `AreaToolbox` con `buscar_faq` y `buscar_procedimiento`** · RF-84, RF-85, RF-86, RF-87, RF-88, RF-91, RF-100 · ~30 min (depende de T-69, T-71)
   `src/agents/tools.py`: el `area_id` lo fija el código; solo se devuelven los resultados sobre el umbral y se registran como evidencias; los procedimientos devuelven pasos y campos, nunca datos personales.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k toolbox` pasa, incluido un caso en el que el argumento pide otra área y el recuperador recibe el `area_id` del sub-agente.
-- [ ] **T-74 — Implementar la tool `notificar_area`** · RF-93, RF-94, RF-95, RF-96, RF-97, RF-98, RF-102 · ~30 min (depende de T-63, T-65, T-73)
+- [x] **T-74 — Implementar la tool `notificar_area`** · RF-93, RF-94, RF-95, RF-96, RF-97, RF-98, RF-102 · ~30 min (depende de T-63, T-65, T-73)
   Valida el procedimiento (de su área) y los datos con `missing_or_invalid`; en web añade nombre y contacto; cuenta los intentos fallidos; publica con `AreaNotifier` usando la identidad del canal; un área sin space o un fallo de entrega cuentan como fallo.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k notificar` pasa con estos casos: válido, inválido con error devuelto al modelo, tercer intento ⇒ `gave_up`, sin space, fallo de entrega, e instrucciones inyectadas en un dato que llegan como texto literal.
-- [ ] **T-75 — Implementar la tool `derivar_a_ejecutivo`** · RF-25, RF-26 · ~15 min
+- [x] **T-75 — Implementar la tool `derivar_a_ejecutivo`** · RF-25, RF-26 · ~15 min
   Solo existe en el toolbox del canal web; marca el resultado `wants_human`.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k derivar` pasa: la tool no aparece en el canal interno y en web produce `wants_human`.
-- [ ] **T-76 — Implementar `run_sub_agent` con el guardarraíl** · RF-7, RF-9, RF-89, RF-90, RF-99 · ~30 min (depende de T-73, T-74, T-75)
+- [x] **T-76 — Implementar `run_sub_agent` con el guardarraíl** · RF-7, RF-9, RF-89, RF-90, RF-99 · ~30 min (depende de T-73, T-74, T-75)
   `src/agents/sub_agent.py`: bucle de hasta `agent_max_steps` pasos; un texto final sin evidencias se descarta y da `no_answer`.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k "guardrail or steps or answered or confirm"` pasa: texto sin tools ⇒ descartado; tool sin resultados ⇒ descartado; 5 pasos ⇒ `no_answer`; FAQ ⇒ `answered`; notificación entregada ⇒ confirmación.
 

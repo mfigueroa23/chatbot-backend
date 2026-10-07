@@ -3,7 +3,7 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from langchain_core.messages import BaseMessage
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agents.llm import AreaAnswer, AreaInfo, Classification, FaqHit
+from src.agents.llm import AgentStep, AreaAnswer, AreaInfo, Classification, FaqHit, FinalText, ToolCall, ToolCalls, ToolSpec
 from src.agents.retriever import ProcedureHit
 from src.models.executive import Executive
 from src.models.executive_session import ExecutiveSession
@@ -62,9 +62,14 @@ class FakeAgentLLM:
         wants_human: bool = False,
         answers: dict[int, str | None] | None = None,
         combined: str = "respuesta combinada",
+        steps: dict[str, list[AgentStep]] | None = None,
     ):
         self.classification = Classification(area_ids or [], wants_human)
         self.answers = answers or {}
+        # Pasos guionizados por nombre de área: lo que "decide" el modelo en cada vuelta del bucle de tools.
+        self.steps = {area: list(script) for area, script in (steps or {}).items()}
+        self.step_tools: list[tuple[str, list[str]]] = []
+        self.step_messages: list[list[BaseMessage]] = []
         self.combined = combined
         self.calls: list[str] = []
         self.classified_areas: list[AreaInfo] = []
@@ -83,10 +88,27 @@ class FakeAgentLLM:
         self.area_rules.append(rules)
         return AreaAnswer(area.id, area.name, self.answers.get(area.id))
 
+    async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep:
+        self.calls.append("step")
+        area = area_name_of(messages)
+        self.step_tools.append((area, [tool.name for tool in tools]))
+        self.step_messages.append(list(messages))
+        script = self.steps.get(area, [])
+        return script.pop(0) if script else FinalText("sin más pasos guionizados")
+
     async def combine(self, prompt: str, question: str, parts: list[AreaAnswer]) -> str:
         self.calls.append("combine")
         self.combined_parts = parts
         return self.combined
+
+
+def area_name_of(messages: list[BaseMessage]) -> str:
+    first_line = str(messages[0].content).splitlines()[0]
+    return first_line.removeprefix("Área: ")
+
+
+def tool_call(name: str, call_id: str = "c1", **args) -> ToolCalls:
+    return ToolCalls([ToolCall(call_id, name, args)])
 
 
 class FakeEmbedder:
@@ -120,6 +142,9 @@ class FakeRetriever:
         self.searched_area_ids.append(area_id)
         self.searched_questions.append(query)
         return self.procedures.get(area_id, [])
+
+    async def get_procedure(self, area_id: int, procedure_id: int) -> ProcedureHit | None:
+        return next((p for p in self.procedures.get(area_id, []) if p.id == procedure_id), None)
 
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
         self.refreshed_area_ids.extend(area_ids)

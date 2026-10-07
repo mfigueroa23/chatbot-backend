@@ -1,9 +1,9 @@
 import logging
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -40,9 +40,32 @@ class AreaAnswer:
     area_name: str
     text: str | None  # None: el área no pudo responder
 
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    description: str
+    parameters: dict[str, Any]  # esquema JSON de los argumentos
+
+@dataclass(frozen=True)
+class ToolCall:
+    id: str
+    name: str
+    args: dict[str, Any]
+
+@dataclass(frozen=True)
+class ToolCalls:
+    calls: list[ToolCall]
+
+@dataclass(frozen=True)
+class FinalText:
+    text: str
+
+AgentStep = ToolCalls | FinalText
+
 class AgentLLM(Protocol):
     async def classify(self, prompt: str, question: str, areas: list[AreaInfo], history: list[BaseMessage]) -> Classification: ...
     async def answer(self, area: AreaInfo, rules: str, question: str, faqs: list[FaqHit], history: list[BaseMessage]) -> AreaAnswer: ...
+    async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep: ...
     async def combine(self, prompt: str, question: str, parts: list[AreaAnswer]) -> str: ...
 
 class ClassificationOutput(BaseModel):
@@ -64,6 +87,10 @@ def build_answer_messages(
     faq_text = "\n\n".join(f"Pregunta: {faq.question}\nRespuesta: {faq.answer}" for faq in faqs)
     instructions = f"{area.system_prompt}\n\n{rules}\n\nPreguntas frecuentes:\n\n{faq_text}"
     return [SystemMessage(instructions), *history, HumanMessage(question)]
+
+def build_area_messages(area: AreaInfo, rules: str, question: str, history: list[BaseMessage]) -> list[BaseMessage]:
+    # Las instrucciones vienen de la BD (prompt del área y reglas comunes); las FAQ y procedimientos los traen las tools.
+    return [SystemMessage(f"Área: {area.name}\n\n{area.system_prompt}\n\n{rules}"), *history, HumanMessage(question)]
 
 def build_combine_messages(prompt: str, question: str, parts: list[AreaAnswer]) -> list[BaseMessage]:
     answered = "\n\n".join(f"{part.area_name}: {part.text}" for part in parts if part.text is not None)
@@ -87,6 +114,16 @@ class GeminiAgentLLM:
         output = cast(AnswerOutput, await self._invoke_structured(
             AnswerOutput, build_answer_messages(area, rules, question, faqs, history)))
         return AreaAnswer(area.id, area.name, output.text if output.answered else None)
+
+    async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep:
+        declarations = [{"name": tool.name, "description": tool.description, "parameters": tool.parameters} for tool in tools]
+        try:
+            message = await self._chat.bind_tools(declarations).ainvoke(messages)
+        except Exception as exc:
+            raise LlmUnavailableError(str(exc)) from exc
+        if isinstance(message, AIMessage) and message.tool_calls:
+            return ToolCalls([ToolCall(call["id"] or call["name"], call["name"], dict(call["args"])) for call in message.tool_calls])
+        return FinalText(str(message.text))
 
     async def combine(self, prompt: str, question: str, parts: list[AreaAnswer]) -> str:
         try:

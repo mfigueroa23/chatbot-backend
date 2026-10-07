@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 16/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 21/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -63,19 +63,19 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/business_data_test.py` pasa. El test usa una sesión falsa y comprueba que la sentencia de `get_areas` filtra por `scope` y por `active`, y que dos llamadas seguidas ejecutan dos consultas.
 
 ## Fase 4 — LLM y RAG
-- [ ] **T-17 — Definir la interfaz `AgentLLM` y sus tipos** · (habilita RF-5–9) · ~20 min
+- [x] **T-17 — Definir la interfaz `AgentLLM` y sus tipos** · (habilita RF-5–9) · ~20 min
   `src/agents/llm.py` con el Protocol `AgentLLM` y las dataclasses `AreaInfo`, `Classification`, `AreaAnswer` y `FaqHit`; `FakeAgentLLM` en `tests/fakes.py`, que registra las llamadas.
   Hecho cuando: `uv run pyright` da 0 errores con `FakeAgentLLM` tipado como `AgentLLM`.
-- [ ] **T-18 — Construir `GeminiAgentLLM` desde las properties** · RF-12, RF-13, RF-14, RF-18 · ~30 min
+- [x] **T-18 — Construir `GeminiAgentLLM` desde las properties** · RF-12, RF-13, RF-14, RF-18 · ~30 min
   Fábrica que lee `gemini_model`, `gemini_api_key` y `llm_timeout_seconds`. Si falta la clave o el modelo, lanza `LlmNotConfiguredError` y registra un log sin el valor. Los errores y timeouts de Gemini se convierten en `LlmUnavailableError`.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py` pasa: sin clave ⇒ `LlmNotConfiguredError` y `caplog` no contiene la clave; un cliente que lanza una excepción ⇒ `LlmUnavailableError`.
-- [ ] **T-19 — Construir los mensajes de `classify`, `answer` y `combine`** · RF-5, RF-6, RF-9 · ~30 min
+- [x] **T-19 — Construir los mensajes de `classify`, `answer` y `combine`** · RF-5, RF-6, RF-9 · ~30 min
   Funciones puras `build_classify_messages`, `build_answer_messages` y `build_combine_messages`, con los esquemas de salida estructurada. La respuesta de un área solo incluye su prompt y sus FAQ recuperadas.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py` pasa con un test que comprueba que `build_answer_messages` contiene el prompt del área y las FAQ dadas, y ninguna otra.
-- [ ] **T-20 — Implementar `FaqRetriever.search`** · RF-9 · ~25 min
+- [x] **T-20 — Implementar `FaqRetriever.search`** · RF-9 · ~25 min
   `src/agents/retriever.py`: embedding de la consulta (`RETRIEVAL_QUERY`, 768 dimensiones) con un `Embedder` inyectable, distancia coseno filtrada por área y por `rag_min_similarity`, top `rag_top_k`.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py` pasa: la sentencia compilada filtra por `area_id`, ordena por distancia y descarta los resultados bajo el umbral.
-- [ ] **T-21 — Implementar `refresh_stale_embeddings`** · RF-11 · ~25 min
+- [x] **T-21 — Implementar `refresh_stale_embeddings`** · RF-11 · ~25 min
   Recalcula solo las FAQ con `embedded_hash IS DISTINCT FROM content_hash` de las áreas dadas (`RETRIEVAL_DOCUMENT`).
   Hecho cuando: `uv run pytest -q tests/retriever_test.py` pasa con un caso en el que el embedder falso solo recibe las FAQ desactualizadas.
 

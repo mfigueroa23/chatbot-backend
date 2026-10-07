@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 61/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 66/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -205,10 +205,10 @@ archivo de tests.
 - [x] **T-60 — Crear los modelos de procedimientos** · (habilita RF-85, RF-91–98) · ~25 min
   `src/models/procedure.py` (`Vector(768)`, `content_hash` como `Computed`, índice HNSW) y `src/models/procedure_field.py` (enum `FieldKind`: `text`, `email`, `phone`, `rut`, `number`, `date`; único `procedure_id` + `name`).
   Hecho cuando: `uv run pyright` da 0 errores y ambos modelos se importan sin error.
-- [ ] **T-61 — Ajustar los modelos de área, space general y conversación de Google Chat** · (habilita RF-62, RF-105) · ~20 min [P]
+- [x] **T-61 — Ajustar los modelos de área, space general y conversación de Google Chat** · (habilita RF-62, RF-105) · ~20 min [P]
   `business_area`: añade `chat_space` y quita `owner_email`. `fallback_contact.py` → `fallback_space.py` (`scope` PK, `chat_space` NOT NULL). Nuevo `src/models/chat_thread.py` (`conversation_id` PK, `last_message_at` con índice).
   Hecho cuando: `uv run pyright` da 0 errores.
-- [ ] **T-62 — Generar y revisar la migración E** · (habilita RF-62, RF-85, RF-105) · ~30 min (depende de T-60, T-61)
+- [x] **T-62 — Generar y revisar la migración E** · (habilita RF-62, RF-85, RF-105) · ~30 min (depende de T-60, T-61)
   `alembic revision --autogenerate -m "add procedures and chat spaces"`, ajustada a mano: enum `field_kind` creado y borrado de forma explícita, columna generada, índice HNSW, renombrado de `fallback_contact` con borrado de sus filas, y downgrade completo.
   Hecho cuando: en la BD local, `alembic upgrade head`, `alembic downgrade -1` y `alembic upgrade head` terminan con código 0, y `alembic check` no detecta cambios.
 
@@ -224,13 +224,13 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/area_notifier_test.py tests/procedures_test.py -k "notify or format"` pasa, incluido un caso con `caplog` en el que los datos del usuario no aparecen en el log y un error HTTP que acaba en `NotificationDeliveryError`.
 
 ## Fase 13 — Ampliación: aviso interno por Google Chat
-- [ ] **T-66 — Leer los spaces de las áreas y el space general** · RF-59, RF-62 · ~20 min (depende de T-62)
+- [x] **T-66 — Leer los spaces de las áreas y el space general** · RF-59, RF-62 · ~20 min (depende de T-62)
   `get_fallback_space(session, scope)` en `business_data.py`, en lugar de `get_fallback_email`. `AreaInfo.chat_space` en lugar de `owner_email`, también en `load_catalog`.
   Hecho cuando: `uv run pytest -q tests/business_data_test.py` pasa con un caso que comprueba que `get_fallback_space` filtra por ámbito.
-- [ ] **T-67 — Reescribir `InternalStrategy` con `AreaNotifier`** · RF-57, RF-58, RF-59, RF-60, RF-61, RF-102 · ~25 min (depende de T-65, T-66)
+- [x] **T-67 — Reescribir `InternalStrategy` con `AreaNotifier`** · RF-57, RF-58, RF-59, RF-60, RF-61, RF-102 · ~25 min (depende de T-65, T-66)
   Aviso al `chat_space` del área o al space general; un área sin space cuenta como notificación fallida. `FakeNotifier` en `tests/fakes.py` sustituye a `FakeMailer`.
   Hecho cuando: `uv run pytest -q tests/channel_strategy_test.py -k internal` pasa con estos casos: space del área, space general, área sin space ⇒ fallida, y fallo de entrega ⇒ log (`caplog`) y "contacta directamente".
-- [ ] **T-68 — Eliminar el correo** · RF-60 · ~20 min
+- [x] **T-68 — Eliminar el correo** · RF-60 · ~20 min
   Borrar `src/services/mailer.py`, `src/utils/exceptions/mail.py` y `tests/mailer_test.py`; el orquestador interno pasa a usar `AreaNotifier`; las properties `smtp_*` salen del README.
   Hecho cuando: `grep -rnE "smtp|Mailer|MailDelivery" src tests README.md` no devuelve nada y `uv run pytest` está en verde.
 

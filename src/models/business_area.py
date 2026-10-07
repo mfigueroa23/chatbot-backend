@@ -16,5 +16,6 @@ class BusinessArea(Base):
     description: Mapped[str] = mapped_column(Text)
     scope: Mapped[AreaScope] = mapped_column(Enum(AreaScope, name="area_scope"))
     system_prompt: Mapped[str | None] = mapped_column(Text)
-    owner_email: Mapped[str | None] = mapped_column(String(320))
+    # Space de Google Chat donde el área recibe solicitudes y consultas sin respuesta (spaces/…).
+    chat_space: Mapped[str | None] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(server_default="true")

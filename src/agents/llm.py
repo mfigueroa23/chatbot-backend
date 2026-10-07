@@ -21,7 +21,7 @@ class AreaInfo:
     description: str
     scope: AreaScope
     system_prompt: str | None
-    owner_email: str | None = None
+    chat_space: str | None = None
 
 @dataclass(frozen=True)
 class FaqHit:

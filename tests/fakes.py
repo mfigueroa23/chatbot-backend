@@ -9,7 +9,7 @@ from src.models.executive_session import ExecutiveSession
 from src.models.live_chat import LiveChat, LiveChatStatus
 from src.models.web_session import WebPhase, WebSession
 from src.services.realtime import ConnectionHub, Event
-from src.utils.exceptions.mail import MailDeliveryError
+from src.utils.exceptions.notification import NotificationDeliveryError
 
 
 class FakeClock:
@@ -118,15 +118,15 @@ class FakeRetriever:
         self.refreshed_area_ids.extend(area_ids)
 
 
-class FakeMailer:
+class FakeNotifier:
     def __init__(self, fail: bool = False):
         self.fail = fail
-        self.sent: list[tuple[list[str], str, str]] = []
+        self.sent: list[tuple[str, str]] = []
 
-    async def send(self, to: list[str], subject: str, body: str) -> None:
+    async def notify(self, space: str, text: str) -> None:
         if self.fail:
-            raise MailDeliveryError("SMTP caído")
-        self.sent.append((to, subject, body))
+            raise NotificationDeliveryError(space)
+        self.sent.append((space, text))
 
 
 class FakeExecutiveRepository:

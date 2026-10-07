@@ -8,7 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from src.database.session import SessionFactoryDep
 from src.interfaces.google_chat import ChatEvent
 from src.routers.executive import bearer_scheme
-from src.services.google_chat import build_chat_api_client, handle_event, verify_chat_token
+from src.services.chat_api_client import build_chat_api_client
+from src.services.google_chat import handle_event, verify_chat_token
 from src.services.property import get_float_property, get_str_property
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError

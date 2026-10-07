@@ -7,7 +7,7 @@ un grafo de LangGraph por ámbito clasifica cada pregunta, la delega en un sub-a
 solo con las FAQ de su área (RAG con pgvector y Gemini) y combina las respuestas. Atiende dos canales:
 
 - **Chat web** (clientes, áreas externas) por WebSocket, con memoria por sesión y derivación a un ejecutivo en vivo.
-- **Google Chat** (colaboradores, áreas internas), con correo al responsable del área cuando no hay respuesta.
+- **Google Chat** (colaboradores, áreas internas), con aviso al space de Google Chat del área cuando no hay respuesta.
 
 ## Requisitos
 
@@ -63,10 +63,6 @@ Properties usadas actualmente:
 | `google_chat_audience` | URL pública de `POST /api/v1/google-chat/events` (audiencia del token de Google) | — |
 | `google_chat_service_account_json` | JSON de la cuenta de servicio con permiso `chat.bot` (respuestas diferidas) | — |
 | `google_chat_sync_timeout_seconds` | Segundos que se espera la respuesta antes de contestar "procesando" | `25` |
-| `smtp_host`, `smtp_port` | Servidor SMTP para los correos del canal interno | — |
-| `smtp_user`, `smtp_password` | Credenciales SMTP | — |
-| `smtp_from` | Remitente de los correos | — |
-| `smtp_starttls` | `true` para usar STARTTLS | — |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
 
@@ -90,13 +86,13 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 
 | Tabla | Contenido |
 |---|---|
-| `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y correo del responsable |
+| `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y `chat_space` (space de Google Chat del área, `spaces/…`) |
 | `faq_category`, `faq` | Categorías y preguntas frecuentes de cada área. El embedding se calcula solo al usarlas |
 | `agent_prompt` | Prompts con las keys `classifier` (clasificador), `internal_agent` y `external_agent` (agente de cada canal, incluye cómo combinar respuestas de varias áreas) y `area_rules` (reglas comunes de todos los sub-agentes) |
 | `service_schedule` | Franja de atención por día (`weekday` 0 = lunes … 6 = domingo), en hora de Santiago |
 | `holiday` | Fechas sin atención |
 | `official_channel` | Canales oficiales que se muestran al cliente |
-| `fallback_contact` | Correo general por ámbito, para preguntas internas sin área |
+| `fallback_space` | Space general de Google Chat por ámbito, para consultas internas sin área |
 | `executive` | Ejecutivos del chat en vivo; el hash de la contraseña se genera con el comando de abajo |
 
 ```bash

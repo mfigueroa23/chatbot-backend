@@ -164,7 +164,7 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     if missing:
         logger.warning("Faltan prompts en agent_prompt: %s", ", ".join(missing))
     return Catalog(
-        [AreaInfo(area.id, area.name, area.description, area.scope, area.system_prompt, area.owner_email) for area in areas],
+        [AreaInfo(area.id, area.name, area.description, area.scope, area.system_prompt, area.chat_space) for area in areas],
         prompts["classifier"] or "",
         prompts[f"{scope}_agent"] or "",
         prompts["area_rules"] or "",

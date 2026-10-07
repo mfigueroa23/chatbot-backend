@@ -14,10 +14,10 @@ from src.services import chat_orchestrator
 from src.services.chat_orchestrator import MIXED_SCOPE, UNAVAILABLE, handle_internal_message, handle_web_message
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
-from tests.fakes import FakeAgentLLM, FakeClock, FakeMailer, FakeRetriever, property_session, web_session
+from tests.fakes import FakeAgentLLM, FakeClock, FakeNotifier, FakeRetriever, property_session, web_session
 
 SESSION = property_session({})
-PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos", AreaScope.internal, "Eres Remuneraciones", "rrhh@autofin.cl")
+PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos", AreaScope.internal, "Eres Remuneraciones", "spaces/RRHH")
 CREDITS = AreaInfo(1, "Créditos", "Créditos automotrices", AreaScope.external, "Eres Créditos")
 HITS = {10: [FaqHit("¿Cuándo pagan?", "El día 30", 0.9)]}
 
@@ -32,10 +32,10 @@ async def load_catalog(scope: AreaScope) -> Catalog:
 
 
 @pytest.fixture
-def mailer(monkeypatch: pytest.MonkeyPatch) -> FakeMailer:
-    mailer = FakeMailer()
-    monkeypatch.setattr(chat_orchestrator, "Mailer", lambda session: mailer)
-    return mailer
+def notifier(monkeypatch: pytest.MonkeyPatch) -> FakeNotifier:
+    notifier = FakeNotifier()
+    monkeypatch.setattr(chat_orchestrator, "AreaNotifier", lambda session_factory: notifier)
+    return notifier
 
 
 def use_llm(monkeypatch: pytest.MonkeyPatch, llm: FakeAgentLLM, hits=HITS):
@@ -50,32 +50,32 @@ async def ask(text: str = "¿Cuándo pagan el sueldo?") -> str:
 
 
 @pytest.mark.anyio
-async def test_internal_respondida(monkeypatch: pytest.MonkeyPatch, mailer: FakeMailer):
+async def test_internal_respondida(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
     use_llm(monkeypatch, FakeAgentLLM(area_ids=[10], answers={10: "El día 30"}))
 
     assert await ask() == "El día 30"
-    assert mailer.sent == []
+    assert notifier.sent == []
 
 
 @pytest.mark.anyio
-async def test_internal_mixta_pide_reformular(monkeypatch: pytest.MonkeyPatch, mailer: FakeMailer):
+async def test_internal_mixta_pide_reformular(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
     use_llm(monkeypatch, FakeAgentLLM(area_ids=[10, 1]))
 
     assert await ask() == MIXED_SCOPE
 
 
 @pytest.mark.anyio
-async def test_internal_sin_respuesta_avisa_al_responsable(monkeypatch: pytest.MonkeyPatch, mailer: FakeMailer):
+async def test_internal_sin_respuesta_avisa_al_responsable(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
     use_llm(monkeypatch, FakeAgentLLM(area_ids=[10]), hits={})
 
     reply = await ask()
 
     assert "te contactará a la brevedad" in reply
-    assert mailer.sent[0][0] == ["rrhh@autofin.cl"]
+    assert notifier.sent[0][0] == "spaces/RRHH"
 
 
 @pytest.mark.anyio
-async def test_internal_llm_no_configurado_responde_no_disponible(monkeypatch: pytest.MonkeyPatch, mailer: FakeMailer):
+async def test_internal_llm_no_configurado_responde_no_disponible(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
     async def build_agent_context(session):
         raise LlmNotConfiguredError("gemini_api_key")
 
@@ -85,7 +85,7 @@ async def test_internal_llm_no_configurado_responde_no_disponible(monkeypatch: p
 
 
 @pytest.mark.anyio
-async def test_internal_llm_caido_responde_no_disponible(monkeypatch: pytest.MonkeyPatch, mailer: FakeMailer):
+async def test_internal_llm_caido_responde_no_disponible(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
     use_llm(monkeypatch, DownLLM())
 
     assert await ask() == UNAVAILABLE
@@ -241,7 +241,7 @@ async def test_web_libera_la_conexion_antes_de_llamar_al_modelo(monkeypatch: pyt
 
 
 @pytest.mark.anyio
-async def test_internal_libera_la_conexion_antes_de_llamar_al_modelo(monkeypatch: pytest.MonkeyPatch, mailer: FakeMailer):
+async def test_internal_libera_la_conexion_antes_de_llamar_al_modelo(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
     session = CountingSession()
     llm = CommitAwareLLM(session)
     use_llm(monkeypatch, llm)

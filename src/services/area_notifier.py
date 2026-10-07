@@ -5,7 +5,7 @@ from typing import Literal
 import httpx
 from google.auth import exceptions as google_exceptions
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.services.google_chat import build_chat_api_client
+from src.services.chat_api_client import build_chat_api_client
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.notification import NotificationDeliveryError
 from src.utils.exceptions.property import PropertyNotFoundError

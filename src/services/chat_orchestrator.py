@@ -11,7 +11,7 @@ from src.models.business_area import AreaScope
 from src.models.web_session import WebPhase, WebSession
 from src.services.business_data import get_official_channels
 from src.services.live_chat import enqueue
-from src.services.mailer import Mailer
+from src.services.area_notifier import AreaNotifier
 from src.services.message_validation import MAX_MESSAGE_LENGTH, validate_user_message
 from src.services.web_session import answer_offer, reset_to_bot, start_offer, submit_contact, touch_last_message
 from src.utils.clock import Clock
@@ -65,7 +65,7 @@ async def handle_internal_message(session: AsyncSession, text: str, user_name: s
             return MIXED_SCOPE
         if result.reply is not None:
             return result.reply
-        strategy = InternalStrategy(session, Mailer(session))
+        strategy = InternalStrategy(session, AreaNotifier(SessionLocal))
         reply = await strategy.on_no_answer(NoAnswerContext(question, result.areas, user_name, user_email))
         return reply.text
     except LlmNotConfiguredError:

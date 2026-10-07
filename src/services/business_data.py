@@ -3,7 +3,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.agent_prompt import AgentPrompt
 from src.models.business_area import AreaScope, BusinessArea
-from src.models.fallback_contact import FallbackContact
+from src.models.fallback_space import FallbackSpace
 from src.models.official_channel import OfficialChannel
 from src.utils.exceptions.database import DatabaseUnavailableError
 
@@ -29,8 +29,8 @@ async def get_official_channels(session: AsyncSession) -> list[OfficialChannel]:
     except (SQLAlchemyError, OSError) as exc:
         raise DatabaseUnavailableError(str(exc)) from exc
 
-async def get_fallback_email(session: AsyncSession, scope: AreaScope) -> str | None:
+async def get_fallback_space(session: AsyncSession, scope: AreaScope) -> str | None:
     try:
-        return await session.scalar(select(FallbackContact.email).where(FallbackContact.scope == scope))
+        return await session.scalar(select(FallbackSpace.chat_space).where(FallbackSpace.scope == scope))
     except (SQLAlchemyError, OSError) as exc:
         raise DatabaseUnavailableError(str(exc)) from exc

@@ -16,7 +16,8 @@ from src.database.session import get_session_factory
 from src.interfaces.google_chat import ChatEvent
 from src.routers import google_chat as google_chat_router
 from src.services import google_chat
-from src.services.google_chat import CHAT_ISSUER, ChatApiClient, handle_event, verify_chat_token
+from src.services.chat_api_client import ChatApiClient
+from src.services.google_chat import CHAT_ISSUER, handle_event, verify_chat_token
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from tests.fakes import property_session, service_account_info
 

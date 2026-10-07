@@ -5,7 +5,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from src.services.area_notifier import AreaNotifier, Requester, format_request, format_unanswered
-from src.services.google_chat import ChatApiClient
+from src.services.chat_api_client import ChatApiClient
 from src.utils.exceptions.notification import NotificationDeliveryError
 from tests.fakes import property_session, service_account_info
 

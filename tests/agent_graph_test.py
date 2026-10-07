@@ -8,7 +8,7 @@ from tests.fakes import FakeAgentLLM, FakeRetriever
 CREDITS = AreaInfo(1, "Créditos", "Créditos automotrices", AreaScope.external, "Eres el área de Créditos")
 INSURANCE = AreaInfo(2, "Seguros", "Seguros del vehículo", AreaScope.external, "Eres el área de Seguros")
 NO_PROMPT = AreaInfo(3, "Postventa", "Mantenciones", AreaScope.external, None)
-PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos del personal", AreaScope.internal, "Eres Remuneraciones", "rrhh@autofin.cl")
+PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos del personal", AreaScope.internal, "Eres Remuneraciones", "spaces/RRHH")
 AREAS = [CREDITS, INSURANCE, NO_PROMPT, PAYROLL]
 HITS = {area.id: [FaqHit(f"Pregunta de {area.name}", f"Respuesta de {area.name}", 0.9)] for area in AREAS}
 

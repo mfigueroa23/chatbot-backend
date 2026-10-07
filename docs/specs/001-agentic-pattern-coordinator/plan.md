@@ -12,7 +12,7 @@ un barrido periódico de tareas temporales.
 - **Canal web (RF-25–38, RF-76–83):** WebSocket del cliente con protocolo tipado. Una máquina de estados de la sesión (bot → oferta → datos de contacto → en cola → en vivo) y la memoria de la conversación en el checkpointer de PostgreSQL.
 - **Chat en vivo (RF-39–56):** WebSocket del ejecutivo. Mensajes persistidos y repartidos entre pods con LISTEN/NOTIFY. Asignación atómica en SQL.
 - **Canal interno (RF-57–69):** endpoint HTTP de Google Chat con verificación del token, respuesta síncrona o asíncrona según el límite de 30 s, y correo por SMTP.
-- **Ejecutivos (RF-70–75):** login con Argon2, token opaco de sesión y bloqueo por intentos fallidos.
+- **Ejecutivos (RF-70–75):** login con Argon2, sesión con JWT revocable (D13) y bloqueo por intentos fallidos.
 - **Barrido periódico:** fin de horario, plazo de 1 hora, sesiones caducadas y conexiones muertas.
 
 ## 2. Módulos
@@ -44,7 +44,7 @@ un barrido periódico de tareas temporales.
 | `src/services/business_data.py` | Lectores sin caché: `get_areas(session, scope)`, `get_agent_prompt(session, key)`, `get_official_channels(session)`, `get_fallback_email(session, scope)` | RF-10, RF-11, RF-24, RF-44, RF-59, RF-62 |
 | `src/services/mailer.py` | `Mailer.send(to, subject, body)` con `smtplib` en `asyncio.to_thread` y properties `smtp_*`; lanza `MailDeliveryError` | RF-58–61 |
 | `src/services/google_chat.py` | `verify_chat_token(authorization)` (certificados de `chat@system.gserviceaccount.com` cacheados según `Cache-Control`, `google.auth.jwt.decode` con audiencia `google_chat_audience`); `handle_event(event)`; `ChatApiClient.create_message(space, thread, text)` (token OAuth de la cuenta de servicio vía JWT-bearer, firmado con `google.auth.crypt`, por httpx) | RF-63–69 |
-| `src/services/executive_auth.py` | `login(username, password) -> SessionToken`, `authenticate(token) -> Executive`, `logout(token)`. Argon2 con comparación de tiempo constante, hash ficticio para usuarios inexistentes, contador de fallos y `locked_until` | RF-70–75 |
+| `src/services/executive_auth.py` | `login(username, password) -> SessionToken` (JWT), `authenticate(token) -> Executive`, `logout(token)`. Argon2 con comparación de tiempo constante, hash ficticio para usuarios inexistentes, contador de fallos y `locked_until` | RF-70–75 |
 | `src/services/web_session.py` | Máquina de estados de la sesión web (`phase`: `bot`, `offering_human`, `collecting_contact`, `queued`, `live`). `admit(session_id)` aplica el límite de 50 bajo un advisory lock de transacción. Incluye heartbeat y `touch_last_message` | RF-25–33, RF-76–81 |
 | `src/services/live_chat.py` | `enqueue`, `list_waiting`, `take(chat_id, executive_id)` (UPDATE … WHERE status='waiting' RETURNING, más el conteo de chats del ejecutivo con su fila bloqueada `FOR UPDATE`), `post_message`, `close`, `mark_executive_disconnected`, `resume`, `customer_disconnected` | RF-34–56 |
 | `src/services/realtime.py` | `ConnectionHub` por pod: registro de los WebSocket de clientes y ejecutivos, y `publish(event)` → `pg_notify('chatbot_events', json)` con identificadores (nunca contenido). Listener asyncpg que reenvía cada evento al socket local que corresponda | RF-30, RF-31, RF-37, RF-43–56 |
@@ -70,7 +70,7 @@ empiezan vacías y el responsable de contenidos las carga por SQL. El README doc
 | `business_area` | `id` int PK; `name` varchar(120) NOT NULL; `description` text NOT NULL; `scope` enum `area_scope`(`internal`,`external`) NOT NULL; `system_prompt` text NULL; `owner_email` varchar(320) NULL; `active` bool NOT NULL default true | único (`scope`, `name`) |
 | `faq_category` | `id` PK; `area_id` FK → business_area ON DELETE CASCADE NOT NULL; `name` varchar(120) NOT NULL | (`area_id`) |
 | `faq` | `id` PK; `category_id` FK → faq_category ON DELETE CASCADE NOT NULL; `question` text NOT NULL; `answer` text NOT NULL; `active` bool NOT NULL default true; `content_hash` text GENERATED ALWAYS AS (md5(question ‖ E'\n' ‖ answer)) STORED; `embedded_hash` text NULL; `embedding` vector(768) NULL | HNSW (`embedding vector_cosine_ops`); (`category_id`) |
-| `agent_prompt` | `key` varchar(60) PK (`internal_agent`, `external_agent`, `classifier`); `content` text NOT NULL | — |
+| `agent_prompt` | `key` varchar(60) PK (`internal_agent`, `external_agent`, `classifier`, `area_rules`); `content` text NOT NULL | — |
 | `service_schedule` | `weekday` smallint PK (0 = lunes … 6 = domingo, CHECK 0–6); `opens_at` time NOT NULL; `closes_at` time NOT NULL; CHECK `opens_at < closes_at` | — |
 | `holiday` | `date` date PK; `description` varchar(120) NULL | — |
 | `official_channel` | `id` PK; `label` varchar(80) NOT NULL; `value` varchar(255) NOT NULL; `position` smallint NOT NULL default 0 | — |
@@ -162,7 +162,7 @@ El backend es el dueño de los contratos. El frontend web y el panel de ejecutiv
   - `smtp_host`, `smtp_port`, `smtp_user`, `smtp_password`, `smtp_from`, `smtp_starttls`.
   - `jwt_secret` (clave HS256 de al menos 32 caracteres).
 - **Con valor por defecto:**
-  - **RAG y LLM:** `rag_top_k` (4), `rag_min_similarity` (0.75), `llm_timeout_seconds` (20).
+  - **RAG y LLM:** `rag_top_k` (4), `rag_min_similarity` (0.68), `llm_timeout_seconds` (20).
   - **Sesiones web:** `web_session_retention_days` (30), `web_max_sessions` (50).
   - **Ejecutivos:** `executive_max_chats` (3), `executive_session_hours` (8), `login_max_attempts` (5), `login_lock_minutes` (15), `executive_reconnect_minutes` (60).
   - **Google Chat:** `google_chat_sync_timeout_seconds` (25).
@@ -249,8 +249,8 @@ La atomicidad real en SQL (RF-40, RF-41, RF-81) y la persistencia del checkpoint
 Dudas resueltas con el usuario el 2026-10-07: R1, R2, R4, R9 y R11.
 
 - **R1 — Extensión `vector`:** no se sabe todavía si pgvector está instalado ni si el usuario de la app puede crearlo. *Mitigación:* tarea de verificación (T-1) que bloquea las migraciones. Si la extensión no está o falta el permiso, se escala al DBA antes de seguir. **Resultado (2026-10-07):** vector disponible y creada (0.8.7). Se instaló `postgresql-17-pgvector` en el contenedor y, como la extensión no es de confianza (`trusted`), un superusuario ejecutó `CREATE EXTENSION vector`; el usuario de la app (`chatbot_autofin`) no es superusuario. En cada entorno nuevo hay que repetir ambos pasos antes de la migración A.
-- **R2 — RNF-2 (p95 < 5 s hasta la respuesta completa):** el camino mínimo es embedding + clasificación + respuesta (3 llamadas a Gemini). *Mitigación:* modelo Flash, sub-agentes y embedding en paralelo, y prueba de carga con 50 sesiones. **Decisión del usuario:** si la prueba no cumple 5 s, se relaja el umbral (propuesta: 8 s) actualizando RNF-2 en la spec. La métrica sigue siendo hasta la respuesta completa.
-- **R3 — Umbral `rag_min_similarity` (0.75):** es un valor inicial sin calibrar. *Mitigación:* calibrarlo cuando el usuario entregue las áreas y FAQ reales (pendiente por su parte); hasta entonces se usa el valor por defecto.
+- **R2 — RNF-2 (p95 < 5 s hasta la respuesta completa):** el camino mínimo es embedding + clasificación + respuesta (3 llamadas a Gemini). *Mitigación:* modelo Flash, sub-agentes y embedding en paralelo, y prueba de carga con 50 sesiones. **Decisión del usuario:** si la prueba no cumple 5 s, se relaja el umbral (propuesta: 8 s) actualizando RNF-2 en la spec. La métrica sigue siendo hasta la respuesta completa. **Medición local (2026-10-07)**, con `fastapi` en un solo proceso contra PostgreSQL local y `gemini-3.1-flash-lite`, 50 sesiones WebSocket simultáneas con preguntas respondibles por FAQ, en 4 rondas: p95 = 4,57 / 5,61 / 5,83 / 4,81 s, con 50/50 respondidas en cada ronda. Supera 5000 ms en 2 de 4 rondas. Pendiente de repetir en el despliegue de prueba antes de decidir si RNF-2 pasa a 8000 ms. Para llegar ahí hubo que corregir tres problemas que la prueba destapó: el pool de la BD se agotaba porque cada mensaje retenía su conexión durante la llamada al modelo; Gemini bloqueaba por recitación (`finish_reason=RECITATION`) las respuestas que copiaban literalmente las FAQ públicas; y se abrían clientes de Gemini nuevos en cada mensaje, con fallos de conexión.
+- **R3 — Umbral `rag_min_similarity` (0.75 inicial):** era un valor inicial sin calibrar. *Mitigación:* calibrarlo cuando el usuario entregue las áreas y FAQ reales (pendiente por su parte); hasta entonces se usa el valor por defecto. **Resultado (2026-10-07):** calibrado con las 25 FAQ de Servicio al Cliente: 10 preguntas reformuladas con FAQ esperada (similitud mínima 0,723; la esperada se recupera en las 10, 9 en primera posición) y 6 fuera de tema (similitud máxima 0,648). Con 0,75 solo se recuperaban 5 de 10. Valor elegido: **0,68** (10/10 aciertos, 0/6 falsos positivos).
 - **R4 — Nombres de áreas internas en el clasificador externo:** el usuario confirma que no son sensibles. Se mantiene D1.
 - **R5 — Tareas en segundo plano de Google Chat (D17):** si el pod se reinicia mientras procesa una respuesta que pasó de 30 s, el colaborador no la recibe. Se acepta en esta iteración.
 - **R6 — Infraestructura de WebSocket en Kubernetes:** el ingress tiene que permitir WebSocket y timeouts mayores que el intervalo de `ping`. Es configuración fuera de este repo; hay que revisarla antes del despliegue.

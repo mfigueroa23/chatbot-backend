@@ -51,7 +51,7 @@ Properties usadas actualmente:
 | `gemini_embedding_model` | Modelo de embeddings, p. ej. `gemini-embedding-001` (obligatoria) | — |
 | `llm_timeout_seconds` | Tiempo máximo de espera de cada llamada a Gemini | `20` |
 | `rag_top_k` | FAQ recuperadas por área | `4` |
-| `rag_min_similarity` | Similitud coseno mínima para usar una FAQ | `0.75` |
+| `rag_min_similarity` | Similitud coseno mínima para usar una FAQ | `0.68` |
 | `web_session_retention_days` | Días que se conserva una sesión web desde su último mensaje | `30` |
 | `web_max_sessions` | Sesiones web activas simultáneas | `50` |
 | `executive_max_chats` | Chats en vivo simultáneos por ejecutivo | `3` |
@@ -92,7 +92,7 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 |---|---|
 | `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y correo del responsable |
 | `faq_category`, `faq` | Categorías y preguntas frecuentes de cada área. El embedding se calcula solo al usarlas |
-| `agent_prompt` | Prompts con las keys `classifier`, `internal_agent` y `external_agent` |
+| `agent_prompt` | Prompts con las keys `classifier` (clasificador), `internal_agent` y `external_agent` (agente de cada canal, incluye cómo combinar respuestas de varias áreas) y `area_rules` (reglas comunes de todos los sub-agentes) |
 | `service_schedule` | Franja de atención por día (`weekday` 0 = lunes … 6 = domingo), en hora de Santiago |
 | `holiday` | Fechas sin atención |
 | `official_channel` | Canales oficiales que se muestran al cliente |

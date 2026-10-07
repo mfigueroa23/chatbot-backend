@@ -5,6 +5,7 @@ from typing import Annotated, Literal, TypedDict
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
@@ -62,6 +63,16 @@ class AreaTask(TypedDict):
     history: list[BaseMessage]
 
 AgentGraph = CompiledStateGraph[AgentState, AgentContext, AgentInput, AgentState]
+
+# Tipos propios que viajan en el estado: LangGraph exige registrarlos para deserializarlos del checkpointer.
+CHECKPOINT_TYPES = [
+    ("src.agents.llm", "AreaInfo"),
+    ("src.agents.llm", "AreaAnswer"),
+    ("src.models.business_area", "AreaScope"),
+]
+
+def checkpoint_serializer() -> JsonPlusSerializer:
+    return JsonPlusSerializer(allowed_msgpack_modules=CHECKPOINT_TYPES)
 
 def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = None) -> AgentGraph:
     async def load_context(state: AgentState, runtime: Runtime[AgentContext]) -> dict:

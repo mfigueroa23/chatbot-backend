@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 38/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 47/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -137,31 +137,31 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/executive_api_test.py -k "login or logout"` pasa: 200 con token, 401 genérico, 204 en logout, 401 sin token y 503 con la BD caída.
 
 ## Fase 8 — Canal web (bot, oferta y cola)
-- [ ] **T-39 — Generar la migración D de las tablas del checkpointer** · (habilita RF-76–79) · ~30 min (depende de T-3)
+- [x] **T-39 — Generar la migración D de las tablas del checkpointer** · (habilita RF-76–79) · ~30 min (depende de T-3)
   Añadir `include_object` en `alembic/env.py` para ignorar `checkpoint*`. Migración que ejecuta `AsyncPostgresSaver.MIGRATIONS` y registra sus versiones en `checkpoint_migrations`.
   Hecho cuando: `alembic upgrade head` termina con código 0, `SELECT count(*) FROM checkpoint_migrations` es igual a `len(MIGRATIONS)` y `alembic check` no detecta cambios.
-- [ ] **T-40 — Abrir el checkpointer y los grafos en el lifespan** · RF-76, RF-78 · ~25 min
+- [x] **T-40 — Abrir el checkpointer y los grafos en el lifespan** · RF-76, RF-78 · ~25 min
   En `main.py`: pool de psycopg (`max_size` 10, `autocommit`, `dict_row`), `AsyncPostgresSaver` y grafos por ámbito en `app.state`, sin llamar a `.setup()`. Cierre ordenado al apagar.
   Hecho cuando: la suite sigue en verde y `uv run fastapi dev` arranca contra la BD local sin crear tablas (sin entradas nuevas en `checkpoint_migrations`).
-- [ ] **T-41 — Implementar la máquina de estados de la sesión web** · RF-25, RF-27, RF-28, RF-29, RF-30, RF-32, RF-33 · ~30 min
+- [x] **T-41 — Implementar la máquina de estados de la sesión web** · RF-25, RF-27, RF-28, RF-29, RF-30, RF-32, RF-33 · ~30 min
   Lógica pura en `src/services/web_session.py`: `bot → offering_human → collecting_contact → queued`, validación del nombre y del correo o teléfono, y máximo 3 intentos.
   Hecho cuando: `uv run pytest -q tests/web_session_test.py` pasa con estos casos: aceptar, rechazar, datos inválidos ×3 ⇒ canales oficiales, y datos válidos ⇒ `queued`.
-- [ ] **T-42 — Implementar el SQL de la sesión web** · RF-79, RF-80, RF-81 · ~30 min
+- [x] **T-42 — Implementar el SQL de la sesión web** · RF-79, RF-80, RF-81 · ~30 min
   `get_or_create(session_id)` (caducada o inexistente ⇒ nueva, contando `web_session_retention_days` desde `last_message_at`), `heartbeat`, `touch_last_message` y `admit()` con `pg_advisory_xact_lock` y el conteo de conectadas con heartbeat de menos de 90 s frente a `web_max_sessions`.
   Hecho cuando: `uv run pytest -q tests/web_session_test.py -k "sql"` pasa, comprobando sobre las sentencias compiladas el advisory lock y el filtro de 90 s.
-- [ ] **T-43 — Implementar `live_chat.enqueue`** · RF-30, RF-31 · ~20 min
+- [x] **T-43 — Implementar `live_chat.enqueue`** · RF-30, RF-31 · ~20 min
   Inserta el chat `waiting` con el nombre, el contacto y `pending_question`. Si ya hay un chat abierto en la sesión (violación del índice único parcial), lo devuelve en vez de crear otro.
   Hecho cuando: `uv run pytest -q tests/live_chat_test.py -k enqueue` pasa, incluido el caso de un chat ya abierto.
-- [ ] **T-44 — Definir los mensajes WebSocket del cliente** · (habilita RF-25–56) · ~20 min
+- [x] **T-44 — Definir los mensajes WebSocket del cliente** · (habilita RF-25–56) · ~20 min
   `src/interfaces/web_chat.py`: unión discriminada por `type` con todos los mensajes de la sección 4 del plan.
   Hecho cuando: `uv run pytest -q tests/web_chat_ws_test.py -k parse` pasa: cada tipo válido se parsea y un tipo desconocido falla la validación.
-- [ ] **T-45 — Implementar `handle_web_message`** · RF-2, RF-7, RF-8, RF-13, RF-18, RF-25, RF-26, RF-32, RF-82, RF-83 · ~30 min
+- [x] **T-45 — Implementar `handle_web_message`** · RF-2, RF-7, RF-8, RF-13, RF-18, RF-25, RF-26, RF-32, RF-82, RF-83 · ~30 min
   En `chat_orchestrator.py`: valida, ejecuta el grafo externo con `thread_id = session_id`, decide según el outcome con `ExternalStrategy` y la máquina de estados, y convierte `DatabaseUnavailableError` en `service_unavailable` con log.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k web` pasa con estos casos: respondida, parcial, mixta, sin respuesta dentro y fuera de horario, petición de humano, LLM caído y BD caída (con `caplog`).
-- [ ] **T-46 — Crear el WebSocket `/ws/v1/chat` (conexión y mensajes)** · RF-2, RF-15, RF-16, RF-17, RF-76, RF-78, RF-80, RF-81, RF-82 · ~30 min
+- [x] **T-46 — Crear el WebSocket `/ws/v1/chat` (conexión y mensajes)** · RF-2, RF-15, RF-16, RF-17, RF-76, RF-78, RF-80, RF-81, RF-82 · ~30 min
   `src/routers/web_chat.py`: `session`/`busy` al conectar, bucle `message`/`ping`, heartbeat, y descarte de la respuesta si el cliente se desconecta. Registrado en `main.py`.
   Hecho cuando: `uv run pytest -q tests/web_chat_ws_test.py -k "connect or busy or message or disconnect or db_down"` pasa con los servicios sustituidos por `dependency_overrides`.
-- [ ] **T-47 — Completar los flujos de oferta, contacto y cola en el WebSocket** · RF-25–RF-33 · ~25 min
+- [x] **T-47 — Completar los flujos de oferta, contacto y cola en el WebSocket** · RF-25–RF-33 · ~25 min
   Manejo de `human_response`, `contact` y `request_human` en el router.
   Hecho cuando: `uv run pytest -q tests/web_chat_ws_test.py -k "offer or contact or queue or reject or request_human"` pasa.
 

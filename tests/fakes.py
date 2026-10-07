@@ -1,10 +1,12 @@
-from datetime import datetime, timedelta
+import uuid
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from langchain_core.messages import BaseMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import AreaAnswer, AreaInfo, Classification, FaqHit
 from src.models.executive import Executive
 from src.models.executive_session import ExecutiveSession
+from src.models.web_session import WebPhase, WebSession
 from src.utils.exceptions.mail import MailDeliveryError
 
 
@@ -37,6 +39,12 @@ class PropertySession:
 
     async def execute(self, statement):
         return [PropertyRow(key, value) for key, value in self.values.items()]
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
 
 
 def property_session(values: dict[str, str]) -> AsyncSession:
@@ -144,3 +152,9 @@ class FakeExecutiveRepository:
 def executive(password_hash: str, id: int = 1, username: str = "ana") -> Executive:
     return Executive(id=id, username=username, display_name="Ana Pérez", password_hash=password_hash,
                      failed_attempts=0, locked_until=None, active=True, connected=False)
+
+
+def web_session(phase: WebPhase = WebPhase.bot, pending_question: str | None = None) -> WebSession:
+    return WebSession(id=uuid.UUID("11111111-1111-1111-1111-111111111111"), phase=phase, contact_attempts=0,
+                      pending_question=pending_question, connected=True,
+                      last_message_at=datetime(2026, 10, 7, 12, tzinfo=UTC))

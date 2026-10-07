@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 21/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 29/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -80,28 +80,28 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py` pasa con un caso en el que el embedder falso solo recibe las FAQ desactualizadas.
 
 ## Fase 5 — Grafo y estrategias
-- [ ] **T-22 — Implementar el estado del grafo y los nodos `load_context` y `classify`** · RF-3, RF-4, RF-5, RF-8, RF-10, RF-26 · ~30 min
+- [x] **T-22 — Implementar el estado del grafo y los nodos `load_context` y `classify`** · RF-3, RF-4, RF-5, RF-8, RF-10, RF-26 · ~30 min
   `src/agents/graph.py` con el estado tipado y `build_graph(scope, llm, retriever, checkpointer)`. `classify` produce `mixed_scope` y `wants_human`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "classify or mixed or human"` pasa.
-- [ ] **T-23 — Implementar `answer_area` con fan-out** · RF-5, RF-9 · ~30 min
+- [x] **T-23 — Implementar `answer_area` con fan-out** · RF-5, RF-9 · ~30 min
   Un `Send` por área. Sin FAQ sobre el umbral o sin prompt ⇒ `no_answer` sin llamar a `llm.answer` (D3).
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "answer_area or no_faq or no_prompt"` pasa y `FakeAgentLLM` registra 0 llamadas a `answer` en el caso sin FAQ.
-- [ ] **T-24 — Implementar `combine` y los outcomes** · RF-6, RF-7 · ~25 min
+- [x] **T-24 — Implementar `combine` y los outcomes** · RF-6, RF-7 · ~25 min
   `answered`, `partial` (con indicación de la parte sin respuesta) y `no_answer`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "combine or partial"` pasa.
-- [ ] **T-25 — Probar la memoria y el aislamiento de hilos** · RF-76, RF-77, RF-78 · ~20 min
+- [x] **T-25 — Probar la memoria y el aislamiento de hilos** · RF-76, RF-77, RF-78 · ~20 min
   Grafo con `InMemorySaver`: el segundo mensaje del hilo A ve el primero, y el hilo B no ve nada de A.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "thread"` pasa.
-- [ ] **T-26 — Probar que el grafo externo no accede a áreas internas** · RF-3, RF-4, RNF-3 · ~20 min
+- [x] **T-26 — Probar que el grafo externo no accede a áreas internas** · RF-3, RF-4, RNF-3 · ~20 min
   El `FakeRetriever` registra las áreas consultadas. Incluye un mensaje que pide revelar el prompt o datos internos.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "rnf3"` pasa y el retriever del grafo externo solo recibió ids de áreas externas.
-- [ ] **T-27 — Implementar `ChannelStrategy` y `ExternalStrategy`** · RF-1, RF-2, RF-24, RF-25, RF-32 · ~25 min
+- [x] **T-27 — Implementar `ChannelStrategy` y `ExternalStrategy`** · RF-1, RF-2, RF-24, RF-25, RF-32 · ~25 min
   `src/agents/strategies.py`. Dentro de horario ⇒ `offer_human`; fuera ⇒ reformular más los canales oficiales.
   Hecho cuando: `uv run pytest -q tests/channel_strategy_test.py -k external` pasa con un `FakeClock` dentro y fuera de horario.
-- [ ] **T-28 — Implementar `Mailer`** · RF-58, RF-60 · ~25 min
+- [x] **T-28 — Implementar `Mailer`** · RF-58, RF-60 · ~25 min
   `src/services/mailer.py` con `smtplib` en `asyncio.to_thread` y las properties `smtp_*`. Los errores SMTP se convierten en `MailDeliveryError`.
   Hecho cuando: `uv run pytest -q tests/mailer_test.py` pasa con `smtplib.SMTP` sustituido: envío correcto y error ⇒ `MailDeliveryError`.
-- [ ] **T-29 — Implementar `InternalStrategy`** · RF-57, RF-58, RF-59, RF-60, RF-61, RF-62 · ~25 min
+- [x] **T-29 — Implementar `InternalStrategy`** · RF-57, RF-58, RF-59, RF-60, RF-61, RF-62 · ~25 min
   Correo al responsable del área o, si no hay área, al correo general. Si falla el envío, registra un log y responde con el mensaje de contactar directamente al área.
   Hecho cuando: `uv run pytest -q tests/channel_strategy_test.py -k internal` pasa con estos casos: responsable, correo general y fallo con `caplog`.
 

@@ -3,6 +3,7 @@ from typing import cast
 from langchain_core.messages import BaseMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import AreaAnswer, AreaInfo, Classification, FaqHit
+from src.utils.exceptions.mail import MailDeliveryError
 
 
 class FakeClock:
@@ -80,3 +81,28 @@ class FakeEmbedder:
     async def embed_documents(self, texts: list[str]) -> list[list[float]]:
         self.documents.extend(texts)
         return [[0.2] * 768 for _ in texts]
+
+
+class FakeRetriever:
+    def __init__(self, hits: dict[int, list[FaqHit]] | None = None):
+        self.hits = hits or {}
+        self.searched_area_ids: list[int] = []
+        self.refreshed_area_ids: list[int] = []
+
+    async def search(self, area_id: int, question: str) -> list[FaqHit]:
+        self.searched_area_ids.append(area_id)
+        return self.hits.get(area_id, [])
+
+    async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
+        self.refreshed_area_ids.extend(area_ids)
+
+
+class FakeMailer:
+    def __init__(self, fail: bool = False):
+        self.fail = fail
+        self.sent: list[tuple[list[str], str, str]] = []
+
+    async def send(self, to: list[str], subject: str, body: str) -> None:
+        if self.fail:
+            raise MailDeliveryError("SMTP caído")
+        self.sent.append((to, subject, body))

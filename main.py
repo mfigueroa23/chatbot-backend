@@ -10,9 +10,11 @@ from src.agents.graph import build_graph, checkpoint_serializer
 from src.config import settings
 from src.database.session import engine
 from src.models.business_area import AreaScope
+from src.services.realtime import ConnectionHub
 from src.routers.executive import router as executive_router
 from src.routers.google_chat import router as google_chat_router
 from src.routers.health import router as health_router
+from src.routers.live_chat import router as live_chat_router
 from src.routers.web_chat import router as web_chat_router
 
 @asynccontextmanager
@@ -25,7 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ) as pool:
         app.state.checkpointer = AsyncPostgresSaver(pool, serde=checkpoint_serializer())
         app.state.external_graph = build_graph(AreaScope.external, app.state.checkpointer)
+        app.state.hub = ConnectionHub()
         yield
+        await app.state.hub.close()
     await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)
@@ -36,6 +40,7 @@ app.include_router(health_router)
 app.include_router(google_chat_router)
 app.include_router(executive_router)
 app.include_router(web_chat_router)
+app.include_router(live_chat_router)
 
 app_logger = logging.getLogger("src")
 app_logger.handlers = logging.getLogger("uvicorn").handlers

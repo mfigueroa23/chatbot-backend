@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 47/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 53/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -166,22 +166,22 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/web_chat_ws_test.py -k "offer or contact or queue or reject or request_human"` pasa.
 
 ## Fase 9 — Chat en vivo
-- [ ] **T-48 — Implementar el dominio del chat en vivo** · RF-34, RF-39, RF-40, RF-41, RF-47, RF-50, RF-51, RF-53, RF-55 · ~30 min
+- [x] **T-48 — Implementar el dominio del chat en vivo** · RF-34, RF-39, RF-40, RF-41, RF-47, RF-50, RF-51, RF-53, RF-55 · ~30 min
   Funciones puras de transición en `src/services/live_chat.py`: tomar, límite por ejecutivo, desconexión y retoma antes de 60 min, vencimiento del plazo, salida del cliente y cierre por el ejecutivo.
   Hecho cuando: `uv run pytest -q tests/live_chat_test.py -k domain` pasa con `FakeClock`, incluida la doble toma ⇒ `ChatAlreadyAssignedError`.
-- [ ] **T-49 — Implementar el SQL del chat en vivo** · RF-39, RF-40, RF-41, RF-42, RF-55 · ~30 min
+- [x] **T-49 — Implementar el SQL del chat en vivo** · RF-39, RF-40, RF-41, RF-42, RF-55 · ~30 min
   `take` (bloqueo `FOR UPDATE` de la fila del ejecutivo, conteo frente a `executive_max_chats`, `UPDATE … WHERE status='waiting' RETURNING`), `list_waiting` FIFO, `post_message` y `close`.
   Hecho cuando: `uv run pytest -q tests/live_chat_test.py -k sql` pasa, comprobando en las sentencias compiladas `FOR UPDATE` y `status = 'waiting'` en el `WHERE` del `UPDATE`.
-- [ ] **T-50 — Implementar `ConnectionHub` y LISTEN/NOTIFY** · RF-43, RF-44, RF-45, RF-48, RF-52, RF-54, RF-56 · ~30 min
+- [x] **T-50 — Implementar `ConnectionHub` y LISTEN/NOTIFY** · RF-43, RF-44, RF-45, RF-48, RF-52, RF-54, RF-56 · ~30 min
   `src/services/realtime.py`: registro local de sockets, `publish` con `pg_notify` (payload solo con ids) y un listener asyncpg que reparte los eventos. `FakeHub` en `tests/fakes.py`.
   Hecho cuando: `uv run pytest -q tests/realtime_test.py` pasa: el payload nunca contiene el texto del mensaje y el despacho entrega cada evento solo al socket local destinatario.
-- [ ] **T-51 — Crear el router de `live-chats`** · RF-39, RF-40, RF-41, RF-42, RF-55, RF-74, RF-75 · ~30 min
+- [x] **T-51 — Crear el router de `live-chats`** · RF-39, RF-40, RF-41, RF-42, RF-55, RF-74, RF-75 · ~30 min
   `src/routers/live_chat.py` y `src/interfaces/live_chat.py`: `GET` en espera, `POST take` (resumen) y `POST close` (solo el ejecutivo asignado).
   Hecho cuando: `uv run pytest -q tests/executive_api_test.py -k live_chats` pasa con 200, 401, 403, 404, los dos tipos de 409 y 503.
-- [ ] **T-52 — Crear el WebSocket `/ws/v1/executive`** · RF-44, RF-45, RF-47, RF-49, RF-50, RF-54, RF-75 · ~30 min
+- [x] **T-52 — Crear el WebSocket `/ws/v1/executive`** · RF-44, RF-45, RF-47, RF-49, RF-50, RF-54, RF-75 · ~30 min
   En `src/routers/executive.py`: el primer mensaje `auth` (o 4401), `assigned_chats` al conectar (retoma), reenvío de mensajes y `mark_executive_disconnected` al cerrar el socket o al caducar la sesión.
   Hecho cuando: `uv run pytest -q tests/executive_ws_test.py` pasa con estos casos: 4401, retoma con chats asignados, mensaje del ejecutivo publicado en el hub, aviso de chat cerrado y sesión caducada tratada como desconexión.
-- [ ] **T-53 — Implementar la fase en vivo en el WebSocket del cliente** · RF-35, RF-43, RF-44, RF-45, RF-46, RF-48, RF-53, RF-54, RF-56 · ~30 min
+- [x] **T-53 — Implementar la fase en vivo en el WebSocket del cliente** · RF-35, RF-43, RF-44, RF-45, RF-46, RF-48, RF-53, RF-54, RF-56 · ~30 min
   En la fase `live` el bot no responde y los mensajes se reenvían al ejecutivo. Eventos `executive_joined`, `executive_disconnected` y `chat_closed`. Si el cliente se desconecta, el chat sale de la cola (si estaba en espera) o se cierra con aviso al ejecutivo (si estaba asignado).
   Hecho cuando: `uv run pytest -q tests/web_chat_ws_test.py -k live` pasa y `FakeAgentLLM` registra 0 llamadas durante la fase en vivo.
 

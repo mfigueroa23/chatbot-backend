@@ -6,3 +6,6 @@ class ChatAlreadyAssignedError(Exception):
 
 class ExecutiveChatLimitError(Exception):
     """El ejecutivo alcanzó el máximo de chats simultáneos."""
+
+class NotChatOwnerError(Exception):
+    """Solo el ejecutivo asignado puede operar sobre el chat."""

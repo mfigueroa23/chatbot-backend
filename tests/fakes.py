@@ -6,7 +6,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import AreaAnswer, AreaInfo, Classification, FaqHit
 from src.models.executive import Executive
 from src.models.executive_session import ExecutiveSession
+from src.models.live_chat import LiveChat, LiveChatStatus
 from src.models.web_session import WebPhase, WebSession
+from src.services.realtime import ConnectionHub, Event
 from src.utils.exceptions.mail import MailDeliveryError
 
 
@@ -158,3 +160,23 @@ def web_session(phase: WebPhase = WebPhase.bot, pending_question: str | None = N
     return WebSession(id=uuid.UUID("11111111-1111-1111-1111-111111111111"), phase=phase, contact_attempts=0,
                       pending_question=pending_question, connected=True,
                       last_message_at=datetime(2026, 10, 7, 12, tzinfo=UTC))
+
+
+class FakeHub(ConnectionHub):
+    """Reparte en memoria como el real, pero registra lo publicado en vez de usar pg_notify."""
+
+    def __init__(self):
+        super().__init__()
+        self.published: list[Event] = []
+
+    def _ensure_listener(self) -> None:
+        pass
+
+    async def publish(self, session: AsyncSession, event: Event) -> None:
+        self.published.append(event)
+
+
+def assigned_chat(id: int = 7, executive_id: int = 1) -> LiveChat:
+    return LiveChat(id=id, web_session_id=web_session().id, status=LiveChatStatus.assigned, executive_id=executive_id,
+                    customer_name="Ana", customer_contact="ana@correo.cl", pending_question="¿Cheque?",
+                    executive_disconnected_at=None)

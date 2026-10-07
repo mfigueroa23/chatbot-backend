@@ -116,9 +116,3 @@ async def execute_and_commit(session: AsyncSession, statement) -> None:
         await session.commit()
     except (SQLAlchemyError, OSError) as exc:
         raise DatabaseUnavailableError(str(exc)) from exc
-
-async def save(session: AsyncSession) -> None:
-    try:
-        await session.commit()
-    except (SQLAlchemyError, OSError) as exc:
-        raise DatabaseUnavailableError(str(exc)) from exc

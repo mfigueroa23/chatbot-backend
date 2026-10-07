@@ -3,11 +3,15 @@ import pytest
 from fastapi.testclient import TestClient
 from main import app
 from src.database.session import get_session
-from src.routers.executive import get_executive_repository
+from src.models.live_chat import LiveChat
+from src.routers import live_chat as live_chat_router
+from src.routers.executive import get_current_executive, get_executive_repository
 from src.services.executive_auth import password_hasher
+from src.services.realtime import get_hub
 from src.utils.clock import get_clock
 from src.utils.exceptions.database import DatabaseUnavailableError
-from tests.fakes import FakeClock, FakeExecutiveRepository, executive, property_session
+from src.utils.exceptions.live_chat import ChatAlreadyAssignedError, ChatNotFoundError, ExecutiveChatLimitError, NotChatOwnerError
+from tests.fakes import FakeClock, FakeExecutiveRepository, FakeHub, assigned_chat, executive, property_session
 
 PASSWORD = "Clave-Segura-123"
 GENERIC_ERROR = {"detail": "Usuario o contraseña incorrectos"}
@@ -64,3 +68,84 @@ def test_logout_revoca_la_sesion(repo: FakeExecutiveRepository):
 
 def test_logout_sin_token_responde_401(repo: FakeExecutiveRepository):
     assert TestClient(app).post("/api/v1/executives/logout").status_code == 401
+
+
+# --- live-chats ---------------------------------------------------------------------------------------------------
+
+@pytest.fixture
+def hub(repo: FakeExecutiveRepository) -> FakeHub:
+    hub = FakeHub()
+    app.dependency_overrides[get_hub] = lambda: hub
+    app.dependency_overrides[get_current_executive] = lambda: executive(password_hasher.hash(PASSWORD))
+    return hub
+
+
+def raising(error: Exception):
+    async def function(*args):
+        raise error
+    return function
+
+
+def test_live_chats_lista_los_chats_en_espera(hub: FakeHub, monkeypatch: pytest.MonkeyPatch):
+    async def list_waiting(session):
+        return [LiveChat(id=3, customer_name="Ana", created_at=datetime(2026, 10, 7, 12, tzinfo=UTC))]
+
+    monkeypatch.setattr(live_chat_router, "list_waiting", list_waiting)
+
+    response = TestClient(app).get("/api/v1/live-chats", params={"status": "waiting"})
+
+    assert response.status_code == 200
+    assert response.json() == [{"id": 3, "customer_name": "Ana", "created_at": "2026-10-07T12:00:00Z"}]
+
+
+def test_live_chats_sin_sesion_responde_401(repo: FakeExecutiveRepository):
+    assert TestClient(app).get("/api/v1/live-chats").status_code == 401
+
+
+def test_live_chats_take_devuelve_el_resumen_y_avisa_al_cliente(hub: FakeHub, monkeypatch: pytest.MonkeyPatch):
+    async def take(session, chat_id, executive_id, max_chats, now):
+        return assigned_chat(chat_id, executive_id)
+
+    monkeypatch.setattr(live_chat_router, "take", take)
+
+    response = TestClient(app).post("/api/v1/live-chats/7/take")
+
+    assert response.status_code == 200
+    assert response.json() == {"id": 7, "customer_name": "Ana", "customer_contact": "ana@correo.cl", "pending_question": "¿Cheque?"}
+    assert [event.kind for event in hub.published] == ["chat_taken"]
+
+
+@pytest.mark.parametrize("error, status_code, detail", [
+    (ChatNotFoundError(), 404, "Chat no encontrado"),
+    (ChatAlreadyAssignedError(), 409, "El chat ya fue asignado a otro ejecutivo"),
+    (ExecutiveChatLimitError(), 409, "Alcanzaste el máximo de chats simultáneos"),
+    (DatabaseUnavailableError("caída"), 503, "Servicio no disponible"),
+])
+def test_live_chats_take_errores(hub: FakeHub, monkeypatch: pytest.MonkeyPatch, error: Exception, status_code: int, detail: str):
+    monkeypatch.setattr(live_chat_router, "take", raising(error))
+
+    response = TestClient(app).post("/api/v1/live-chats/7/take")
+
+    assert (response.status_code, response.json()["detail"]) == (status_code, detail)
+
+
+def test_live_chats_close_de_otro_ejecutivo_responde_403(hub: FakeHub, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(live_chat_router, "close", raising(NotChatOwnerError()))
+
+    assert TestClient(app).post("/api/v1/live-chats/7/close").status_code == 403
+
+
+def test_live_chats_close_avisa_al_cliente(hub: FakeHub, monkeypatch: pytest.MonkeyPatch):
+    async def close(session, chat_id, executive_id, now):
+        return assigned_chat(chat_id, executive_id)
+
+    monkeypatch.setattr(live_chat_router, "close", close)
+
+    assert TestClient(app).post("/api/v1/live-chats/7/close").status_code == 204
+    assert [(event.kind, event.reason) for event in hub.published] == [("chat_closed", "executive")]
+
+
+def test_live_chats_con_la_base_de_datos_caida_responde_503(hub: FakeHub, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(live_chat_router, "list_waiting", raising(DatabaseUnavailableError("caída")))
+
+    assert TestClient(app).get("/api/v1/live-chats").status_code == 503

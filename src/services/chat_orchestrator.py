@@ -5,7 +5,7 @@ from src.agents.graph import AgentContext, AgentGraph, build_graph, load_catalog
 from src.agents.llm import build_gemini_llm
 from src.agents.retriever import build_faq_retriever
 from src.agents.strategies import ExternalStrategy, InternalStrategy, NoAnswerContext
-from src.database.session import SessionLocal
+from src.database.session import SessionLocal, commit
 from src.interfaces.web_chat import (
     Channel, ErrorMessage, OfferHuman, OfficialChannels, Queued, RequestContact, ServerMessage, TextMessage)
 from src.models.business_area import AreaScope
@@ -14,7 +14,7 @@ from src.services.business_data import get_official_channels
 from src.services.live_chat import enqueue
 from src.services.mailer import Mailer
 from src.services.message_validation import MAX_MESSAGE_LENGTH, validate_user_message
-from src.services.web_session import answer_offer, reset_to_bot, save, start_offer, submit_contact, touch_last_message
+from src.services.web_session import answer_offer, reset_to_bot, start_offer, submit_contact, touch_last_message
 from src.utils.clock import Clock
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -88,7 +88,7 @@ async def handle_web_message(
             replies = [bot(result.reply)]
         else:
             replies = await offer_human_or_channels(session, web_session, question, clock)
-        await save(session)
+        await commit(session)
         return replies
     except LlmNotConfiguredError:
         return [unavailable()]
@@ -103,14 +103,14 @@ async def handle_request_human(session: AsyncSession, web_session: WebSession, c
     if web_session.phase in (WebPhase.queued, WebPhase.live):
         return []
     replies = await offer_human_or_channels(session, web_session, web_session.pending_question or HUMAN_REQUESTED, clock)
-    await save(session)
+    await commit(session)
     return replies
 
 async def handle_human_response(session: AsyncSession, web_session: WebSession, accept: bool) -> list[ServerMessage]:
     if web_session.phase != WebPhase.offering_human:
         return []
     answer_offer(web_session, accept)
-    await save(session)
+    await commit(session)
     if accept:
         return [RequestContact(attempt=1)]
     return [bot(OFFER_REJECTED), await official_channels(session)]
@@ -124,7 +124,7 @@ async def handle_contact(
     result = submit_contact(web_session, name, email, phone)
     if result.outcome == "queued":
         await enqueue(session, web_session.id, result.name, result.contact, question)
-    await save(session)
+    await commit(session)
     if result.outcome == "retry":
         return [RequestContact(attempt=web_session.contact_attempts + 1)]
     if result.outcome == "exhausted":

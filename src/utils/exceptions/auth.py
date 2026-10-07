@@ -1,6 +1,9 @@
 class InvalidCredentialsError(Exception):
     """Usuario o contraseña incorrectos."""
 
+    def __init__(self):
+        super().__init__("Usuario o contraseña incorrectos")
+
 class AccountLockedError(Exception):
     """La cuenta está bloqueada temporalmente por intentos fallidos."""
 

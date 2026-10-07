@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from src.config import settings
 from src.database.session import engine
+from src.routers.executive import router as executive_router
 from src.routers.google_chat import router as google_chat_router
 from src.routers.health import router as health_router
 
@@ -18,6 +19,7 @@ app.state.chat_tasks = set()
 
 app.include_router(health_router)
 app.include_router(google_chat_router)
+app.include_router(executive_router)
 
 app_logger = logging.getLogger("src")
 app_logger.handlers = logging.getLogger("uvicorn").handlers

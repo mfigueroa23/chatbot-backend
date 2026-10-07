@@ -3,6 +3,8 @@ from typing import cast
 from langchain_core.messages import BaseMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import AreaAnswer, AreaInfo, Classification, FaqHit
+from src.models.executive import Executive
+from src.models.executive_session import ExecutiveSession
 from src.utils.exceptions.mail import MailDeliveryError
 
 
@@ -112,3 +114,33 @@ class FakeMailer:
         if self.fail:
             raise MailDeliveryError("SMTP caído")
         self.sent.append((to, subject, body))
+
+
+class FakeExecutiveRepository:
+    def __init__(self, executives: list[Executive] | None = None):
+        self.executives = {executive.username.lower(): executive for executive in executives or []}
+        self.sessions: dict[str, ExecutiveSession] = {}
+
+    async def find_by_username(self, username: str) -> Executive | None:
+        return self.executives.get(username.lower())
+
+    async def add_session(self, session: ExecutiveSession) -> None:
+        self.sessions[session.token_hash] = session
+
+    async def find_session(self, token_hash: str) -> tuple[ExecutiveSession, Executive] | None:
+        session = self.sessions.get(token_hash)
+        if session is None:
+            return None
+        executive = next(e for e in self.executives.values() if e.id == session.executive_id)
+        return session, executive
+
+    async def delete_session(self, token_hash: str) -> None:
+        self.sessions.pop(token_hash, None)
+
+    async def save(self) -> None:
+        pass
+
+
+def executive(password_hash: str, id: int = 1, username: str = "ana") -> Executive:
+    return Executive(id=id, username=username, display_name="Ana Pérez", password_hash=password_hash,
+                     failed_attempts=0, locked_until=None, active=True, connected=False)

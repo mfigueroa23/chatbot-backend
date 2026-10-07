@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 34/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 38/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -123,16 +123,16 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "router or slow"` pasa: 401 sin token y, con un timeout de 0.05 s y un agente lento, respuesta "procesando" y `create_message` llamado con el hilo original.
 
 ## Fase 7 — Ejecutivos
-- [ ] **T-35 — Implementar el hash Argon2 y el comando `hash_password`** · RF-70, RNF-4 · ~20 min
+- [x] **T-35 — Implementar el hash Argon2 y el comando `hash_password`** · RF-70, RNF-4 · ~20 min
   `PasswordHasher` configurado en `src/services/executive_auth.py`; `src/cli/hash_password.py` pide la contraseña con `getpass` (sin mostrarla) e imprime el hash.
   Hecho cuando: `uv run pytest -q tests/executive_auth_test.py -k hash` pasa (el hash es distinto de la contraseña y se verifica) y `uv run python -m src.cli.hash_password` imprime un hash `$argon2id$`.
-- [ ] **T-36 — Implementar la lógica de login con bloqueo** · RF-71, RF-72, RF-73 · ~30 min
+- [x] **T-36 — Implementar la lógica de login con bloqueo** · RF-71, RF-72, RF-73 · ~30 min
   En `executive_auth.py`: contador de fallos, `locked_until` (`login_max_attempts` y `login_lock_minutes`), error genérico para usuario inexistente, contraseña incorrecta o cuenta bloqueada, y hash ficticio para usuarios inexistentes. Usa `FakeClock` y un repositorio falso.
   Hecho cuando: `uv run pytest -q tests/executive_auth_test.py -k login` pasa con estos casos: correcto; incorrecto; inexistente (mismo mensaje); bloqueo al 5.º fallo; contraseña correcta rechazada durante el bloqueo; desbloqueo a los 15 min.
-- [ ] **T-37 — Implementar las sesiones de ejecutivo** · RF-70, RF-74, RF-75 · ~25 min
+- [x] **T-37 — Implementar las sesiones de ejecutivo** · RF-70, RF-74, RF-75 · ~25 min
   Token de 32 bytes guardado como sha256; `authenticate(token)` con caducidad según `executive_session_hours`; `logout`.
   Hecho cuando: `uv run pytest -q tests/executive_auth_test.py -k session` pasa con estos casos: válido, caducado a las 8 h, revocado e inexistente.
-- [ ] **T-38 — Crear el router de login y logout** · RF-70, RF-71, RF-75 · ~25 min
+- [x] **T-38 — Crear el router de login y logout** · RF-70, RF-71, RF-75 · ~25 min
   `src/routers/executive.py` (parte HTTP) y `src/interfaces/executive.py`. Dependencia `CurrentExecutive` que lee el Bearer y responde 401 si no es válido.
   Hecho cuando: `uv run pytest -q tests/executive_api_test.py -k "login or logout"` pasa: 200 con token, 401 genérico, 204 en logout, 401 sin token y 503 con la BD caída.
 

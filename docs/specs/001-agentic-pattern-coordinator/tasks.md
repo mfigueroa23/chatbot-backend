@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 95/100 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 98/100 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -330,13 +330,13 @@ archivo de tests.
   Hecho cuando: `grep -rnE "sub_agent|AreaToolbox|\.step\(|\.classify\(|ClassificationOutput" src tests` no devuelve nada y la suite completa está en verde.
 
 ## Fase 21 — Rediseño: Google Chat como complemento de Google Workspace
-- [ ] **T-97 — Verificar el ID token del complemento** · RF-63, RF-64 · ~30 min
+- [x] **T-97 — Verificar el ID token del complemento** · RF-63, RF-64 · ~30 min
   `verify_addon_token(token, audience, service_account, http)` en `src/services/google_chat.py`, con los certificados de Google cacheados según `Cache-Control`; property `google_chat_addon_service_account`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k token` pasa: válido, otra cuenta de servicio, `email_verified` falso, otra audiencia, firma inválida y sin token.
-- [ ] **T-98 — Leer el evento del complemento** · RF-65, RF-66, RF-67, RF-103, RF-104 · ~25 min
+- [x] **T-98 — Leer el evento del complemento** · RF-65, RF-66, RF-67, RF-103, RF-104 · ~25 min
   `AddonEvent` en `src/interfaces/google_chat.py` y `handle_event` con `chat.messagePayload`, `chat.addedToSpacePayload` y `chat.user`; la conversación sigue siendo el space en un mensaje directo y el hilo en un space.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "dm or mention or added or other_event or conversation"` pasa.
-- [ ] **T-99 — Responder con `hostAppDataAction`** · RF-65, RF-68, RF-69 · ~20 min
+- [x] **T-99 — Responder con `hostAppDataAction`** · RF-65, RF-68, RF-69 · ~20 min
   `chat_reply(text)` y el router con el nuevo evento y la nueva verificación; la publicación diferida no cambia.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "router or slow or reply"` pasa: 401 sin token, respuesta `hostAppDataAction` y publicación diferida en el hilo original.
 

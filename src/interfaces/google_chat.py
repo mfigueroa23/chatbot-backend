@@ -1,3 +1,4 @@
+from typing import Any
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
@@ -20,9 +21,24 @@ class ChatSpace(ChatModel):
     name: str
     space_type: str | None = None
 
-class ChatEvent(ChatModel):
-    """Evento de interacción de Google Chat: solo los campos que usa el bot."""
-    type: str
-    space: ChatSpace | None = None
+class MessagePayload(ChatModel):
     message: ChatMessage | None = None
+    space: ChatSpace | None = None
+
+class SpacePayload(ChatModel):
+    space: ChatSpace | None = None
+
+class AddonChat(ChatModel):
     user: ChatUser | None = None
+    message_payload: MessagePayload | None = None
+    added_to_space_payload: SpacePayload | None = None
+
+class AddonEvent(ChatModel):
+    """Evento de una app de Chat creada como complemento de Google Workspace: solo los campos que usa el bot."""
+    chat: AddonChat | None = None
+
+def chat_reply(text: str | None) -> dict[str, Any]:
+    # Respuesta síncrona del complemento; sin texto no se publica nada.
+    if not text:
+        return {}
+    return {"hostAppDataAction": {"chatDataAction": {"createMessageAction": {"message": {"text": text}}}}}

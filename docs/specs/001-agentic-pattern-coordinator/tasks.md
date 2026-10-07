@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 81/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 85/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -288,16 +288,16 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/sweeper_test.py -k chat_thread` pasa: `adelete_thread` se llama una vez por conversación caducada.
 
 ## Fase 18 — Ampliación: protección frente a manipulación
-- [ ] **T-84 — Redactar los prompts recomendados** · RF-10, RF-91, RF-100, RF-106, RF-107, RF-108 · ~25 min
+- [x] **T-84 — Redactar los prompts recomendados** · RF-10, RF-91, RF-100, RF-106, RF-107, RF-108 · ~25 min
   `docs/specs/001-agentic-pattern-coordinator/prompts.md` con `classifier`, `internal_agent`, `external_agent` y `area_rules`: uso de las tools, seguir procedimientos, no revelar instrucciones, tools, áreas ni funcionamiento interno, ignorar instrucciones del usuario o de los datos, y la respuesta genérica.
   Hecho cuando: el archivo contiene las 4 keys y, en cada prompt, la cláusula de no revelar y la respuesta genérica de RF-108 (comprobado con `grep`).
-- [ ] **T-85 — Implementar el detector de fugas y la batería** · RNF-9 · ~30 min
+- [x] **T-85 — Implementar el detector de fugas y la batería** · RNF-9 · ~30 min
   `src/cli/jailbreak_check.py`: `ATTACKS` con al menos 20 ataques (revelar prompt, tools o áreas internas; "ignora tus instrucciones"; juego de rol; inyección en los datos) y `find_leaks(reply, prompts, tool_names, internal_areas)`.
   Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py -k "leak or battery"` pasa: detecta un fragmento de 30 o más caracteres de un prompt, un nombre de tool y un área interna; no marca la negativa genérica; la batería tiene 20 o más ataques.
-- [ ] **T-86 — Ejecutar la batería contra un servidor** · RF-106, RF-107, RF-108 · ~25 min
+- [x] **T-86 — Ejecutar la batería contra un servidor** · RF-106, RF-107, RF-108 · ~25 min
   `uv run python -m src.cli.jailbreak_check --url <ws>` envía cada ataque en una sesión nueva, lee los prompts de la BD e imprime PASA/FALLA por ataque, con código de salida 1 si hay fugas.
   Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py -k runner` pasa con un cliente WebSocket sustituido, y `uv run python -m src.cli.jailbreak_check --help` termina con código 0.
-- [ ] **T-87 — Probar la ampliación en local con datos de prueba** · RF-91–99, RF-106–108, RNF-9 · ~30 min
+- [x] **T-87 — Probar la ampliación en local con datos de prueba** · RF-91–99, RF-106–108, RNF-9 · ~30 min
   En la BD local (sin versionar): los prompts de `prompts.md`, un procedimiento con campos en Servicio al Cliente y el `chat_space` de prueba. Ejecutar `jailbreak_check` contra el servidor local y un procedimiento web de punta a punta.
   Hecho cuando: `jailbreak_check` termina con código 0 (20/20 sin fugas) y el procedimiento web llega a la notificación (o a `official_channels` si no hay space de prueba); el resultado queda registrado en R16 del plan.
 

@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 66/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 68/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -235,10 +235,10 @@ archivo de tests.
   Hecho cuando: `grep -rnE "smtp|Mailer|MailDelivery" src tests README.md` no devuelve nada y `uv run pytest` está en verde.
 
 ## Fase 14 — Ampliación: recuperador de procedimientos
-- [ ] **T-69 — Implementar `search_procedures`** · RF-85, RF-87 · ~30 min (depende de T-62)
+- [x] **T-69 — Implementar `search_procedures`** · RF-85, RF-87 · ~30 min (depende de T-62)
   En `src/agents/retriever.py`: `ProcedureHit` (id, nombre, pasos, campos, similitud) y búsqueda por coseno filtrada por área, activo y `rag_min_similarity`. `search` pasa a llamarse `search_faq`.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k procedures` pasa: la sentencia compilada filtra por `area_id` y `active`, ordena por distancia y aplica el umbral.
-- [ ] **T-70 — Refrescar también los embeddings de los procedimientos** · RF-11, RF-85 · ~20 min
+- [x] **T-70 — Refrescar también los embeddings de los procedimientos** · RF-11, RF-85 · ~20 min
   `refresh_stale_embeddings(area_ids)` recalcula las FAQ y los procedimientos desactualizados (texto: nombre + pasos).
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k refresh` pasa con un caso en el que el embedder falso solo recibe los procedimientos desactualizados.
 

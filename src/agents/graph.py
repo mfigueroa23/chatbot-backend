@@ -122,7 +122,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if not area.system_prompt:
             return {"area_answers": [AreaAnswer(area.id, area.name, None)]}
         await runtime.context.retriever.refresh_stale_embeddings([area.id])
-        faqs = await runtime.context.retriever.search(area.id, state["question"])
+        faqs = await runtime.context.retriever.search_faq(area.id, state["question"])
         if not faqs:
             return {"area_answers": [AreaAnswer(area.id, area.name, None)]}
         answer = await runtime.context.llm.answer(area, state["rules"], state["question"], faqs, state["history"])

@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from dataclasses import dataclass
 from functools import lru_cache
 from typing import Protocol
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
@@ -9,6 +10,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import FaqHit, get_llm_property
 from src.models.faq import EMBEDDING_DIMENSIONS, Faq
 from src.models.faq_category import FaqCategory
+from src.models.procedure import Procedure
+from src.models.procedure_field import ProcedureField
+from src.services.procedures import FieldSpec
 from src.services.property import get_float_property, get_int_property
 from src.utils.exceptions.agent import LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -19,8 +23,17 @@ class Embedder(Protocol):
     async def embed_query(self, text: str) -> list[float]: ...
     async def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
 
+@dataclass(frozen=True)
+class ProcedureHit:
+    id: int
+    name: str
+    steps: str
+    fields: list[FieldSpec]
+    similarity: float
+
 class Retriever(Protocol):
-    async def search(self, area_id: int, question: str) -> list[FaqHit]: ...
+    async def search_faq(self, area_id: int, query: str) -> list[FaqHit]: ...
+    async def search_procedures(self, area_id: int, query: str) -> list[ProcedureHit]: ...
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None: ...
 
 class GeminiEmbedder:
@@ -49,8 +62,8 @@ class FaqRetriever:
         self._top_k = top_k
         self._min_similarity = min_similarity
 
-    async def search(self, area_id: int, question: str) -> list[FaqHit]:
-        embedding = await self._embedder.embed_query(question)
+    async def search_faq(self, area_id: int, query: str) -> list[FaqHit]:
+        embedding = await self._embedder.embed_query(query)
         distance = Faq.embedding.cosine_distance(embedding)
         statement = (
             select(Faq.question, Faq.answer, distance.label("distance"))
@@ -66,21 +79,53 @@ class FaqRetriever:
             raise DatabaseUnavailableError(str(exc)) from exc
         return [FaqHit(row.question, row.answer, 1 - row.distance) for row in rows]
 
-    async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
+    async def search_procedures(self, area_id: int, query: str) -> list[ProcedureHit]:
+        embedding = await self._embedder.embed_query(query)
+        distance = Procedure.embedding.cosine_distance(embedding)
         statement = (
+            select(Procedure.id, Procedure.name, Procedure.steps, distance.label("distance"))
+            .where(Procedure.area_id == area_id, Procedure.active, distance <= 1 - self._min_similarity)
+            .order_by(distance)
+            .limit(self._top_k)
+        )
+        try:
+            async with self._session_factory() as session:
+                rows = list(await session.execute(statement))
+                if not rows:
+                    return []
+                fields = list((await session.execute(
+                    select(ProcedureField)
+                    .where(ProcedureField.procedure_id.in_([row.id for row in rows]))
+                    .order_by(ProcedureField.procedure_id, ProcedureField.position, ProcedureField.id)
+                )).scalars())
+        except (SQLAlchemyError, OSError) as exc:
+            raise DatabaseUnavailableError(str(exc)) from exc
+        return [
+            ProcedureHit(row.id, row.name, row.steps,
+                         [FieldSpec(f.name, f.label, f.kind) for f in fields if f.procedure_id == row.id], 1 - row.distance)
+            for row in rows
+        ]
+
+    async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
+        stale_faqs = (
             select(Faq)
             .join(FaqCategory, Faq.category_id == FaqCategory.id)
             .where(FaqCategory.area_id.in_(area_ids), Faq.active, Faq.embedded_hash.is_distinct_from(Faq.content_hash))
         )
+        stale_procedures = select(Procedure).where(
+            Procedure.area_id.in_(area_ids), Procedure.active, Procedure.embedded_hash.is_distinct_from(Procedure.content_hash))
         try:
             async with self._session_factory() as session:
-                faqs = list((await session.execute(statement)).scalars())
-                if not faqs:
+                faqs = list((await session.execute(stale_faqs)).scalars())
+                procedures = list((await session.execute(stale_procedures)).scalars())
+                items = [(faq, f"{faq.question}\n{faq.answer}") for faq in faqs]
+                items += [(procedure, f"{procedure.name}\n{procedure.steps}") for procedure in procedures]
+                if not items:
                     return
-                embeddings = await self._embedder.embed_documents([f"{faq.question}\n{faq.answer}" for faq in faqs])
-                for faq, embedding in zip(faqs, embeddings):
-                    faq.embedding = embedding
-                    faq.embedded_hash = faq.content_hash
+                embeddings = await self._embedder.embed_documents([text for _, text in items])
+                for (item, _), embedding in zip(items, embeddings):
+                    item.embedding = embedding
+                    item.embedded_hash = item.content_hash
                 await session.commit()
         except (SQLAlchemyError, OSError) as exc:
             raise DatabaseUnavailableError(str(exc)) from exc

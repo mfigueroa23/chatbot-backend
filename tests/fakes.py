@@ -4,6 +4,7 @@ from typing import cast
 from langchain_core.messages import BaseMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import AreaAnswer, AreaInfo, Classification, FaqHit
+from src.agents.retriever import ProcedureHit
 from src.models.executive import Executive
 from src.models.executive_session import ExecutiveSession
 from src.models.live_chat import LiveChat, LiveChatStatus
@@ -103,16 +104,22 @@ class FakeEmbedder:
 
 
 class FakeRetriever:
-    def __init__(self, hits: dict[int, list[FaqHit]] | None = None):
+    def __init__(self, hits: dict[int, list[FaqHit]] | None = None, procedures: dict[int, list[ProcedureHit]] | None = None):
         self.hits = hits or {}
+        self.procedures = procedures or {}
         self.searched_area_ids: list[int] = []
         self.searched_questions: list[str] = []
         self.refreshed_area_ids: list[int] = []
 
-    async def search(self, area_id: int, question: str) -> list[FaqHit]:
+    async def search_faq(self, area_id: int, query: str) -> list[FaqHit]:
         self.searched_area_ids.append(area_id)
-        self.searched_questions.append(question)
+        self.searched_questions.append(query)
         return self.hits.get(area_id, [])
+
+    async def search_procedures(self, area_id: int, query: str) -> list[ProcedureHit]:
+        self.searched_area_ids.append(area_id)
+        self.searched_questions.append(query)
+        return self.procedures.get(area_id, [])
 
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
         self.refreshed_area_ids.extend(area_ids)

@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 57/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 57/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -193,19 +193,124 @@ archivo de tests.
   Bucle de 30 s con `pg_try_advisory_lock`: aplica las decisiones por SQL, publica los eventos en el hub y llama a `checkpointer.adelete_thread` antes de borrar cada sesión. Se cancela al apagar.
   Hecho cuando: `uv run pytest -q tests/sweeper_test.py -k runner` pasa (sin el lock no ejecuta nada; con el lock llama a `adelete_thread` una vez por sesión caducada) y la suite sigue en verde.
 
-## Cierre
-- [ ] **T-56 — Ejecutar la prueba de carga del RNF-2** · RNF-1, RNF-2 · ~30 min
-  50 sesiones WebSocket simultáneas contra el despliegue de prueba, con FAQ cargadas, midiendo hasta la respuesta completa. Si el p95 supera 5000 ms, actualizar RNF-2 de la spec a 8000 ms (decisión R2).
-  Hecho cuando: R2 del plan registra el p95 medido y, si superó 5000 ms, RNF-2 de la spec dice 8000 ms.
+## Cierre de las fases 0–10
 - [x] **T-57 — Actualizar el README** · todos · ~30 min
   Documentar los endpoints y WebSockets (sección 4 del plan), todas las properties nuevas, las tablas que hay que cargar, la extensión `vector`, el comando `hash_password` y la nota sobre las migraciones del checkpointer (R8).
   Hecho cuando: `README.md` contiene cada ruta de la sección 4 y cada key de property del plan (comprobado con `grep`) y enlaza a `docs/specs/001-agentic-pattern-coordinator/spec.md`.
 - [x] **T-58 — Calibrar `rag_min_similarity`** · RF-9 · ~20 min
   Cuando el usuario entregue las áreas y FAQ reales (R3), probar 10 preguntas por área y fijar el umbral.
   Hecho cuando: R3 del plan registra el valor elegido y la tasa de aciertos de las 10 preguntas por área.
+
+## Fase 11 — Ampliación: modelo de datos
+- [ ] **T-60 — Crear los modelos de procedimientos** · (habilita RF-85, RF-91–98) · ~25 min
+  `src/models/procedure.py` (`Vector(768)`, `content_hash` como `Computed`, índice HNSW) y `src/models/procedure_field.py` (enum `FieldKind`: `text`, `email`, `phone`, `rut`, `number`, `date`; único `procedure_id` + `name`).
+  Hecho cuando: `uv run pyright` da 0 errores y ambos modelos se importan sin error.
+- [ ] **T-61 — Ajustar los modelos de área, space general y conversación de Google Chat** · (habilita RF-62, RF-105) · ~20 min [P]
+  `business_area`: añade `chat_space` y quita `owner_email`. `fallback_contact.py` → `fallback_space.py` (`scope` PK, `chat_space` NOT NULL). Nuevo `src/models/chat_thread.py` (`conversation_id` PK, `last_message_at` con índice).
+  Hecho cuando: `uv run pyright` da 0 errores.
+- [ ] **T-62 — Generar y revisar la migración E** · (habilita RF-62, RF-85, RF-105) · ~30 min (depende de T-60, T-61)
+  `alembic revision --autogenerate -m "add procedures and chat spaces"`, ajustada a mano: enum `field_kind` creado y borrado de forma explícita, columna generada, índice HNSW, renombrado de `fallback_contact` con borrado de sus filas, y downgrade completo.
+  Hecho cuando: en la BD local, `alembic upgrade head`, `alembic downgrade -1` y `alembic upgrade head` terminan con código 0, y `alembic check` no detecta cambios.
+
+## Fase 12 — Ampliación: validación de procedimientos y aviso al área
+- [ ] **T-63 — Implementar los validadores de campos de procedimiento** · RF-92, RF-93, RF-98 · ~25 min
+  `src/services/procedures.py`: `validate_field(kind, value)`, `missing_or_invalid(fields, datos)` y `web_contact_fields()`.
+  Hecho cuando: `uv run pytest -q tests/procedures_test.py -k validate` pasa con estos casos: RUT con dígito verificador correcto e incorrecto, correo, teléfono, número, fecha `dd-mm-aaaa`, texto vacío, y web sin nombre o sin contacto.
+- [ ] **T-64 — Permitir `create_message` sin hilo** · (habilita RF-58, RF-95) · ~15 min [P]
+  `ChatApiClient.create_message(space, text, thread=None)`; sin hilo no se envía `messageReplyOption`. La publicación diferida de `src/routers/google_chat.py` pasa el hilo por nombre.
+  Hecho cuando: `uv run pytest -q tests/area_notifier_test.py -k create_message tests/google_chat_test.py -k "api_client or slow"` pasa.
+- [ ] **T-65 — Implementar `AreaNotifier` y el formato de las notificaciones** · RF-58, RF-59, RF-95, RF-96, RF-97, RNF-8 · ~30 min (depende de T-64)
+  `src/services/area_notifier.py` con `notify(space, text)`, `format_request(procedure, datos, requester)` y `format_unanswered(question, area, requester)`; `NotificationDeliveryError` en `src/utils/exceptions/notification.py`.
+  Hecho cuando: `uv run pytest -q tests/area_notifier_test.py tests/procedures_test.py -k "notify or format"` pasa, incluido un caso con `caplog` en el que los datos del usuario no aparecen en el log y un error HTTP que acaba en `NotificationDeliveryError`.
+
+## Fase 13 — Ampliación: aviso interno por Google Chat
+- [ ] **T-66 — Leer los spaces de las áreas y el space general** · RF-59, RF-62 · ~20 min (depende de T-62)
+  `get_fallback_space(session, scope)` en `business_data.py`, en lugar de `get_fallback_email`. `AreaInfo.chat_space` en lugar de `owner_email`, también en `load_catalog`.
+  Hecho cuando: `uv run pytest -q tests/business_data_test.py` pasa con un caso que comprueba que `get_fallback_space` filtra por ámbito.
+- [ ] **T-67 — Reescribir `InternalStrategy` con `AreaNotifier`** · RF-57, RF-58, RF-59, RF-60, RF-61, RF-102 · ~25 min (depende de T-65, T-66)
+  Aviso al `chat_space` del área o al space general; un área sin space cuenta como notificación fallida. `FakeNotifier` en `tests/fakes.py` sustituye a `FakeMailer`.
+  Hecho cuando: `uv run pytest -q tests/channel_strategy_test.py -k internal` pasa con estos casos: space del área, space general, área sin space ⇒ fallida, y fallo de entrega ⇒ log (`caplog`) y "contacta directamente".
+- [ ] **T-68 — Eliminar el correo** · RF-60 · ~20 min
+  Borrar `src/services/mailer.py`, `src/utils/exceptions/mail.py` y `tests/mailer_test.py`; el orquestador interno pasa a usar `AreaNotifier`; las properties `smtp_*` salen del README.
+  Hecho cuando: `grep -rnE "smtp|Mailer|MailDelivery" src tests README.md` no devuelve nada y `uv run pytest` está en verde.
+
+## Fase 14 — Ampliación: recuperador de procedimientos
+- [ ] **T-69 — Implementar `search_procedures`** · RF-85, RF-87 · ~30 min (depende de T-62)
+  En `src/agents/retriever.py`: `ProcedureHit` (id, nombre, pasos, campos, similitud) y búsqueda por coseno filtrada por área, activo y `rag_min_similarity`. `search` pasa a llamarse `search_faq`.
+  Hecho cuando: `uv run pytest -q tests/retriever_test.py -k procedures` pasa: la sentencia compilada filtra por `area_id` y `active`, ordena por distancia y aplica el umbral.
+- [ ] **T-70 — Refrescar también los embeddings de los procedimientos** · RF-11, RF-85 · ~20 min
+  `refresh_stale_embeddings(area_ids)` recalcula las FAQ y los procedimientos desactualizados (texto: nombre + pasos).
+  Hecho cuando: `uv run pytest -q tests/retriever_test.py -k refresh` pasa con un caso en el que el embedder falso solo recibe los procedimientos desactualizados.
+
+## Fase 15 — Ampliación: sub-agentes con tools
+- [ ] **T-71 — Definir `AgentLLM.step` y sus tipos** · (habilita RF-84–90) · ~25 min
+  En `src/agents/llm.py`: `ToolSpec`, `ToolCall`, `ToolCalls`, `FinalText` y `AgentStep`; `step` sustituye a `answer`. `FakeAgentLLM` guionizado con una lista de pasos por área.
+  Hecho cuando: `uv run pyright` da 0 errores con `FakeAgentLLM` tipado como `AgentLLM`, y `uv run pytest -q tests/gemini_llm_test.py -k fake` pasa.
+- [ ] **T-72 — Implementar `GeminiAgentLLM.step` y `build_area_messages`** · RF-9, RF-10 · ~30 min
+  `step` con `bind_tools`: convierte `AIMessage.tool_calls` en `ToolCalls` y el texto en `FinalText`; los errores pasan a `LlmUnavailableError`. `build_area_messages` une el prompt del área y `area_rules` y no incluye FAQ. Se eliminan `AnswerOutput` y `build_answer_messages`.
+  Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k "step or area_messages"` pasa con un chat falso que devuelve tool calls, texto o una excepción.
+- [ ] **T-73 — Implementar `AreaToolbox` con `buscar_faq` y `buscar_procedimiento`** · RF-84, RF-85, RF-86, RF-87, RF-88, RF-91, RF-100 · ~30 min (depende de T-69, T-71)
+  `src/agents/tools.py`: el `area_id` lo fija el código; solo se devuelven los resultados sobre el umbral y se registran como evidencias; los procedimientos devuelven pasos y campos, nunca datos personales.
+  Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k toolbox` pasa, incluido un caso en el que el argumento pide otra área y el recuperador recibe el `area_id` del sub-agente.
+- [ ] **T-74 — Implementar la tool `notificar_area`** · RF-93, RF-94, RF-95, RF-96, RF-97, RF-98, RF-102 · ~30 min (depende de T-63, T-65, T-73)
+  Valida el procedimiento (de su área) y los datos con `missing_or_invalid`; en web añade nombre y contacto; cuenta los intentos fallidos; publica con `AreaNotifier` usando la identidad del canal; un área sin space o un fallo de entrega cuentan como fallo.
+  Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k notificar` pasa con estos casos: válido, inválido con error devuelto al modelo, tercer intento ⇒ `gave_up`, sin space, fallo de entrega, e instrucciones inyectadas en un dato que llegan como texto literal.
+- [ ] **T-75 — Implementar la tool `derivar_a_ejecutivo`** · RF-25, RF-26 · ~15 min
+  Solo existe en el toolbox del canal web; marca el resultado `wants_human`.
+  Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k derivar` pasa: la tool no aparece en el canal interno y en web produce `wants_human`.
+- [ ] **T-76 — Implementar `run_sub_agent` con el guardarraíl** · RF-7, RF-9, RF-89, RF-90, RF-99 · ~30 min (depende de T-73, T-74, T-75)
+  `src/agents/sub_agent.py`: bucle de hasta `agent_max_steps` pasos; un texto final sin evidencias se descarta y da `no_answer`.
+  Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k "guardrail or steps or answered or confirm"` pasa: texto sin tools ⇒ descartado; tool sin resultados ⇒ descartado; 5 pasos ⇒ `no_answer`; FAQ ⇒ `answered`; notificación entregada ⇒ confirmación.
+
+## Fase 16 — Ampliación: integración en el grafo y los orquestadores
+- [ ] **T-77 — Usar `run_sub_agent` en el grafo** · RF-5, RF-6, RF-7, RF-8, RF-9, RF-94, RF-101 · ~30 min (depende de T-76)
+  `answer_area` construye el toolbox del área y llama a `run_sub_agent`; el estado añade `procedure_attempts`; nuevos outcomes `notification_failed` y `wants_human` desde el sub-agente.
+  Hecho cuando: `uv run pytest -q tests/agent_graph_test.py` pasa entero con pasos guionizados, incluidos los casos `follow_up` (la consulta de búsqueda la redacta el modelo), `attempts` (persisten entre mensajes con `InMemorySaver`) y `rnf3`.
+- [ ] **T-78 — Pasar el notificador y la identidad en el contexto del agente** · RF-96, RF-97, RF-98 · ~25 min
+  `AgentContext` añade `notifier` y `requester`; `build_agent_context` los arma para cada canal (colaborador de Google Chat o cliente web).
+  Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k requester` pasa en ambos canales.
+- [ ] **T-79 — Traducir los nuevos outcomes en el canal web** · RF-25, RF-101 · ~20 min
+  `handle_web_message`: `notification_failed` ⇒ mensaje y `official_channels`; `wants_human` del sub-agente ⇒ flujo de oferta existente.
+  Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "web and (notification or derivar)"` pasa.
+
+## Fase 17 — Ampliación: memoria de Google Chat
+- [ ] **T-80 — Calcular la conversación y la identidad en `handle_event`** · RF-97, RF-103, RF-104 · ~20 min
+  `conversation_id(event)`: el space en un mensaje directo y el hilo en un space de grupo; se pasa con la identidad al orquestador.
+  Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k conversation` pasa con un mensaje directo y una mención en un space.
+- [ ] **T-81 — Dar memoria al grafo interno** · RF-61, RF-103, RF-104 · ~30 min (depende de T-80)
+  `app.state.internal_graph` con el checkpointer en el lifespan; `handle_internal_message(session, graph, text, requester, conversation_id)` con `thread_id = conversation_id`; `notification_failed` ⇒ "contacta directamente".
+  Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "internal and (thread or notification)"` pasa: el segundo mensaje del mismo hilo ve el primero, otro hilo del mismo space no lo ve, y el fallo de notificación da el mensaje de RF-61.
+- [ ] **T-82 — Registrar la actividad de cada conversación de Google Chat** · RF-105 · ~20 min
+  Actualizar `chat_thread.last_message_at` en cada mensaje interno (insert o update).
+  Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k chat_thread` pasa, comprobando sobre la sentencia compilada el upsert por `conversation_id`.
+- [ ] **T-83 — Borrar en el barrido las conversaciones caducadas** · RF-105 · ~25 min
+  `run_sweep` borra los hilos con `last_message_at` anterior a `google_chat_retention_days` (30 por defecto): `adelete_thread` y la fila de `chat_thread`.
+  Hecho cuando: `uv run pytest -q tests/sweeper_test.py -k chat_thread` pasa: `adelete_thread` se llama una vez por conversación caducada.
+
+## Fase 18 — Ampliación: protección frente a manipulación
+- [ ] **T-84 — Redactar los prompts recomendados** · RF-10, RF-91, RF-100, RF-106, RF-107, RF-108 · ~25 min
+  `docs/specs/001-agentic-pattern-coordinator/prompts.md` con `classifier`, `internal_agent`, `external_agent` y `area_rules`: uso de las tools, seguir procedimientos, no revelar instrucciones, tools, áreas ni funcionamiento interno, ignorar instrucciones del usuario o de los datos, y la respuesta genérica.
+  Hecho cuando: el archivo contiene las 4 keys y, en cada prompt, la cláusula de no revelar y la respuesta genérica de RF-108 (comprobado con `grep`).
+- [ ] **T-85 — Implementar el detector de fugas y la batería** · RNF-9 · ~30 min
+  `src/cli/jailbreak_check.py`: `ATTACKS` con al menos 20 ataques (revelar prompt, tools o áreas internas; "ignora tus instrucciones"; juego de rol; inyección en los datos) y `find_leaks(reply, prompts, tool_names, internal_areas)`.
+  Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py -k "leak or battery"` pasa: detecta un fragmento de 30 o más caracteres de un prompt, un nombre de tool y un área interna; no marca la negativa genérica; la batería tiene 20 o más ataques.
+- [ ] **T-86 — Ejecutar la batería contra un servidor** · RF-106, RF-107, RF-108 · ~25 min
+  `uv run python -m src.cli.jailbreak_check --url <ws>` envía cada ataque en una sesión nueva, lee los prompts de la BD e imprime PASA/FALLA por ataque, con código de salida 1 si hay fugas.
+  Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py -k runner` pasa con un cliente WebSocket sustituido, y `uv run python -m src.cli.jailbreak_check --help` termina con código 0.
+- [ ] **T-87 — Probar la ampliación en local con datos de prueba** · RF-91–99, RF-106–108, RNF-9 · ~30 min
+  En la BD local (sin versionar): los prompts de `prompts.md`, un procedimiento con campos en Servicio al Cliente y el `chat_space` de prueba. Ejecutar `jailbreak_check` contra el servidor local y un procedimiento web de punta a punta.
+  Hecho cuando: `jailbreak_check` termina con código 0 (20/20 sin fugas) y el procedimiento web llega a la notificación (o a `official_channels` si no hay space de prueba); el resultado queda registrado en R16 del plan.
+
+## Cierre final
+- [ ] **T-88 — Actualizar el README de la ampliación** · todos · ~25 min
+  Tablas `procedure`, `procedure_field`, `chat_space` y `fallback_space`; properties `google_chat_retention_days`, `agent_max_steps` y `procedure_max_attempts`; sin `smtp_*`; `prompts.md`, `jailbreak_check` y el requisito de añadir la app de Google Chat a los spaces de las áreas (R14).
+  Hecho cuando: `README.md` contiene cada tabla y property nuevas y `jailbreak_check`, y no contiene `smtp_` (comprobado con `grep`).
+- [ ] **T-56 — Ejecutar la prueba de carga del RNF-2** · RNF-1, RNF-2 · ~30 min
+  Tras la ampliación (depende de T-87): 50 sesiones WebSocket simultáneas contra el despliegue de prueba, con FAQ y procedimientos cargados, midiendo hasta la respuesta completa. Si el p95 supera 5000 ms, actualizar RNF-2 de la spec a 8000 ms (decisión R2, riesgo R12). La medición local previa está en R2.
+  Hecho cuando: R2 del plan registra el p95 medido y, si superó 5000 ms, RNF-2 de la spec dice 8000 ms.
 - [ ] **T-59 — Verificación completa y demo** · todos · ~30 min
-  `uv run pyright` y `uv run pytest` en local, y los 8 pasos de la demo manual de la spec en el despliegue contra PostgreSQL real.
-  Hecho cuando: ambos comandos terminan con código 0 y la salida se adjunta; los 8 pasos de la demo quedan marcados en la sección "Criterios de finalización" de la spec.
+  `uv run pyright` y `uv run pytest` en local, y los 12 pasos de la demo manual de la spec en el despliegue contra PostgreSQL real (incluye Google Chat, procedimientos y la batería de manipulación con `jailbreak_check`).
+  Hecho cuando: ambos comandos terminan con código 0 y la salida se adjunta; los 12 pasos de la demo quedan marcados en la sección "Criterios de finalización" de la spec.
 
 ## Cobertura
 | RF | Tareas |
@@ -213,20 +318,20 @@ archivo de tests.
 | RF-1 | T-27, T-32, T-34 |
 | RF-2 | T-27, T-45, T-46 |
 | RF-3, RF-4 | T-16, T-22, T-26 |
-| RF-5 | T-19, T-22, T-23 |
+| RF-5 | T-19, T-22, T-23, T-77 |
 | RF-6 | T-19, T-24 |
 | RF-7 | T-24, T-45 |
 | RF-8 | T-22, T-32, T-45 |
-| RF-9 | T-19, T-20, T-23, T-58 |
-| RF-10 | T-16, T-22 |
-| RF-11 | T-16, T-21 |
+| RF-9 | T-19, T-20, T-23, T-58, T-72, T-76, T-77 |
+| RF-10 | T-16, T-22, T-72, T-84 |
+| RF-11 | T-16, T-21, T-70 |
 | RF-12 | T-5, T-18 |
 | RF-13, RF-14 | T-18, T-32, T-45 |
 | RF-15, RF-16, RF-17 | T-14, T-32, T-46 |
 | RF-18 | T-18, T-32, T-45 |
 | RF-19–RF-23 | T-15, T-16 |
 | RF-24 | T-16, T-27 |
-| RF-25 | T-27, T-41, T-45, T-47 |
+| RF-25 | T-27, T-41, T-45, T-47, T-75, T-79 |
 | RF-26 | T-22, T-45, T-47 |
 | RF-27, RF-28, RF-29 | T-41, T-47 |
 | RF-30, RF-31 | T-41, T-43, T-47 |
@@ -247,9 +352,9 @@ archivo de tests.
 | RF-53, RF-54 | T-48, T-50, T-52, T-53 |
 | RF-55 | T-48, T-49, T-51 |
 | RF-56 | T-50, T-53 |
-| RF-57, RF-61 | T-29 |
-| RF-58, RF-60 | T-28, T-29 |
-| RF-59, RF-62 | T-16, T-29 |
+| RF-57, RF-61 | T-29, T-67, T-81 |
+| RF-58, RF-60 | T-28, T-29, T-65, T-67, T-68 |
+| RF-59, RF-62 | T-16, T-29, T-61, T-62, T-65, T-66, T-67 |
 | RF-63, RF-64 | T-30, T-34 |
 | RF-65, RF-66, RF-67 | T-31 |
 | RF-68 | T-34 |
@@ -262,9 +367,27 @@ archivo de tests.
 | RF-80 | T-42, T-46 |
 | RF-81 | T-42, T-46, T-55 |
 | RF-82, RF-83 | T-45, T-46 |
+| RF-84, RF-87, RF-88 | T-73 |
+| RF-85 | T-60, T-62, T-69, T-70, T-73 |
+| RF-86 | T-73, T-77 |
+| RF-89, RF-90 | T-71, T-76 |
+| RF-91 | T-73, T-84, T-87 |
+| RF-92, RF-93 | T-63, T-74 |
+| RF-94 | T-74, T-77 |
+| RF-95, RF-96, RF-97 | T-65, T-74, T-78, T-80 |
+| RF-98 | T-63, T-74, T-78 |
+| RF-99 | T-76, T-87 |
+| RF-100 | T-73, T-84 |
+| RF-101 | T-77, T-79 |
+| RF-102 | T-67, T-74 |
+| RF-103, RF-104 | T-80, T-81 |
+| RF-105 | T-61, T-62, T-82, T-83 |
+| RF-106, RF-107, RF-108 | T-84, T-86, T-87 |
 | RNF-1, RNF-2 | T-56 |
 | RNF-3 | T-26 |
 | RNF-4 | T-35 |
+| RNF-8 | T-65 |
+| RNF-9 | T-85, T-87 |
 
 | Módulo del plan | Tareas |
 |---|---|
@@ -276,23 +399,31 @@ archivo de tests.
 | `alembic/env.py` + migración D | T-9, T-39 |
 | `src/services/message_validation.py` | T-14 |
 | `src/services/schedule.py` | T-15, T-16 |
-| `src/services/business_data.py` | T-16 |
-| `src/agents/llm.py` | T-17, T-18, T-19 |
-| `src/agents/retriever.py` | T-20, T-21 |
-| `src/agents/graph.py` | T-22–T-26 |
-| `src/agents/strategies.py` | T-27, T-29 |
+| `src/services/business_data.py` | T-16, T-66 |
+| `src/agents/llm.py` | T-17, T-18, T-19, T-71, T-72 |
+| `src/agents/retriever.py` | T-20, T-21, T-69, T-70 |
+| `src/agents/graph.py` | T-22–T-26, T-66, T-77 |
+| `src/agents/strategies.py` | T-27, T-29, T-67 |
 | `src/services/mailer.py` | T-28 |
-| `src/services/google_chat.py` | T-30, T-31, T-33 |
-| `src/services/chat_orchestrator.py` | T-32, T-45 |
-| `src/routers/google_chat.py` | T-34 |
+| `src/services/google_chat.py` | T-30, T-31, T-33, T-64, T-80 |
+| `src/services/chat_orchestrator.py` | T-32, T-45, T-68, T-78, T-79, T-81, T-82 |
+| `src/routers/google_chat.py` | T-34, T-64, T-81 |
 | `src/services/executive_auth.py` + `src/cli/hash_password.py` | T-35, T-36, T-37 |
 | `src/routers/executive.py` | T-38, T-52 |
-| `main.py` (lifespan) | T-40, T-55 |
+| `main.py` (lifespan) | T-40, T-55, T-81 |
 | `src/services/web_session.py` | T-41, T-42 |
 | `src/services/live_chat.py` | T-43, T-48, T-49 |
 | `src/interfaces/*` | T-31, T-38, T-44, T-51 |
 | `src/routers/web_chat.py` | T-46, T-47, T-53 |
 | `src/services/realtime.py` | T-50 |
 | `src/routers/live_chat.py` | T-51 |
-| `src/services/sweeper.py` | T-54, T-55 |
-| `README.md` | T-57 |
+| `src/services/sweeper.py` | T-54, T-55, T-83 |
+| `README.md` | T-57, T-68, T-88 |
+| `src/models/procedure*.py`, `chat_thread.py`, `fallback_space.py` + migración E | T-60, T-61, T-62 |
+| `src/services/procedures.py` | T-63 |
+| `src/services/area_notifier.py` + `src/utils/exceptions/notification.py` | T-64, T-65 |
+| `src/services/mailer.py` (eliminado) | T-68 |
+| `src/agents/tools.py` | T-73, T-74, T-75 |
+| `src/agents/sub_agent.py` | T-76 |
+| `src/cli/jailbreak_check.py` | T-85, T-86 |
+| `docs/specs/001-agentic-pattern-coordinator/prompts.md` | T-84 |

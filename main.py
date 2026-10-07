@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -8,9 +9,11 @@ from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
 from src.agents.graph import build_graph, checkpoint_serializer
 from src.config import settings
-from src.database.session import engine
+from src.database.session import SessionLocal, engine
 from src.models.business_area import AreaScope
 from src.services.realtime import ConnectionHub
+from src.services.sweeper import sweep_forever
+from src.utils.clock import SystemClock
 from src.routers.executive import router as executive_router
 from src.routers.google_chat import router as google_chat_router
 from src.routers.health import router as health_router
@@ -28,7 +31,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.checkpointer = AsyncPostgresSaver(pool, serde=checkpoint_serializer())
         app.state.external_graph = build_graph(AreaScope.external, app.state.checkpointer)
         app.state.hub = ConnectionHub()
+        sweeper = asyncio.create_task(sweep_forever(SessionLocal, SystemClock(), app.state.hub, app.state.checkpointer))
         yield
+        sweeper.cancel()
         await app.state.hub.close()
     await engine.dispose()
 

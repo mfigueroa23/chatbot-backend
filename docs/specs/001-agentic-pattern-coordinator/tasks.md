@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 53/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 55/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -186,10 +186,10 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/web_chat_ws_test.py -k live` pasa y `FakeAgentLLM` registra 0 llamadas durante la fase en vivo.
 
 ## Fase 10 — Barrido periódico
-- [ ] **T-54 — Implementar las decisiones del barrido** · RF-36, RF-37, RF-38, RF-51, RF-52, RF-79 · ~30 min
+- [x] **T-54 — Implementar las decisiones del barrido** · RF-36, RF-37, RF-38, RF-51, RF-52, RF-79 · ~30 min
   Funciones puras en `src/services/sweeper.py`: chats en espera al terminar el horario, ejecutivos desconectados más de `executive_reconnect_minutes`, heartbeats de más de 90 s y sesiones caducadas.
   Hecho cuando: `uv run pytest -q tests/sweeper_test.py` pasa con `FakeClock`, incluido el caso de que los chats asignados no se cierren al terminar el horario.
-- [ ] **T-55 — Ejecutar el barrido en el lifespan** · RF-36, RF-51, RF-79, RF-81 · ~30 min
+- [x] **T-55 — Ejecutar el barrido en el lifespan** · RF-36, RF-51, RF-79, RF-81 · ~30 min
   Bucle de 30 s con `pg_try_advisory_lock`: aplica las decisiones por SQL, publica los eventos en el hub y llama a `checkpointer.adelete_thread` antes de borrar cada sesión. Se cancela al apagar.
   Hecho cuando: `uv run pytest -q tests/sweeper_test.py -k runner` pasa (sin el lock no ejecuta nada; con el lock llama a `adelete_thread` una vez por sesión caducada) y la suite sigue en verde.
 

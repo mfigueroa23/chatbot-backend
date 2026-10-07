@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 55/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 56/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -197,7 +197,7 @@ archivo de tests.
 - [ ] **T-56 — Ejecutar la prueba de carga del RNF-2** · RNF-1, RNF-2 · ~30 min
   50 sesiones WebSocket simultáneas contra el despliegue de prueba, con FAQ cargadas, midiendo hasta la respuesta completa. Si el p95 supera 5000 ms, actualizar RNF-2 de la spec a 8000 ms (decisión R2).
   Hecho cuando: R2 del plan registra el p95 medido y, si superó 5000 ms, RNF-2 de la spec dice 8000 ms.
-- [ ] **T-57 — Actualizar el README** · todos · ~30 min
+- [x] **T-57 — Actualizar el README** · todos · ~30 min
   Documentar los endpoints y WebSockets (sección 4 del plan), todas las properties nuevas, las tablas que hay que cargar, la extensión `vector`, el comando `hash_password` y la nota sobre las migraciones del checkpointer (R8).
   Hecho cuando: `README.md` contiene cada ruta de la sección 4 y cada key de property del plan (comprobado con `grep`) y enlaza a `docs/specs/001-agentic-pattern-coordinator/spec.md`.
 - [ ] **T-58 — Calibrar `rag_min_similarity`** · RF-9 · ~20 min

@@ -3,8 +3,9 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from langchain_core.messages import BaseMessage
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agents.llm import AgentStep, AreaAnswer, AreaInfo, Classification, FaqHit, FinalText, ToolCall, ToolCalls, ToolSpec
-from src.agents.retriever import ProcedureHit
+from src.agents.llm import AgentReply, FaqHit
+from src.agents.retriever import Knowledge, ProcedureHit
+from src.models.business_area import AreaScope
 from src.models.executive import Executive
 from src.models.executive_session import ExecutiveSession
 from src.models.live_chat import LiveChat, LiveChatStatus
@@ -54,64 +55,25 @@ def property_session(values: dict[str, str]) -> AsyncSession:
 
 
 class FakeAgentLLM:
-    """Responde de forma fija y registra cada llamada para poder comprobarla en los tests."""
+    """Devuelve respuestas estructuradas guionizadas (una por mensaje) y cuenta las llamadas al modelo."""
 
-    def __init__(
-        self,
-        area_ids: list[int] | None = None,
-        wants_human: bool = False,
-        answers: dict[int, str | None] | None = None,
-        combined: str = "respuesta combinada",
-        steps: dict[str, list[AgentStep]] | None = None,
-        manipulation: bool = False,
-    ):
-        self.classification = Classification(area_ids or [], wants_human, manipulation)
-        self.answers = answers or {}
-        # Pasos guionizados por nombre de área: lo que "decide" el modelo en cada vuelta del bucle de tools.
-        self.steps = {area: list(script) for area, script in (steps or {}).items()}
-        self.step_tools: list[tuple[str, list[str]]] = []
-        self.area_ids_by_name: dict[str, int] = {}
-        self.step_messages: list[list[BaseMessage]] = []
-        self.combined = combined
-        self.calls: list[str] = []
-        self.classified_areas: list[AreaInfo] = []
-        self.histories: list[list[BaseMessage]] = []
-        self.combined_parts: list[AreaAnswer] = []
+    def __init__(self, *replies: AgentReply):
+        self.replies = list(replies) or [AgentReply("no_answer", "")]
+        self.calls = 0
+        self.messages: list[list[BaseMessage]] = []
 
-    async def classify(self, prompt: str, question: str, areas: list[AreaInfo], history: list[BaseMessage]) -> Classification:
-        self.calls.append("classify")
-        self.classified_areas = areas
-        self.area_ids_by_name = {area.name: area.id for area in areas}
-        self.histories.append(history)
-        return self.classification
-
-    async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep:
-        self.calls.append("step")
-        area = area_name_of(messages)
-        self.step_tools.append((area, [tool.name for tool in tools]))
-        self.step_messages.append(list(messages))
-        if area not in self.steps and self.area_ids_by_name.get(area) in self.answers:
-            # Atajo de los tests: answers={id: texto} equivale a buscar en las FAQ y responder ese texto,
-            # y answers={id: None} a buscar y marcar la consulta como sin respuesta.
-            text = self.answers[self.area_ids_by_name[area]]
-            search = tool_call("buscar_faq", consulta=str(messages[-1].content))
-            self.steps[area] = [search, FinalText(text) if text is not None else tool_call("sin_respuesta", "c2")]
-        script = self.steps.get(area, [])
-        return script.pop(0) if script else FinalText("sin más pasos guionizados")
-
-    async def combine(self, prompt: str, question: str, parts: list[AreaAnswer]) -> str:
-        self.calls.append("combine")
-        self.combined_parts = parts
-        return self.combined
+    async def respond(self, messages: list[BaseMessage]) -> AgentReply:
+        self.calls += 1
+        self.messages.append(list(messages))
+        return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
 
 
-def area_name_of(messages: list[BaseMessage]) -> str:
-    first_line = str(messages[0].content).splitlines()[0]
-    return first_line.removeprefix("Área: ")
+def answer(text: str, *faq_ids: int) -> AgentReply:
+    return AgentReply("answer", text, list(faq_ids))
 
 
-def tool_call(name: str, call_id: str = "c1", **args) -> ToolCalls:
-    return ToolCalls([ToolCall(call_id, name, args)])
+def procedure(procedure_id: int, text: str = "", **data: str) -> AgentReply:
+    return AgentReply("procedure", text, procedure_id=procedure_id, data=data)
 
 
 class FakeEmbedder:
@@ -129,25 +91,22 @@ class FakeEmbedder:
 
 
 class FakeRetriever:
-    def __init__(self, hits: dict[int, list[FaqHit]] | None = None, procedures: dict[int, list[ProcedureHit]] | None = None):
-        self.hits = hits or {}
-        self.procedures = procedures or {}
-        self.searched_area_ids: list[int] = []
-        self.searched_questions: list[str] = []
+    def __init__(self, faqs: list[FaqHit] | None = None, procedures: list[ProcedureHit] | None = None,
+                 other_scope_match: bool = False, stored: list[ProcedureHit] | None = None):
+        self.faqs = faqs or []
+        self.procedures = procedures or []
+        # Procedimientos que existen en la BD aunque la búsqueda de este mensaje no los devuelva.
+        self.stored = (stored or []) + self.procedures
+        self.other_scope_match = other_scope_match
+        self.searches: list[tuple[AreaScope, str]] = []
         self.refreshed_area_ids: list[int] = []
 
-    async def search_faq(self, area_id: int, query: str) -> list[FaqHit]:
-        self.searched_area_ids.append(area_id)
-        self.searched_questions.append(query)
-        return self.hits.get(area_id, [])
-
-    async def search_procedures(self, area_id: int, query: str) -> list[ProcedureHit]:
-        self.searched_area_ids.append(area_id)
-        self.searched_questions.append(query)
-        return self.procedures.get(area_id, [])
+    async def search_scope(self, scope: AreaScope, query: str) -> Knowledge:
+        self.searches.append((scope, query))
+        return Knowledge(list(self.faqs), list(self.procedures), self.other_scope_match)
 
     async def get_procedure(self, area_id: int, procedure_id: int) -> ProcedureHit | None:
-        return next((p for p in self.procedures.get(area_id, []) if p.id == procedure_id), None)
+        return next((p for p in self.stored if p.id == procedure_id and p.area_id == area_id), None)
 
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
         self.refreshed_area_ids.extend(area_ids)

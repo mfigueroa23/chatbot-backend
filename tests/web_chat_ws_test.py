@@ -222,9 +222,9 @@ def test_contact_invalido_tres_veces_muestra_canales_sin_entrar_en_la_cola(calls
 @pytest.fixture
 def live(calls: Calls, monkeypatch: pytest.MonkeyPatch):
     calls.session.phase = WebPhase.live
-    llm = FakeAgentLLM(area_ids=[1], answers={1: "no debería responder"})
+    llm = FakeAgentLLM()
 
-    async def build_agent_context(session):
+    async def build_agent_context(session, requester):
         raise AssertionError("En la fase en vivo no se llama al agente")
 
     async def get_open_chat(session, web_session_id):
@@ -252,7 +252,7 @@ def test_live_el_mensaje_del_cliente_va_al_ejecutivo_sin_llamar_al_agente(calls:
         ws.send_json({"type": "message", "text": "¿Siguen ahí?"})
         wait_for(lambda: any(event.kind == "customer_message" for event in calls.hub.published))
 
-    assert live.calls == []
+    assert live.calls == 0
     event = calls.hub.published[0]
     assert (event.kind, event.chat_id, event.executive_id, event.message_id) == ("customer_message", 7, 5, 43)
 

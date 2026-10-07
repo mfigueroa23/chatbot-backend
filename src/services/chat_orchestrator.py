@@ -3,6 +3,7 @@ from datetime import datetime
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
+from src.agents.audit import GENERIC_REFUSAL
 from src.agents.graph import AgentContext, AgentGraph, Catalog, build_graph, load_catalog, run_agent
 from src.agents.llm import build_gemini_llm
 from src.agents.retriever import build_faq_retriever
@@ -29,7 +30,6 @@ logger = logging.getLogger(__name__)
 EMPTY_MESSAGE = "Por favor, escribe tu consulta."
 TOO_LONG_MESSAGE = f"Tu mensaje supera el máximo de {MAX_MESSAGE_LENGTH} caracteres. Por favor, acórtalo."
 UNAVAILABLE = "El servicio no está disponible en este momento. Por favor, intenta más tarde."
-GENERIC_REFUSAL = "Solo puedo ayudarte con consultas de las áreas de este canal."
 MIXED_SCOPE = "Tu pregunta mezcla temas de distintas áreas. Por favor, reformúlala para poder ayudarte."
 WAITING_EXECUTIVE = "Tu chat está en espera. Un ejecutivo te atenderá en cuanto esté disponible."
 OFFER_REJECTED = "De acuerdo. Puedes reformular tu consulta o contactarnos por nuestros canales oficiales."
@@ -46,7 +46,7 @@ async def build_agent_context(session: AsyncSession, requester: Requester | None
         load_catalog=load_catalog_in_own_session,
         notifier=AreaNotifier(SessionLocal),
         requester=requester,
-        max_steps=await get_int_property(session, "agent_max_steps", 4),
+        history_messages=await get_int_property(session, "agent_history_messages", 20),
         max_attempts=await get_int_property(session, "procedure_max_attempts", 3),
     )
 

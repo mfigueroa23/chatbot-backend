@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 88/100 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 95/100 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -307,25 +307,25 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py tests/chat_orchestrator_test.py tests/gemini_llm_test.py -k "rejected or manipulation"` pasa, y `jailbreak_check` contra el servidor local termina con código 0 y todas las respuestas son la negativa genérica.
 
 ## Fase 20 — Rediseño: una sola llamada
-- [ ] **T-90 — Definir la respuesta estructurada y `GeminiAgentLLM.respond`** · RF-5, RF-89, RF-106, RNF-10 · ~25 min
+- [x] **T-90 — Definir la respuesta estructurada y `GeminiAgentLLM.respond`** · RF-5, RF-89, RF-106, RNF-10 · ~25 min
   En `src/agents/llm.py`: `AgentReply`, `ReplyOutput` (`kind`, `text`, `faq_ids`, `procedure_id`, `data`), `AgentLLM.respond(messages)` y `GeminiAgentLLM.respond` con `with_structured_output`, `temperature=0` y `thinking_budget=0`. `FakeAgentLLM` guionizado con una respuesta por mensaje y contador de llamadas.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k respond` pasa (salida estructurada traducida, error del proveedor ⇒ `LlmUnavailableError`) y `uv run pyright` da 0 errores.
-- [ ] **T-91 — Construir los mensajes de la única llamada** · RF-6, RF-9, RF-10, RF-86 · ~25 min
+- [x] **T-91 — Construir los mensajes de la única llamada** · RF-6, RF-9, RF-10, RF-86 · ~25 min
   `build_reply_messages(agent_prompt, rules, sections, pending, history, question)`: prompt del agente y reglas, una sección por área con su prompt y sus FAQ (`[F<id>]`) y procedimientos (`[P<id>]`, con datos exigidos), el procedimiento en curso y la ventana de historial.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k reply_messages` pasa: aparecen los ids y el prompt de cada área, el historial se corta a `history_messages` y no entra nada que no venga en `sections`.
-- [ ] **T-92 — Buscar en todo el ámbito con un solo embedding** · RF-8, RF-84, RF-85, RF-86, RF-87, RF-88 · ~30 min
+- [x] **T-92 — Buscar en todo el ámbito con un solo embedding** · RF-8, RF-84, RF-85, RF-86, RF-87, RF-88 · ~30 min
   `search_scope(scope, query) -> Knowledge` en `src/agents/retriever.py`: FAQ y procedimientos de las áreas activas del ámbito con su `area_id`, y la mejor similitud del otro ámbito sin su contenido.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k scope` pasa: un solo `embed_query`, sentencias filtradas por ámbito, activo y umbral, y mejor similitud del otro ámbito.
-- [ ] **T-93 — Implementar el auditor de fugas** · RF-109, RNF-9 · ~20 min [P]
+- [x] **T-93 — Implementar el auditor de fugas** · RF-109, RNF-9 · ~20 min [P]
   `src/agents/audit.py`: `find_leaks` (movido desde `jailbreak_check`, más detección de código) y `sanitize`; `jailbreak_check` lo reutiliza.
   Hecho cuando: `uv run pytest -q tests/audit_test.py tests/jailbreak_check_test.py` pasa: fragmento de prompt, nombre interno y código ⇒ negativa genérica; la negativa genérica no cuenta como fuga.
-- [ ] **T-94 — Implementar el flujo del procedimiento con plantillas** · RF-91–RF-102 · ~30 min
+- [x] **T-94 — Implementar el flujo del procedimiento con plantillas** · RF-91–RF-102 · ~30 min
   `src/agents/procedure_flow.py` con `handle_procedure` (sustituye a `tools.py`): faltan datos, inválidos con intentos, tercer intento ⇒ abandono, sin space o fallo ⇒ notificación fallida, enviada ⇒ confirmación.
   Hecho cuando: `uv run pytest -q tests/procedure_flow_test.py` pasa con esos casos y con una inyección en un dato que llega literal a la notificación.
-- [ ] **T-95 — Reescribir el grafo con una sola llamada** · RF-5–RF-9, RF-89–RF-94, RF-103, RF-109, RNF-10 · ~30 min (depende de T-90–T-94)
+- [x] **T-95 — Reescribir el grafo con una sola llamada** · RF-5–RF-9, RF-89–RF-94, RF-103, RF-109, RNF-10 · ~30 min (depende de T-90–T-94)
   `load_context` → `retrieve` → `respond` → `finalize`; preguntas mixtas por similitud sin llamar al modelo; guardarraíl D34; `pending_procedure_id` y `procedure_attempts` en el estado; auditor antes de guardar la respuesta.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py` pasa, incluido un caso que comprueba exactamente una llamada a `respond` por mensaje y otro de procedimiento en dos turnos.
-- [ ] **T-96 — Retirar las tools, los sub-agentes y el clasificador** · RNF-10 · ~20 min
+- [x] **T-96 — Retirar las tools, los sub-agentes y el clasificador** · RNF-10 · ~20 min
   Borrar `src/agents/tools.py`, `src/agents/sub_agent.py` y `tests/sub_agent_test.py`; quitar `classify`, `step` y `combine`; ajustar el orquestador y sus tests; `agent_history_messages` en `build_agent_context`.
   Hecho cuando: `grep -rnE "sub_agent|AreaToolbox|\.step\(|\.classify\(|ClassificationOutput" src tests` no devuelve nada y la suite completa está en verde.
 

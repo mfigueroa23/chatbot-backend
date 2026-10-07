@@ -3,6 +3,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.retriever import FaqRetriever
+from src.models.business_area import AreaScope
 from src.models.faq import Faq
 from src.models.procedure import Procedure
 from src.models.procedure_field import FieldKind, ProcedureField
@@ -10,10 +11,8 @@ from tests.fakes import FakeEmbedder
 
 
 class Row:
-    def __init__(self, question: str, answer: str, distance: float):
-        self.question = question
-        self.answer = answer
-        self.distance = distance
+    def __init__(self, **values):
+        self.__dict__.update(values)
 
 
 class Result:
@@ -27,11 +26,12 @@ class Result:
         return self.items
 
 
-class FaqSession:
-    """Devuelve un resultado por consulta, en orden; el último se repite."""
+class ScopeSession:
+    """Devuelve un resultado por consulta, en orden, para execute y para scalar."""
 
-    def __init__(self, *results: list):
-        self.results = list(results)
+    def __init__(self, executes: list[list], scalars: list | None = None):
+        self.executes = list(executes)
+        self.scalars = list(scalars or [])
         self.statements = []
         self.committed = False
 
@@ -43,95 +43,81 @@ class FaqSession:
 
     async def execute(self, statement):
         self.statements.append(statement)
-        return Result(self.results.pop(0) if len(self.results) > 1 else self.results[0])
+        return Result(self.executes.pop(0) if self.executes else [])
+
+    async def scalar(self, statement):
+        self.statements.append(statement)
+        return self.scalars.pop(0) if self.scalars else None
 
     async def commit(self):
         self.committed = True
 
 
-def retriever_with(session: FaqSession, embedder: FakeEmbedder) -> FaqRetriever:
+def retriever_with(session: ScopeSession, embedder: FakeEmbedder) -> FaqRetriever:
     return FaqRetriever(lambda: cast(AsyncSession, session), embedder, top_k=4, min_similarity=0.75)
 
 
+def sql(statement) -> str:
+    return str(statement.compile(dialect=postgresql.dialect(), compile_kwargs={"literal_binds": False}))
+
+
+FAQ_ROW = Row(id=11, question="¿Plazo?", answer="48 meses", area_id=1, distance=0.1)
+PROCEDURE_ROW = Row(id=7, name="Copia del contrato", steps="Se envía al correo", area_id=1, distance=0.2)
+RUT = ProcedureField(procedure_id=7, name="rut", label="RUT del titular", kind=FieldKind.rut, position=0)
+
+
 @pytest.mark.anyio
-async def test_search_faq_filtra_por_area_ordena_por_distancia_y_aplica_el_umbral():
-    session = FaqSession([Row("¿Plazo?", "48 meses", 0.1)])
+async def test_scope_busca_faq_y_procedimientos_del_ambito_con_un_solo_embedding():
+    session = ScopeSession([[FAQ_ROW], [PROCEDURE_ROW], [RUT]], scalars=[0.5, None])
     embedder = FakeEmbedder()
 
-    hits = await retriever_with(session, embedder).search_faq(3, "¿Cuántos meses?")
+    knowledge = await retriever_with(session, embedder).search_scope(AreaScope.external, "¿Cuántos meses?")
 
-    compiled = session.statements[0].compile(dialect=postgresql.dialect())
-    sql = str(compiled)
-    assert "faq_category.area_id = %(area_id_1)s" in sql
-    assert "ORDER BY faq.embedding <=> %(embedding_1)s" in sql
-    assert "(faq.embedding <=> %(embedding_1)s) <= %(param_1)s" in sql
-    assert compiled.params["area_id_1"] == 3
-    assert compiled.params["param_1"] == pytest.approx(0.25)
-    assert compiled.params["param_2"] == 4
     assert embedder.queries == ["¿Cuántos meses?"]
-    assert hits[0].similarity == pytest.approx(0.9)
+    faq_sql, procedure_sql = sql(session.statements[0]), sql(session.statements[1])
+    for statement in (faq_sql, procedure_sql):
+        where = statement.split("WHERE", 1)[1]
+        assert "business_area.scope = %(scope_1)s" in where and "business_area.active" in where
+    assert "faq.active" in faq_sql and "procedure.active" in procedure_sql
+    assert "(faq.embedding <=> %(embedding_1)s) <= %(param_1)s" in faq_sql
+    assert [(hit.id, hit.area_id, round(hit.similarity, 2)) for hit in knowledge.faqs] == [(11, 1, 0.9)]
+    assert [(p.id, p.area_id, [f.name for f in p.fields]) for p in knowledge.procedures] == [(7, 1, ["rut"])]
+
+
+@pytest.mark.anyio
+async def test_scope_calcula_la_mejor_similitud_del_otro_ambito_sin_su_contenido():
+    match = ScopeSession([[FAQ_ROW], []], scalars=[0.2, 0.4])
+    no_match = ScopeSession([[FAQ_ROW], []], scalars=[0.5, None])
+
+    assert (await retriever_with(match, FakeEmbedder()).search_scope(AreaScope.external, "x")).other_scope_match
+    assert not (await retriever_with(no_match, FakeEmbedder()).search_scope(AreaScope.external, "x")).other_scope_match
+    other_sql = sql(match.statements[2])
+    assert "min(" in other_sql.lower() and "business_area.scope = %(scope_1)s" in other_sql
+    assert match.statements[2].compile(dialect=postgresql.dialect()).params["scope_1"] == AreaScope.internal
 
 
 @pytest.mark.anyio
 async def test_refresh_solo_recalcula_las_faq_desactualizadas():
     stale = Faq(id=1, question="¿Plazo?", answer="48 meses", content_hash="abc", embedded_hash=None)
-    session = FaqSession([stale], [])
+    session = ScopeSession([[stale], []])
     embedder = FakeEmbedder()
 
     await retriever_with(session, embedder).refresh_stale_embeddings([3])
 
-    sql = str(session.statements[0].compile(dialect=postgresql.dialect()))
-    assert "faq.embedded_hash IS DISTINCT FROM faq.content_hash" in sql
+    assert "faq.embedded_hash IS DISTINCT FROM faq.content_hash" in sql(session.statements[0])
     assert embedder.documents == ["¿Plazo?\n48 meses"]
-    assert stale.embedded_hash == "abc"
-    assert stale.embedding == [0.2] * 768
+    assert stale.embedded_hash == "abc" and stale.embedding == [0.2] * 768
     assert session.committed
-
-
-
-class ProcedureRow:
-    def __init__(self, id: int, name: str, steps: str, distance: float):
-        self.id = id
-        self.name = name
-        self.steps = steps
-        self.distance = distance
-
-
-@pytest.mark.anyio
-async def test_search_procedures_filtra_por_area_activo_y_umbral_con_sus_campos():
-    fields = [ProcedureField(procedure_id=5, name="rut", label="RUT del titular", kind=FieldKind.rut, position=0)]
-    session = FaqSession([ProcedureRow(5, "Copia del contrato", "El área envía la copia por correo", 0.2)], fields)
-
-    hits = await retriever_with(session, FakeEmbedder()).search_procedures(3, "Quiero mi contrato")
-
-    compiled = session.statements[0].compile(dialect=postgresql.dialect())
-    sql = str(compiled)
-    assert "procedure.area_id = %(area_id_1)s" in sql and compiled.params["area_id_1"] == 3
-    assert "procedure.active" in sql.split("WHERE", 1)[1]
-    assert "(procedure.embedding <=> %(embedding_1)s) <= %(param_1)s" in sql
-    assert "ORDER BY procedure.embedding <=> %(embedding_1)s" in sql
-    assert [(hit.id, hit.name, round(hit.similarity, 2)) for hit in hits] == [(5, "Copia del contrato", 0.8)]
-    assert [(f.name, f.label, f.kind) for f in hits[0].fields] == [("rut", "RUT del titular", FieldKind.rut)]
-
-
-@pytest.mark.anyio
-async def test_search_procedures_sin_resultados_no_consulta_campos():
-    session = FaqSession([])
-
-    assert await retriever_with(session, FakeEmbedder()).search_procedures(3, "Hola") == []
-    assert len(session.statements) == 1
 
 
 @pytest.mark.anyio
 async def test_refresh_recalcula_tambien_los_procedimientos_desactualizados():
     stale = Procedure(id=5, name="Copia del contrato", steps="El área la envía", content_hash="xyz", embedded_hash=None)
-    session = FaqSession([], [stale])
+    session = ScopeSession([[], [stale]])
     embedder = FakeEmbedder()
 
     await retriever_with(session, embedder).refresh_stale_embeddings([3])
 
-    sql = str(session.statements[1].compile(dialect=postgresql.dialect()))
-    assert "procedure.embedded_hash IS DISTINCT FROM procedure.content_hash" in sql
+    assert "procedure.embedded_hash IS DISTINCT FROM procedure.content_hash" in sql(session.statements[1])
     assert embedder.documents == ["Copia del contrato\nEl área la envía"]
     assert stale.embedded_hash == "xyz"
-    assert session.committed

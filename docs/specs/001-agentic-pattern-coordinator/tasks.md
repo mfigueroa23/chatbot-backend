@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 1/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 5/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -15,16 +15,16 @@ archivo de tests.
   Hecho cuando: el comando termina con código 0, o R7 registra que hace falta `tzdata` y se pidió su aprobación.
 
 ## Fase 1 — Base
-- [ ] **T-3 — Añadir las dependencias aprobadas** · (habilita todos) · ~15 min
+- [x] **T-3 — Añadir las dependencias aprobadas** · (habilita todos) · ~15 min
   `uv add` de `langgraph`, `langgraph-checkpoint-postgres`, `psycopg[binary,pool]`, `langchain-google-genai`, `pgvector`, `google-auth` y `argon2-cffi`.
   Hecho cuando: `uv sync --locked` termina sin errores y la suite sigue en verde.
-- [ ] **T-4 — Crear `Clock` y `FakeClock`** · (habilita RF-34–56, RF-70–79) · ~15 min
+- [x] **T-4 — Crear `Clock` y `FakeClock`** · (habilita RF-34–56, RF-70–79) · ~15 min
   `src/utils/clock.py` con `Clock` (Protocol) y `SystemClock`; `tests/fakes.py` con `FakeClock(now)` y `advance(timedelta)`.
   Hecho cuando: `uv run pytest -q tests/clock_test.py` pasa y comprueba que `SystemClock().now()` es aware y está en UTC.
-- [ ] **T-5 — Añadir getters tipados de property con valor por defecto** · RF-12 · ~25 min
+- [x] **T-5 — Añadir getters tipados de property con valor por defecto** · RF-12 · ~25 min
   `get_int_property`, `get_float_property` y `get_str_property(session, key, default)` en `src/services/property.py`. Lanzan `PropertyNotFoundError` si no hay default. Los tests reinician la caché del módulo.
   Hecho cuando: `uv run pytest -q tests/property_test.py` pasa con estos casos: valor presente, ausente con default, ausente sin default y valor no numérico.
-- [ ] **T-6 — Crear las excepciones nuevas** · (habilita RF-13, RF-16, RF-18, RF-40, RF-41, RF-60, RF-63, RF-71–75) · ~15 min
+- [x] **T-6 — Crear las excepciones nuevas** · (habilita RF-13, RF-16, RF-18, RF-40, RF-41, RF-60, RF-63, RF-71–75) · ~15 min
   Crear `agent.py`, `auth.py`, `live_chat.py`, `google_chat.py`, `mail.py` y `message.py` (`EmptyMessageError`, `MessageTooLongError`) en `src/utils/exceptions/`, con mensajes en español.
   Hecho cuando: `uv run pyright` da 0 errores y cada clase hereda de `Exception` con docstring en español.
 

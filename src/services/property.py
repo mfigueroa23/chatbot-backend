@@ -26,3 +26,27 @@ async def get_property(session: AsyncSession, key: str) -> str:
     if key not in _cache:
         raise PropertyNotFoundError(key)
     return _cache[key]
+
+async def get_str_property(session: AsyncSession, key: str, default: str | None = None) -> str:
+    try:
+        return await get_property(session, key)
+    except PropertyNotFoundError:
+        if default is None:
+            raise
+        return default
+
+async def get_int_property(session: AsyncSession, key: str, default: int | None = None) -> int:
+    try:
+        return int(await get_property(session, key))
+    except PropertyNotFoundError:
+        if default is None:
+            raise
+        return default
+
+async def get_float_property(session: AsyncSession, key: str, default: float | None = None) -> float:
+    try:
+        return float(await get_property(session, key))
+    except PropertyNotFoundError:
+        if default is None:
+            raise
+        return default

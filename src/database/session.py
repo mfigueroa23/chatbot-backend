@@ -12,3 +12,9 @@ async def get_session() -> AsyncIterator[AsyncSession]:
         yield session
 
 SessionDep = Annotated[AsyncSession, Depends(get_session)]
+
+# Para trabajo que sigue después de responder (p. ej. Google Chat diferido): la sesión de la petición ya estaría cerrada.
+def get_session_factory() -> async_sessionmaker[AsyncSession]:
+    return SessionLocal
+
+SessionFactoryDep = Annotated[async_sessionmaker[AsyncSession], Depends(get_session_factory)]

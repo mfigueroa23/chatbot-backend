@@ -27,6 +27,12 @@ class PropertySession:
     def __init__(self, values: dict[str, str]):
         self.values = values
 
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return None
+
     async def execute(self, statement):
         return [PropertyRow(key, value) for key, value in self.values.items()]
 

@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 29/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 34/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -106,19 +106,19 @@ archivo de tests.
   Hecho cuando: `uv run pytest -q tests/channel_strategy_test.py -k internal` pasa con estos casos: responsable, correo general y fallo con `caplog`.
 
 ## Fase 6 — Google Chat (canal interno de punta a punta)
-- [ ] **T-30 — Implementar `verify_chat_token`** · RF-63, RF-64 · ~30 min
+- [x] **T-30 — Implementar `verify_chat_token`** · RF-63, RF-64 · ~30 min
   En `src/services/google_chat.py`: descarga los certificados de `chat@system.gserviceaccount.com` con httpx, los cachea según `Cache-Control` y valida con `google.auth.jwt.decode` (audiencia `google_chat_audience` y emisor).
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k token` pasa con una clave RSA de test servida por `httpx.MockTransport`: token válido, firma inválida, audiencia distinta y token ausente.
-- [ ] **T-31 — Implementar el modelo del evento y `handle_event`** · RF-65, RF-66, RF-67 · ~30 min
+- [x] **T-31 — Implementar el modelo del evento y `handle_event`** · RF-65, RF-66, RF-67 · ~30 min
   `src/interfaces/google_chat.py`: el DM usa `message.text` y la mención usa `argumentText`. `ADDED_TO_SPACE` ⇒ saludo con los nombres de las áreas internas; los demás eventos ⇒ `{}`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "dm or mention or added or other_event"` pasa.
-- [ ] **T-32 — Implementar `handle_internal_message`** · RF-1, RF-8, RF-13, RF-15, RF-16, RF-17, RF-18 · ~25 min
+- [x] **T-32 — Implementar `handle_internal_message`** · RF-1, RF-8, RF-13, RF-15, RF-16, RF-17, RF-18 · ~25 min
   En `src/services/chat_orchestrator.py`: valida el mensaje, ejecuta el grafo interno sin checkpointer y aplica `InternalStrategy`. Convierte los errores del LLM en un mensaje de no disponible.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k internal` pasa con estos casos: respondida, mixta, sin respuesta, LLM no configurado y LLM caído.
-- [ ] **T-33 — Implementar `ChatApiClient`** · RF-69 · ~30 min
+- [x] **T-33 — Implementar `ChatApiClient`** · RF-69 · ~30 min
   Token OAuth de la cuenta de servicio (`google_chat_service_account_json`, permiso `chat.bot`) por JWT-bearer con httpx, y `create_message(space, thread, text)` con `messageReplyOption=REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k api_client` pasa. `httpx.MockTransport` comprueba la URL, el `thread.name` y la cabecera Bearer.
-- [ ] **T-34 — Crear el router `POST /api/v1/google-chat/events`** · RF-63, RF-68, RF-69 · ~30 min
+- [x] **T-34 — Crear el router `POST /api/v1/google-chat/events`** · RF-63, RF-68, RF-69 · ~30 min
   `src/routers/google_chat.py`, registrado en `main.py`. `asyncio.wait_for` con `google_chat_sync_timeout_seconds`; si se agota, responde "Estoy procesando tu consulta…" y publica la respuesta con `ChatApiClient` desde una tarea guardada en `app.state`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "router or slow"` pasa: 401 sin token y, con un timeout de 0.05 s y un agente lento, respuesta "procesando" y `create_message` llamado con el hilo original.
 

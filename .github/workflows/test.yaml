@@ -1,0 +1,49 @@
+name: 'Backend Tests'
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches:
+      - '**'
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: backend-tests-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: 'Type Check & Tests'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Valores de relleno: los tests no se conectan a la base de datos.
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: ci
+      DB_PASSWORD: ci
+      DB_NAME: ci
+    steps:
+      - name: 'Checkout Code'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: 'Installing uv'
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: 0.12.23
+          enable-cache: true
+
+      - name: 'Install Dependencies'
+        run: 'uv sync --locked'
+
+      - name: 'Type Check'
+        run: 'uv run pyright'
+
+      - name: 'Tests'
+        run: 'uv run pytest'

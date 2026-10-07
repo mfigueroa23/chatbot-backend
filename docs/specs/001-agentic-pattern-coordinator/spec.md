@@ -3,8 +3,8 @@
 ## Contexto y objetivo
 Hoy, las consultas de los clientes (canal web) y de los colaboradores internos (Google Chat) las responde una persona,
 aunque la mayoría son preguntas frecuentes de un área de negocio concreta o solicitudes que un área debe ejecutar (una
-copia del contrato, cargar algo en un sistema). Queremos un asistente virtual en el que cada área tenga un sub-agente
-con capacidades propias: consultar las FAQ de su área, consultar sus procedimientos y avisar al área. El asistente
+copia del contrato, cargar algo en un sistema). Queremos un asistente virtual que, con una sola llamada al modelo por
+mensaje, use el conocimiento de cada área (sus FAQ y sus procedimientos) y pueda avisar al área. El asistente
 responde con la información oficial, no inventa respuestas y, si existe un procedimiento, explica qué se hará, pide los
 datos necesarios y avisa al área en su space de Google Chat para que una persona lo ejecute. Cuando no sabe responder,
 deriva: en el canal web, a un ejecutivo por chat en vivo, y en el canal interno, al space del área. Así se reduce la
@@ -37,12 +37,12 @@ llegar al usuario.
 - RF-2: CUANDO llegue un mensaje por el canal web, EL SISTEMA lo procesará con el agente externo.
 - RF-3: EL SISTEMA dará al agente interno acceso solo a las áreas internas.
 - RF-4: EL SISTEMA dará al agente externo acceso solo a las áreas externas.
-- RF-5: CUANDO el agente interno o el externo reciba un mensaje, EL SISTEMA lo delegará en el sub-agente o los sub-agentes de las áreas a las que corresponda.
-- RF-6: CUANDO una pregunta corresponda a varias áreas del mismo agente, EL SISTEMA combinará las respuestas de esos sub-agentes en una sola respuesta.
+- RF-5: CUANDO el agente interno o el externo reciba un mensaje, EL SISTEMA lo responderá con el conocimiento (FAQ y procedimientos) de las áreas de su canal a las que corresponda.
+- RF-6: CUANDO una pregunta corresponda a varias áreas del mismo agente, EL SISTEMA combinará la información de esas áreas en una sola respuesta.
 - RF-7: SI en una pregunta combinada alguna de las áreas no puede responder, ENTONCES EL SISTEMA responderá con lo disponible e indicará qué parte no pudo responder.
 - RF-8: SI una pregunta mezcla temas de áreas internas y externas, ENTONCES EL SISTEMA pedirá al usuario que reformule su pregunta.
-- RF-9: EL SISTEMA construirá cada respuesta de un sub-agente únicamente a partir de las FAQ o los procedimientos recuperados de su área.
-- RF-10: EL SISTEMA usará como instrucciones de cada agente y sub-agente el system prompt vigente almacenado en la base de datos.
+- RF-9: EL SISTEMA construirá cada respuesta únicamente a partir de las FAQ o los procedimientos recuperados de las áreas de su canal.
+- RF-10: EL SISTEMA usará como instrucciones del agente y de cada área el system prompt vigente almacenado en la base de datos.
 - RF-11: CUANDO se modifique un system prompt, una FAQ o un procedimiento en la base de datos, EL SISTEMA aplicará el cambio a partir del siguiente mensaje recibido.
 - RF-12: EL SISTEMA obtendrá el modelo de lenguaje y su API key de la configuración en `property`.
 - RF-13: SI falta el modelo o la API key en la configuración, ENTONCES EL SISTEMA responderá con un mensaje de servicio no disponible.
@@ -61,14 +61,14 @@ llegar al usuario.
 - RF-24: EL SISTEMA leerá de la base de datos los canales oficiales que muestra al cliente.
 
 ### Canal web: derivación a un ejecutivo
-- RF-25: SI en el canal web ningún sub-agente encuentra una FAQ ni un procedimiento que responda y la hora actual está dentro del horario de atención, ENTONCES EL SISTEMA ofrecerá al cliente hablar con un ejecutivo.
+- RF-25: SI en el canal web no se encuentra una FAQ ni un procedimiento que responda y la hora actual está dentro del horario de atención, ENTONCES EL SISTEMA ofrecerá al cliente hablar con un ejecutivo.
 - RF-26: CUANDO el cliente pida explícitamente hablar con un humano, EL SISTEMA aplicará el mismo flujo que RF-25 y RF-32.
 - RF-27: CUANDO el cliente acepte hablar con un ejecutivo, EL SISTEMA le pedirá su nombre y al menos un dato de contacto (correo o teléfono).
 - RF-28: SI el cliente entrega un nombre vacío o un dato de contacto con formato inválido, ENTONCES EL SISTEMA se lo volverá a pedir.
 - RF-29: SI el cliente no entrega datos válidos tras 3 intentos, ENTONCES EL SISTEMA le mostrará los canales oficiales sin poner su chat en la cola.
 - RF-30: CUANDO el cliente entregue datos válidos, EL SISTEMA pondrá su chat en la cola de espera web.
 - RF-31: CUANDO un chat entre en la cola de espera, EL SISTEMA informará al cliente de que está en espera de un ejecutivo.
-- RF-32: SI en el canal web ningún sub-agente encuentra una FAQ ni un procedimiento que responda y la hora actual está fuera del horario de atención, ENTONCES EL SISTEMA pedirá al cliente que reformule su consulta o que contacte con los canales oficiales.
+- RF-32: SI en el canal web no se encuentra una FAQ ni un procedimiento que responda y la hora actual está fuera del horario de atención, ENTONCES EL SISTEMA pedirá al cliente que reformule su consulta o que contacte con los canales oficiales.
 - RF-33: SI el cliente rechaza hablar con un ejecutivo, ENTONCES EL SISTEMA le pedirá que reformule su consulta o que contacte con los canales oficiales.
 
 ### Canal web: cola de espera
@@ -99,8 +99,8 @@ llegar al usuario.
 - RF-56: CUANDO el ejecutivo cierre un chat, EL SISTEMA informará al cliente de que la atención terminó.
 
 ### Canal interno: derivación al área
-- RF-57: SI en el canal interno ningún sub-agente encuentra una FAQ ni un procedimiento que responda, ENTONCES EL SISTEMA indicará al colaborador que el área lo contactará a la brevedad.
-- RF-58: SI en el canal interno ningún sub-agente encuentra una FAQ ni un procedimiento que responda, ENTONCES EL SISTEMA notificará la consulta al space de Google Chat del área, con la pregunta y la identidad del colaborador en Google Chat.
+- RF-57: SI en el canal interno no se encuentra una FAQ ni un procedimiento que responda, ENTONCES EL SISTEMA indicará al colaborador que el área lo contactará a la brevedad.
+- RF-58: SI en el canal interno no se encuentra una FAQ ni un procedimiento que responda, ENTONCES EL SISTEMA notificará la consulta al space de Google Chat del área, con la pregunta y la identidad del colaborador en Google Chat.
 - RF-59: SI la consulta interna no corresponde a ninguna área, ENTONCES EL SISTEMA la notificará al space general configurado en la base de datos.
 - RF-60: SI falla la entrega de una notificación al space, ENTONCES EL SISTEMA registrará el fallo en el log.
 - RF-61: SI falla la entrega de una notificación de una solicitud o consulta interna, ENTONCES EL SISTEMA pedirá al colaborador que contacte directamente con el área.
@@ -133,18 +133,18 @@ llegar al usuario.
 - RF-82: SI la base de datos deja de estar disponible durante una conversación del chat web, ENTONCES EL SISTEMA enviará al cliente un mensaje de servicio no disponible.
 - RF-83: SI la base de datos deja de estar disponible durante una conversación del chat web, ENTONCES EL SISTEMA registrará el error en el log.
 
-### Capacidades de los sub-agentes
-- RF-84: EL SISTEMA permitirá a cada sub-agente consultar las FAQ de su área.
-- RF-85: EL SISTEMA permitirá a cada sub-agente consultar los procedimientos de su área.
-- RF-86: EL SISTEMA impedirá que un sub-agente consulte FAQ o procedimientos de otra área.
-- RF-87: EL SISTEMA tratará las FAQ y los procedimientos como contenidos distintos, cada uno con su propia consulta.
-- RF-88: EL SISTEMA ofrecerá las consultas de FAQ y de procedimientos tanto a los sub-agentes del canal web como a los del canal interno.
-- RF-89: SI un sub-agente genera una respuesta sin haber recuperado ninguna FAQ ni ningún procedimiento de su área por encima del umbral de similitud, ENTONCES EL SISTEMA descartará esa respuesta.
-- RF-90: CUANDO el sistema descarte la respuesta de un sub-agente, EL SISTEMA tratará esa área como "no puede responder" (RF-7).
+### Conocimiento por área
+- RF-84: CUANDO llegue un mensaje, EL SISTEMA buscará las FAQ de las áreas de su canal relacionadas con el mensaje antes de generar la respuesta.
+- RF-85: CUANDO llegue un mensaje, EL SISTEMA buscará los procedimientos de las áreas de su canal relacionados con el mensaje antes de generar la respuesta.
+- RF-86: EL SISTEMA no entregará al modelo FAQ ni procedimientos de áreas de otro canal.
+- RF-87: EL SISTEMA tratará las FAQ y los procedimientos como contenidos distintos, cada uno con su propia búsqueda.
+- RF-88: EL SISTEMA aplicará las búsquedas de FAQ y de procedimientos tanto en el canal web como en el interno.
+- RF-89: SI una respuesta generada no se apoya en ninguna FAQ ni en ningún procedimiento recuperados por encima del umbral de similitud, ENTONCES EL SISTEMA descartará esa respuesta.
+- RF-90: CUANDO el sistema descarte una respuesta, EL SISTEMA tratará la consulta como "no puede responder".
 
 ### Procedimientos
-- RF-91: CUANDO un sub-agente recupere un procedimiento que corresponde a la solicitud, EL SISTEMA explicará al usuario los pasos que seguirá el área.
-- RF-92: CUANDO un sub-agente recupere un procedimiento que exige datos, EL SISTEMA pedirá al usuario cada dato exigido que aún no haya entregado en la conversación.
+- RF-91: CUANDO se recupere un procedimiento que corresponde a la solicitud, EL SISTEMA explicará al usuario los pasos que seguirá el área.
+- RF-92: CUANDO se recupere un procedimiento que exige datos, EL SISTEMA pedirá al usuario cada dato exigido que aún no haya entregado en la conversación.
 - RF-93: SI el usuario entrega un dato con formato inválido para el procedimiento, ENTONCES EL SISTEMA se lo volverá a pedir.
 - RF-94: SI el usuario no entrega datos válidos tras 3 intentos, ENTONCES EL SISTEMA dejará de pedirlos y aplicará el flujo de "sin respuesta" del canal.
 - RF-95: CUANDO el usuario haya entregado todos los datos que exige el procedimiento, EL SISTEMA notificará la solicitud al space de Google Chat del área.
@@ -165,6 +165,7 @@ llegar al usuario.
 - RF-106: SI un usuario pide al asistente que revele sus instrucciones, sus prompts, sus herramientas, las áreas que no corresponden a su canal o cualquier detalle de su funcionamiento interno, ENTONCES EL SISTEMA no los revelará.
 - RF-107: SI un usuario intenta que el asistente ignore, cambie o amplíe sus instrucciones (p. ej. "ignora lo anterior", juegos de rol, instrucciones dentro de los datos que entrega), ENTONCES EL SISTEMA mantendrá su comportamiento.
 - RF-108: CUANDO el sistema rechace una petición de RF-106 o RF-107, EL SISTEMA responderá que solo puede ayudar con consultas de las áreas de su canal, sin explicar el motivo técnico.
+- RF-109: SI una respuesta generada contiene un fragmento de las instrucciones o prompts, nombres internos del asistente o código, ENTONCES EL SISTEMA la sustituirá por la respuesta de RF-108 antes de enviarla.
 
 ## Requisitos no funcionales
 - RNF-1: El chat web atenderá al menos 50 sesiones simultáneas sin errores atribuibles a la concurrencia.
@@ -175,11 +176,12 @@ llegar al usuario.
 - RNF-6: Todos los mensajes al usuario y los logs están en español.
 - RNF-7: Si la base de datos no está disponible, los endpoints HTTP responden 503 y registran el error en log (constitución, punto 9).
 - RNF-8: Los datos que el usuario entrega para un procedimiento solo se envían al space del área que lo gestiona y no aparecen en los logs.
+- RNF-10: EL SISTEMA hará como máximo una llamada de generación al modelo por mensaje del usuario; las búsquedas por embeddings no cuentan como llamada de generación.
 - RNF-9: Ninguna respuesta contendrá el texto de los prompts, los nombres de las herramientas internas ni la estructura del asistente, comprobado con un conjunto de al menos 20 intentos de manipulación conocidos.
 
 ## Casos límite
 - Un área sin FAQ ni procedimientos, o sin system prompt, se trata como "no puede responder"; con solo uno de los dos contenidos usa el que tiene.
-- Una consulta que encaja a la vez con una FAQ y con un procedimiento del área: el sub-agente responde con ambos contenidos.
+- Una consulta que encaja a la vez con una FAQ y con un procedimiento del área: la respuesta usa ambos contenidos.
 - Una solicitud que corresponde a varias áreas con procedimiento: se pide la unión de los datos exigidos y cada área recibe solo los datos de su procedimiento.
 - El usuario cambia de tema mientras se le piden datos: la solicitud queda abandonada sin notificar y se atiende la nueva consulta.
 - El usuario entrega en un solo mensaje varios de los datos exigidos: no se le vuelven a pedir.
@@ -242,12 +244,14 @@ Ninguna.
 - **Constitución, punto 1:** el usuario aprobó las dependencias nuevas de orquestación de agentes, checkpointer y RAG/embeddings.
 - El chat en vivo entre ejecutivo y cliente entra en el alcance de esta iteración.
 - Valores por defecto aprobados por el usuario el 2026-10-07: rechazo de mensajes de más de 5000 caracteres; 30 días desde el último mensaje; p95 medido hasta la respuesta completa con 50 sesiones; datos de contacto obligatorios con 3 intentos; aviso al cliente cuando el ejecutivo se desconecta; los chats en vivo cuentan para el límite de 50; mensaje de no disponible si cae la base de datos en el chat web; respuesta parcial en las preguntas combinadas; la caducidad de la sesión del ejecutivo cuenta como desconexión.
-- **Ampliación del 2026-10-07 (absorbe la spec 002 «agentes con tools», que se elimina):** cada agente delega en sub-agentes por área con capacidades propias (FAQ, procedimientos, avisar al área y, en el canal web, derivar a un ejecutivo); FAQ y procedimientos son contenidos distintos y conviven en ambos canales; "seguir un procedimiento" es explicar los pasos, pedir los datos exigidos (3 intentos) y notificar al área; la notificación va al space de Google Chat del área y sustituye al correo; un área sin space cuenta como notificación fallida; el asistente no verifica la identidad del cliente; los spaces donde está la app no restringen áreas; la memoria de Google Chat va por hilo con su propia property de retención (30 días por defecto); integraciones MCP/API fuera de alcance.
-- **Protección frente a manipulación (2026-10-07):** se resuelve en los prompts almacenados en la base de datos (clasificador, agentes y reglas comunes de los sub-agentes), que prohíben revelar instrucciones, prompts, herramientas o funcionamiento interno y obedecer cambios de instrucciones del usuario.
+- **Ampliación del 2026-10-07 (absorbe la spec 002 «agentes con tools», que se elimina; los sub-agentes con tools se sustituyeron después por una sola llamada):** cada agente delegaba en sub-agentes por área con capacidades propias (FAQ, procedimientos, avisar al área y, en el canal web, derivar a un ejecutivo); FAQ y procedimientos son contenidos distintos y conviven en ambos canales; "seguir un procedimiento" es explicar los pasos, pedir los datos exigidos (3 intentos) y notificar al área; la notificación va al space de Google Chat del área y sustituye al correo; un área sin space cuenta como notificación fallida; el asistente no verifica la identidad del cliente; los spaces donde está la app no restringen áreas; la memoria de Google Chat va por hilo con su propia property de retención (30 días por defecto); integraciones MCP/API fuera de alcance.
+- **Una sola llamada al modelo por mensaje (2026-10-07, decisión del usuario por latencia):** las búsquedas se hacen antes de llamar al modelo y una única llamada genera la respuesta; los sub-agentes con llamadas propias se descartan. Los mensajes del procedimiento (datos faltantes o inválidos, solicitud enviada o fallida) son textos fijos con los nombres de los datos. Se añade un auditor determinista de fugas (RF-109).
+- **Google Chat como complemento de Google Workspace (2026-10-07):** la app ya está creada en esa modalidad (eventos `chat.*`, respuesta `hostAppDataAction` y token de Google firmado para la cuenta de servicio `gcp-sa-gsuiteaddons` del proyecto). Sustituye a la app de Chat de eventos de interacción.
+- **Protección frente a manipulación (2026-10-07):** se resuelve en los prompts almacenados en la base de datos (prompt del agente de cada canal y reglas comunes de las áreas), con la marca de manipulación de la respuesta estructurada y el auditor de RF-109, que prohíben revelar instrucciones, prompts, herramientas o funcionamiento interno y obedecer cambios de instrucciones del usuario.
 
 ## Notas para el plan (decisiones técnicas acordadas, no forman parte del contrato)
 - Orquestación con LangGraph (patrón coordinador de Google Cloud) y checkpointer en PostgreSQL para la memoria de sesión, también para Google Chat con `thread_id` = nombre del hilo.
-- **Sub-agentes con tools:** `buscar_faq`, `buscar_procedimiento`, `notificar_area` y, en el canal web, derivar a un ejecutivo. El guardarraíl de RF-89 se aplica en código, no solo en el prompt. Con `buscar_faq` como tool, el agente redacta la consulta de búsqueda con el contexto de la conversación (resuelve las preguntas de seguimiento, demo 8).
+- **Una sola llamada:** recuperación previa por embeddings (con el mensaje anterior del usuario como contexto, para las preguntas de seguimiento) y una llamada con salida estructurada que devuelve el tipo de respuesta, el texto, las FAQ usadas y, si aplica, el procedimiento y sus datos. El código valida, notifica y aplica el guardarraíl y el auditor.
 - Las instrucciones de comportamiento y de protección viven en `agent_prompt` (incluida `area_rules`); el código solo aporta estructura (FAQ recuperadas, lista de áreas).
 - Patrón strategy para la selección del agente según el canal.
 - Chat web y chat en vivo del ejecutivo por WebSocket. Google Chat por un endpoint HTTP, como app de Chat basada en eventos de interacción o como complemento de Google Workspace (por decidir en el plan).
@@ -258,4 +262,4 @@ Ninguna.
 - **Tablas de negocio:** áreas (con su ámbito interno o externo y su space de Google Chat), categorías, preguntas frecuentes, procedimientos (con los datos que exigen), system prompts, horario por día, festivos, canales oficiales, space general, ejecutivos y chats de la cola web (estado, ejecutivo asignado, desconexión).
 - Recuperación de FAQ y de procedimientos mediante RAG.
 - Con varias réplicas en Kubernetes, el cliente y el ejecutivo de un mismo chat pueden estar conectados a pods distintos, y el cierre por fin de horario o por el plazo de 1 hora necesita un disparador temporal.
-- **RNF-2:** el p95 < 5000 ms hasta la respuesta completa, con RAG y varios sub-agentes, es exigente; conviene validarlo pronto con una prueba de carga.
+- **RNF-2:** el p95 < 5000 ms hasta la respuesta completa, con RAG, es exigente; por eso se limita a una llamada de generación (RNF-10); conviene validarlo pronto con una prueba de carga.

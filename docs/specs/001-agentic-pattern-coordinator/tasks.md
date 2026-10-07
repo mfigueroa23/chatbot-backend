@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 88/89 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 88/100 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -306,6 +306,45 @@ archivo de tests.
   `ClassificationOutput` y `Classification` añaden `manipulation`; el grafo termina con el outcome `rejected` sin llamar a los sub-agentes; web e interno responden «Solo puedo ayudarte con consultas de las áreas de este canal.» sin ofrecer un ejecutivo (D31).
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py tests/chat_orchestrator_test.py tests/gemini_llm_test.py -k "rejected or manipulation"` pasa, y `jailbreak_check` contra el servidor local termina con código 0 y todas las respuestas son la negativa genérica.
 
+## Fase 20 — Rediseño: una sola llamada
+- [ ] **T-90 — Definir la respuesta estructurada y `GeminiAgentLLM.respond`** · RF-5, RF-89, RF-106, RNF-10 · ~25 min
+  En `src/agents/llm.py`: `AgentReply`, `ReplyOutput` (`kind`, `text`, `faq_ids`, `procedure_id`, `data`), `AgentLLM.respond(messages)` y `GeminiAgentLLM.respond` con `with_structured_output`, `temperature=0` y `thinking_budget=0`. `FakeAgentLLM` guionizado con una respuesta por mensaje y contador de llamadas.
+  Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k respond` pasa (salida estructurada traducida, error del proveedor ⇒ `LlmUnavailableError`) y `uv run pyright` da 0 errores.
+- [ ] **T-91 — Construir los mensajes de la única llamada** · RF-6, RF-9, RF-10, RF-86 · ~25 min
+  `build_reply_messages(agent_prompt, rules, sections, pending, history, question)`: prompt del agente y reglas, una sección por área con su prompt y sus FAQ (`[F<id>]`) y procedimientos (`[P<id>]`, con datos exigidos), el procedimiento en curso y la ventana de historial.
+  Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k reply_messages` pasa: aparecen los ids y el prompt de cada área, el historial se corta a `history_messages` y no entra nada que no venga en `sections`.
+- [ ] **T-92 — Buscar en todo el ámbito con un solo embedding** · RF-8, RF-84, RF-85, RF-86, RF-87, RF-88 · ~30 min
+  `search_scope(scope, query) -> Knowledge` en `src/agents/retriever.py`: FAQ y procedimientos de las áreas activas del ámbito con su `area_id`, y la mejor similitud del otro ámbito sin su contenido.
+  Hecho cuando: `uv run pytest -q tests/retriever_test.py -k scope` pasa: un solo `embed_query`, sentencias filtradas por ámbito, activo y umbral, y mejor similitud del otro ámbito.
+- [ ] **T-93 — Implementar el auditor de fugas** · RF-109, RNF-9 · ~20 min [P]
+  `src/agents/audit.py`: `find_leaks` (movido desde `jailbreak_check`, más detección de código) y `sanitize`; `jailbreak_check` lo reutiliza.
+  Hecho cuando: `uv run pytest -q tests/audit_test.py tests/jailbreak_check_test.py` pasa: fragmento de prompt, nombre interno y código ⇒ negativa genérica; la negativa genérica no cuenta como fuga.
+- [ ] **T-94 — Implementar el flujo del procedimiento con plantillas** · RF-91–RF-102 · ~30 min
+  `src/agents/procedure_flow.py` con `handle_procedure` (sustituye a `tools.py`): faltan datos, inválidos con intentos, tercer intento ⇒ abandono, sin space o fallo ⇒ notificación fallida, enviada ⇒ confirmación.
+  Hecho cuando: `uv run pytest -q tests/procedure_flow_test.py` pasa con esos casos y con una inyección en un dato que llega literal a la notificación.
+- [ ] **T-95 — Reescribir el grafo con una sola llamada** · RF-5–RF-9, RF-89–RF-94, RF-103, RF-109, RNF-10 · ~30 min (depende de T-90–T-94)
+  `load_context` → `retrieve` → `respond` → `finalize`; preguntas mixtas por similitud sin llamar al modelo; guardarraíl D34; `pending_procedure_id` y `procedure_attempts` en el estado; auditor antes de guardar la respuesta.
+  Hecho cuando: `uv run pytest -q tests/agent_graph_test.py` pasa, incluido un caso que comprueba exactamente una llamada a `respond` por mensaje y otro de procedimiento en dos turnos.
+- [ ] **T-96 — Retirar las tools, los sub-agentes y el clasificador** · RNF-10 · ~20 min
+  Borrar `src/agents/tools.py`, `src/agents/sub_agent.py` y `tests/sub_agent_test.py`; quitar `classify`, `step` y `combine`; ajustar el orquestador y sus tests; `agent_history_messages` en `build_agent_context`.
+  Hecho cuando: `grep -rnE "sub_agent|AreaToolbox|\.step\(|\.classify\(|ClassificationOutput" src tests` no devuelve nada y la suite completa está en verde.
+
+## Fase 21 — Rediseño: Google Chat como complemento de Google Workspace
+- [ ] **T-97 — Verificar el ID token del complemento** · RF-63, RF-64 · ~30 min
+  `verify_addon_token(token, audience, service_account, http)` en `src/services/google_chat.py`, con los certificados de Google cacheados según `Cache-Control`; property `google_chat_addon_service_account`.
+  Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k token` pasa: válido, otra cuenta de servicio, `email_verified` falso, otra audiencia, firma inválida y sin token.
+- [ ] **T-98 — Leer el evento del complemento** · RF-65, RF-66, RF-67, RF-103, RF-104 · ~25 min
+  `AddonEvent` en `src/interfaces/google_chat.py` y `handle_event` con `chat.messagePayload`, `chat.addedToSpacePayload` y `chat.user`; la conversación sigue siendo el space en un mensaje directo y el hilo en un space.
+  Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "dm or mention or added or other_event or conversation"` pasa.
+- [ ] **T-99 — Responder con `hostAppDataAction`** · RF-65, RF-68, RF-69 · ~20 min
+  `chat_reply(text)` y el router con el nuevo evento y la nueva verificación; la publicación diferida no cambia.
+  Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "router or slow or reply"` pasa: 401 sin token, respuesta `hostAppDataAction` y publicación diferida en el hilo original.
+
+## Fase 22 — Rediseño: pruebas de rigor y documentación
+- [ ] **T-100 — Ejecutar las pruebas de rigor y actualizar el README** · todos · ~30 min
+  En local contra el servidor: `jailbreak_check`, la demo web, 10 preguntas legítimas y una ronda de carga de 50 sesiones; README con `google_chat_addon_service_account`, `agent_history_messages`, sin `agent_max_steps` y la modalidad de complemento.
+  Hecho cuando: `jailbreak_check` termina con código 0, la demo pasa entera, las 10 preguntas legítimas se responden, el p95 de la carga queda registrado en R2 del plan y `README.md` contiene las properties nuevas (comprobado con `grep`).
+
 ## Cierre final
 - [x] **T-88 — Actualizar el README de la ampliación** · todos · ~25 min
   Tablas `procedure`, `procedure_field`, `chat_space` y `fallback_space`; properties `google_chat_retention_days`, `agent_max_steps` y `procedure_max_attempts`; sin `smtp_*`; los prompts (entonces `prompts.md`, retirado después), `jailbreak_check` y el requisito de añadir la app de Google Chat a los spaces de las áreas (R14).
@@ -388,7 +427,9 @@ archivo de tests.
 | RF-103, RF-104 | T-80, T-81 |
 | RF-105 | T-61, T-62, T-82, T-83 |
 | RF-106, RF-107, RF-108 | T-84, T-86, T-87, T-89 |
-| RNF-1, RNF-2 | T-56 |
+| RNF-1, RNF-2 | T-56, T-100 |
+| RF-109 | T-93, T-95 |
+| RNF-10 | T-90, T-95, T-96 |
 | RNF-3 | T-26 |
 | RNF-4 | T-35 |
 | RNF-8 | T-65 |

@@ -3,7 +3,7 @@
 1. Stack fijo: Python 3.14, FastAPI, SQLAlchemy 2 async + asyncpg, PostgreSQL, Alembic, uv. Otra librería requiere aprobación.
 2. Arquitectura: router → service → model; los routers no ejecutan SQL directamente.
 3. Agentes: un coordinador orquesta; cada agente especializado tiene una única responsabilidad y una interfaz tipada.
-4. Configuración: `.env` solo `DB_*` y `LOG_LEVEL`; el resto en la tabla `property`.
+4. Configuración: `.env` solo `DB_*` y `LOG_LEVEL`; el resto de la configuración técnica (claves, modelos, límites, plazos) en la tabla `property`. Los datos de negocio (áreas, FAQ, prompts, horarios, canales, responsables) van en tablas propias con su migración.
 5. Tipado: `uv run pyright` con 0 errores en main.py, src, tests y alembic.
 6. Tests: toda funcionalidad nueva incluye tests `*_test.py`; ninguno toca la BD (`dependency_overrides`).
 7. CI verde (pyright + pytest) es requisito para fusionar a `main`.

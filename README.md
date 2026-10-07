@@ -39,7 +39,7 @@ cp .env.example .env
 | `DB_NAME` | Nombre de la base de datos | — |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` o `CRITICAL` (en mayúsculas) | `INFO` |
 
-Las properties se cachean en memoria y se recargan cada 60 segundos, así que un cambio en la tabla se aplica sin reiniciar la aplicación.
+Las properties se leen de la base de datos en cada uso, así que un cambio en la tabla se aplica de inmediato sin reiniciar la aplicación.
 
 Properties usadas actualmente:
 

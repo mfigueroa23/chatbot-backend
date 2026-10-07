@@ -32,3 +32,14 @@ async def test_lanza_error_si_no_existe_y_no_hay_default():
 async def test_lanza_error_si_el_valor_no_es_numerico():
     with pytest.raises(ValueError):
         await get_int_property(property_session({"rag_top_k": "cuatro"}), "rag_top_k", 4)
+
+
+@pytest.mark.anyio
+async def test_un_cambio_en_la_tabla_se_ve_en_la_siguiente_lectura():
+    values = {"rag_top_k": "4"}
+    session = property_session(values)
+    assert await get_int_property(session, "rag_top_k") == 4
+
+    values["rag_top_k"] = "6"
+
+    assert await get_int_property(session, "rag_top_k") == 6

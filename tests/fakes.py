@@ -23,12 +23,6 @@ class FakeClock:
         self._now += delta
 
 
-class PropertyRow:
-    def __init__(self, key: str, value: str):
-        self.key = key
-        self.value = value
-
-
 class PropertySession:
     def __init__(self, values: dict[str, str]):
         self.values = values
@@ -40,7 +34,12 @@ class PropertySession:
         return None
 
     async def execute(self, statement):
-        return [PropertyRow(key, value) for key, value in self.values.items()]
+        return []
+
+    async def scalar(self, statement):
+        # get_property filtra por una sola key: se toma del parámetro de la sentencia.
+        (key,) = statement.compile().params.values()
+        return self.values.get(key)
 
     async def commit(self):
         pass

@@ -62,7 +62,8 @@ class LockSession:
 
     async def scalar(self, statement):
         self.statements.append(statement)
-        return self.locked
+        # Solo la primera consulta es el advisory lock; las properties no existen y se usan sus valores por defecto.
+        return self.locked if len(self.statements) == 1 else None
 
     async def execute(self, statement):
         self.statements.append(statement)

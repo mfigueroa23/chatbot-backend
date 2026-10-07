@@ -1,7 +1,7 @@
 # Plan 001 — Asistente virtual con patrón agéntico coordinador
 
 **Spec:** `docs/specs/001-agentic-pattern-coordinator/spec.md` · **Estado:** borrador (2026-10-07)
-Se reutilizan la capa router → service → model, `SessionDep`, `get_property` (con su caché de 60 s), las excepciones
+Se reutilizan la capa router → service → model, `SessionDep`, `get_property`, las excepciones
 de `src/utils/exceptions/`, el advisory lock de `alembic/env.py` y el patrón de tests con `dependency_overrides`. Se
 añaden una capa de agentes (`src/agents/`), comunicación en tiempo real (WebSocket + LISTEN/NOTIFY de PostgreSQL) y
 un barrido periódico de tareas temporales.
@@ -152,7 +152,7 @@ El backend es el dueño de los contratos. El frontend web y el panel de ejecutiv
 - **D16 — Token de Google verificado con `google.auth.jwt.decode` y certificados cacheados por httpx; OAuth de la cuenta de servicio por JWT-bearer.** No requiere `requests` y no bloquea el event loop. *Descartada:* `google.auth.transport.requests` — añade `requests` y es síncrono.
 - **D17 — Límite de 30 s con `asyncio.wait_for` (`google_chat_sync_timeout_seconds`, 25 por defecto).** Si se agota el plazo, se responde "Estoy procesando tu consulta…" y la tarea sigue en segundo plano hasta publicar con `spaces.messages.create` en el mismo hilo. *Descartada:* responder siempre de forma asíncrona — es más lento y obliga a usar credenciales en todos los mensajes.
 - **D18 — Correo con `smtplib` en `asyncio.to_thread`.** No añade dependencias. *Descartada:* `aiosmtplib` — una dependencia nueva para pocos correos.
-- **D19 — Datos de negocio leídos sin caché en cada mensaje; las properties mantienen la caché de 60 s.** RF-11 exige aplicar los cambios de prompts y FAQ al siguiente mensaje, y las properties son configuración técnica. *Descartada:* una caché con TTL para los prompts — viola RF-11.
+- **D19 — Datos de negocio y properties leídos sin caché en cada uso.** RF-11 exige aplicar los cambios de prompts y FAQ al siguiente mensaje. El 2026-10-07 el usuario pidió quitar también la caché de 60 s de las properties: cada lectura consulta solo la key pedida. *Descartada:* una caché con TTL — un cambio en la BD tardaría en aplicarse.
 - **D20 — Lógica de dominio pura separada del SQL; el reloj se inyecta con `Clock`.** Permite probar plazos y concurrencia sin BD ni esperas (punto 6 de la constitución y criterio de finalización). *Descartada:* un repositorio con tests contra la BD — prohibido por la constitución.
 
 **Properties nuevas** (las que tienen valor por defecto lo traen en el código):

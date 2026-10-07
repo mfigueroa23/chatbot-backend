@@ -23,7 +23,7 @@ from src.services.business_data import get_agent_prompt, get_areas
 
 logger = logging.getLogger(__name__)
 
-Outcome = Literal["answered", "partial", "no_answer", "mixed_scope", "wants_human", "notification_failed"]
+Outcome = Literal["answered", "partial", "no_answer", "mixed_scope", "wants_human", "notification_failed", "rejected"]
 
 @dataclass(frozen=True)
 class Catalog:
@@ -115,6 +115,9 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         *history, question = state["messages"]
         classification = await runtime.context.llm.classify(
             state["classifier_prompt"], text_of(question), state["areas"], history)
+        # Un intento de manipulación no llega a los sub-agentes ni a la derivación: el canal responde la negativa genérica.
+        if classification.manipulation:
+            return {"outcome": "rejected"}
         if classification.wants_human:
             return {"outcome": "wants_human"}
         selected = [area for area in state["areas"] if area.id in classification.area_ids]

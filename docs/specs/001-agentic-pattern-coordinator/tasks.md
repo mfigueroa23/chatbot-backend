@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 86/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 88/89 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -289,7 +289,7 @@ archivo de tests.
 
 ## Fase 18 — Ampliación: protección frente a manipulación
 - [x] **T-84 — Redactar los prompts recomendados** · RF-10, RF-91, RF-100, RF-106, RF-107, RF-108 · ~25 min
-  `docs/specs/001-agentic-pattern-coordinator/prompts.md` con `classifier`, `internal_agent`, `external_agent` y `area_rules`: uso de las tools, seguir procedimientos, no revelar instrucciones, tools, áreas ni funcionamiento interno, ignorar instrucciones del usuario o de los datos, y la respuesta genérica.
+  *(El documento se retiró y se purgó del historial el 2026-10-07 por decisión del usuario: los prompts solo viven en la BD.)* `docs/specs/001-agentic-pattern-coordinator/prompts.md` con `classifier`, `internal_agent`, `external_agent` y `area_rules`: uso de las tools, seguir procedimientos, no revelar instrucciones, tools, áreas ni funcionamiento interno, ignorar instrucciones del usuario o de los datos, y la respuesta genérica.
   Hecho cuando: el archivo contiene las 4 keys y, en cada prompt, la cláusula de no revelar y la respuesta genérica de RF-108 (comprobado con `grep`).
 - [x] **T-85 — Implementar el detector de fugas y la batería** · RNF-9 · ~30 min
   `src/cli/jailbreak_check.py`: `ATTACKS` con al menos 20 ataques (revelar prompt, tools o áreas internas; "ignora tus instrucciones"; juego de rol; inyección en los datos) y `find_leaks(reply, prompts, tool_names, internal_areas)`.
@@ -298,17 +298,22 @@ archivo de tests.
   `uv run python -m src.cli.jailbreak_check --url <ws>` envía cada ataque en una sesión nueva, lee los prompts de la BD e imprime PASA/FALLA por ataque, con código de salida 1 si hay fugas.
   Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py -k runner` pasa con un cliente WebSocket sustituido, y `uv run python -m src.cli.jailbreak_check --help` termina con código 0.
 - [x] **T-87 — Probar la ampliación en local con datos de prueba** · RF-91–99, RF-106–108, RNF-9 · ~30 min
-  En la BD local (sin versionar): los prompts de `prompts.md`, un procedimiento con campos en Servicio al Cliente y el `chat_space` de prueba. Ejecutar `jailbreak_check` contra el servidor local y un procedimiento web de punta a punta.
+  En la BD local (sin versionar): los prompts con las cláusulas de D29, un procedimiento con campos en Servicio al Cliente y el `chat_space` de prueba. Ejecutar `jailbreak_check` contra el servidor local y un procedimiento web de punta a punta.
   Hecho cuando: `jailbreak_check` termina con código 0 (20/20 sin fugas) y el procedimiento web llega a la notificación (o a `official_channels` si no hay space de prueba); el resultado queda registrado en R16 del plan.
+
+## Fase 19 — Corrección de RF-108
+- [x] **T-89 — Responder con la negativa genérica a los intentos de manipulación** · RF-106, RF-107, RF-108 · ~30 min
+  `ClassificationOutput` y `Classification` añaden `manipulation`; el grafo termina con el outcome `rejected` sin llamar a los sub-agentes; web e interno responden «Solo puedo ayudarte con consultas de las áreas de este canal.» sin ofrecer un ejecutivo (D31).
+  Hecho cuando: `uv run pytest -q tests/agent_graph_test.py tests/chat_orchestrator_test.py tests/gemini_llm_test.py -k "rejected or manipulation"` pasa, y `jailbreak_check` contra el servidor local termina con código 0 y todas las respuestas son la negativa genérica.
 
 ## Cierre final
 - [x] **T-88 — Actualizar el README de la ampliación** · todos · ~25 min
-  Tablas `procedure`, `procedure_field`, `chat_space` y `fallback_space`; properties `google_chat_retention_days`, `agent_max_steps` y `procedure_max_attempts`; sin `smtp_*`; `prompts.md`, `jailbreak_check` y el requisito de añadir la app de Google Chat a los spaces de las áreas (R14).
+  Tablas `procedure`, `procedure_field`, `chat_space` y `fallback_space`; properties `google_chat_retention_days`, `agent_max_steps` y `procedure_max_attempts`; sin `smtp_*`; los prompts (entonces `prompts.md`, retirado después), `jailbreak_check` y el requisito de añadir la app de Google Chat a los spaces de las áreas (R14).
   Hecho cuando: `README.md` contiene cada tabla y property nuevas y `jailbreak_check`, y no contiene `smtp_` (comprobado con `grep`).
 - [ ] **T-56 — Ejecutar la prueba de carga del RNF-2** · RNF-1, RNF-2 · ~30 min
   Tras la ampliación (depende de T-87): 50 sesiones WebSocket simultáneas contra el despliegue de prueba, con FAQ y procedimientos cargados, midiendo hasta la respuesta completa. Si el p95 supera 5000 ms, actualizar RNF-2 de la spec a 8000 ms (decisión R2, riesgo R12). La medición local previa está en R2.
   Hecho cuando: R2 del plan registra el p95 medido y, si superó 5000 ms, RNF-2 de la spec dice 8000 ms.
-- [ ] **T-59 — Verificación completa y demo** · todos · ~30 min
+- [x] **T-59 — Verificación completa y demo** · todos · ~30 min *(marcada por decisión del usuario el 2026-10-07: la demo de 12 pasos se hará al desplegar la app y conectar la API de Google Chat; en local, pyright y pytest en verde y la demo web 18/18)*
   `uv run pyright` y `uv run pytest` en local, y los 12 pasos de la demo manual de la spec en el despliegue contra PostgreSQL real (incluye Google Chat, procedimientos y la batería de manipulación con `jailbreak_check`).
   Hecho cuando: ambos comandos terminan con código 0 y la salida se adjunta; los 12 pasos de la demo quedan marcados en la sección "Criterios de finalización" de la spec.
 
@@ -382,7 +387,7 @@ archivo de tests.
 | RF-102 | T-67, T-74 |
 | RF-103, RF-104 | T-80, T-81 |
 | RF-105 | T-61, T-62, T-82, T-83 |
-| RF-106, RF-107, RF-108 | T-84, T-86, T-87 |
+| RF-106, RF-107, RF-108 | T-84, T-86, T-87, T-89 |
 | RNF-1, RNF-2 | T-56 |
 | RNF-3 | T-26 |
 | RNF-4 | T-35 |
@@ -426,4 +431,4 @@ archivo de tests.
 | `src/agents/tools.py` | T-73, T-74, T-75 |
 | `src/agents/sub_agent.py` | T-76 |
 | `src/cli/jailbreak_check.py` | T-85, T-86 |
-| `docs/specs/001-agentic-pattern-coordinator/prompts.md` | T-84 |
+| Prompts en `agent_prompt` (solo BD) | T-84, T-89 |

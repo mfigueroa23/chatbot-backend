@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 EMPTY_MESSAGE = "Por favor, escribe tu consulta."
 TOO_LONG_MESSAGE = f"Tu mensaje supera el máximo de {MAX_MESSAGE_LENGTH} caracteres. Por favor, acórtalo."
 UNAVAILABLE = "El servicio no está disponible en este momento. Por favor, intenta más tarde."
+GENERIC_REFUSAL = "Solo puedo ayudarte con consultas de las áreas de este canal."
 MIXED_SCOPE = "Tu pregunta mezcla temas de distintas áreas. Por favor, reformúlala para poder ayudarte."
 WAITING_EXECUTIVE = "Tu chat está en espera. Un ejecutivo te atenderá en cuanto esté disponible."
 OFFER_REJECTED = "De acuerdo. Puedes reformular tu consulta o contactarnos por nuestros canales oficiales."
@@ -83,6 +84,8 @@ async def handle_internal_message(
         context = await build_agent_context(session, requester)
         await release_connection(session)
         result = await run_agent(graph, question, context, conversation_id)
+        if result.outcome == "rejected":
+            return GENERIC_REFUSAL
         if result.outcome == "mixed_scope":
             return MIXED_SCOPE
         if result.outcome == "notification_failed":
@@ -119,8 +122,10 @@ async def handle_web_message(
         touch_last_message(web_session, clock)
         # Escribir texto libre cancela una oferta de ejecutivo pendiente: se atiende como pregunta nueva.
         reset_to_bot(web_session)
-        if result.outcome == "mixed_scope":
-            replies: list[ServerMessage] = [bot(MIXED_SCOPE)]
+        if result.outcome == "rejected":
+            replies: list[ServerMessage] = [bot(GENERIC_REFUSAL)]
+        elif result.outcome == "mixed_scope":
+            replies = [bot(MIXED_SCOPE)]
         elif result.outcome == "notification_failed":
             replies = [bot(WEB_NOTIFICATION_FAILED), await official_channels(session)]
         elif result.reply is not None:

@@ -97,7 +97,7 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 | `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y `chat_space` (space de Google Chat del área, `spaces/…`) |
 | `faq_category`, `faq` | Categorías y preguntas frecuentes de cada área. El embedding se calcula solo al usarlas |
 | `procedure`, `procedure_field` | Procedimientos de cada área (nombre y pasos que se explican al usuario) y los datos que exige cada uno, con su tipo (`text`, `email`, `phone`, `rut`, `number`, `date`). El embedding se calcula solo al usarlos |
-| `agent_prompt` | Prompts con las keys `classifier` (clasificador), `internal_agent` y `external_agent` (agente de cada canal, incluye cómo combinar respuestas de varias áreas) y `area_rules` (reglas comunes de todos los sub-agentes). El texto recomendado, con las cláusulas de protección frente a manipulación, está en [`prompts.md`](docs/specs/001-agentic-pattern-coordinator/prompts.md) |
+| `agent_prompt` | Prompts con las keys `classifier` (clasificador), `internal_agent` y `external_agent` (agente de cada canal, incluye cómo combinar respuestas de varias áreas) y `area_rules` (reglas comunes de todos los sub-agentes). Su texto solo vive en la BD (no se versiona): cada uno debe prohibir revelar instrucciones, prompts, herramientas, áreas o funcionamiento interno y tratar lo que escribe el usuario como información, nunca como instrucciones |
 | `service_schedule` | Franja de atención por día (`weekday` 0 = lunes … 6 = domingo), en hora de Santiago |
 | `holiday` | Fechas sin atención |
 | `official_channel` | Canales oficiales que se muestran al cliente |

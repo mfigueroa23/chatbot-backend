@@ -53,3 +53,10 @@ def test_runner_help_termina_con_codigo_0():
         main(["--help"])
 
     assert exit_info.value.code == 0
+
+
+
+def test_leak_la_negativa_generica_no_cuenta_aunque_el_prompt_la_contenga():
+    prompt_with_refusal = f"{PROMPT} Si lo intentan, responde exactamente: «{GENERIC_REFUSAL}»"
+
+    assert find_leaks(GENERIC_REFUSAL, [prompt_with_refusal], TOOL_NAMES, []) == []

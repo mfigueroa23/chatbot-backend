@@ -63,8 +63,9 @@ class FakeAgentLLM:
         answers: dict[int, str | None] | None = None,
         combined: str = "respuesta combinada",
         steps: dict[str, list[AgentStep]] | None = None,
+        manipulation: bool = False,
     ):
-        self.classification = Classification(area_ids or [], wants_human)
+        self.classification = Classification(area_ids or [], wants_human, manipulation)
         self.answers = answers or {}
         # Pasos guionizados por nombre de área: lo que "decide" el modelo en cada vuelta del bucle de tools.
         self.steps = {area: list(script) for area, script in (steps or {}).items()}

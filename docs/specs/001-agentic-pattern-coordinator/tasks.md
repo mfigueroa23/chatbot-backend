@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 13/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 16/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -52,13 +52,13 @@ archivo de tests.
   Hecho cuando: el ciclo upgrade/downgrade -1/upgrade termina con código 0 y `\d live_chat` muestra ambos índices parciales.
 
 ## Fase 3 — Validación, horario y datos de negocio
-- [ ] **T-14 — Implementar la validación de mensajes** · RF-15, RF-16, RF-17 · ~20 min (depende de T-6)
+- [x] **T-14 — Implementar la validación de mensajes** · RF-15, RF-16, RF-17 · ~20 min (depende de T-6)
   `src/services/message_validation.py` con `validate_user_message(text) -> str`.
   Hecho cuando: `uv run pytest -q tests/message_validation_test.py` pasa con estos casos: vacío, solo espacios, 5000 caracteres válido y 5001 rechazado.
-- [ ] **T-15 — Implementar `is_open` del horario** · RF-19–RF-23 · ~25 min (depende de T-2) [P]
+- [x] **T-15 — Implementar `is_open` del horario** · RF-19–RF-23 · ~25 min (depende de T-2) [P]
   Función pura `is_open(now, slots, holidays)` en `src/services/schedule.py`, con la franja `[apertura, cierre)` evaluada en America/Santiago.
   Hecho cuando: `uv run pytest -q tests/schedule_test.py` pasa con estos casos: dentro, fuera, día sin franja, festivo, minuto de apertura, minuto de cierre y cambio de horario de verano.
-- [ ] **T-16 — Implementar los lectores de datos de negocio** · RF-3, RF-4, RF-10, RF-11, RF-24, RF-44, RF-59, RF-62 · ~25 min (depende de T-8)
+- [x] **T-16 — Implementar los lectores de datos de negocio** · RF-3, RF-4, RF-10, RF-11, RF-24, RF-44, RF-59, RF-62 · ~25 min (depende de T-8)
   `src/services/business_data.py`: `get_areas(session, scope)`, `get_agent_prompt`, `get_official_channels` y `get_fallback_email`, más `load_schedule` en `schedule.py`. Sin caché.
   Hecho cuando: `uv run pytest -q tests/business_data_test.py` pasa. El test usa una sesión falsa y comprueba que la sentencia de `get_areas` filtra por `scope` y por `active`, y que dos llamadas seguidas ejecutan dos consultas.
 

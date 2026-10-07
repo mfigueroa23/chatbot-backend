@@ -61,11 +61,16 @@ class ChatApiClient:
         self._http = http
         self._service_account = service_account
 
-    async def create_message(self, space: str, thread: str, text: str) -> None:
+    async def create_message(self, space: str, text: str, thread: str | None = None) -> None:
+        body: dict[str, Any] = {"text": text}
+        params = {}
+        if thread is not None:
+            body["thread"] = {"name": thread}
+            params["messageReplyOption"] = "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"
         response = await self._http.post(
             f"{CHAT_API_URL}/{space}/messages",
-            params={"messageReplyOption": "REPLY_MESSAGE_FALLBACK_TO_NEW_THREAD"},
-            json={"text": text, "thread": {"name": thread}},
+            params=params,
+            json=body,
             headers={"Authorization": f"Bearer {await self._access_token()}"},
         )
         response.raise_for_status()

@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 57/88 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 61/88 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -202,7 +202,7 @@ archivo de tests.
   Hecho cuando: R3 del plan registra el valor elegido y la tasa de aciertos de las 10 preguntas por área.
 
 ## Fase 11 — Ampliación: modelo de datos
-- [ ] **T-60 — Crear los modelos de procedimientos** · (habilita RF-85, RF-91–98) · ~25 min
+- [x] **T-60 — Crear los modelos de procedimientos** · (habilita RF-85, RF-91–98) · ~25 min
   `src/models/procedure.py` (`Vector(768)`, `content_hash` como `Computed`, índice HNSW) y `src/models/procedure_field.py` (enum `FieldKind`: `text`, `email`, `phone`, `rut`, `number`, `date`; único `procedure_id` + `name`).
   Hecho cuando: `uv run pyright` da 0 errores y ambos modelos se importan sin error.
 - [ ] **T-61 — Ajustar los modelos de área, space general y conversación de Google Chat** · (habilita RF-62, RF-105) · ~20 min [P]
@@ -213,13 +213,13 @@ archivo de tests.
   Hecho cuando: en la BD local, `alembic upgrade head`, `alembic downgrade -1` y `alembic upgrade head` terminan con código 0, y `alembic check` no detecta cambios.
 
 ## Fase 12 — Ampliación: validación de procedimientos y aviso al área
-- [ ] **T-63 — Implementar los validadores de campos de procedimiento** · RF-92, RF-93, RF-98 · ~25 min
+- [x] **T-63 — Implementar los validadores de campos de procedimiento** · RF-92, RF-93, RF-98 · ~25 min
   `src/services/procedures.py`: `validate_field(kind, value)`, `missing_or_invalid(fields, datos)` y `web_contact_fields()`.
   Hecho cuando: `uv run pytest -q tests/procedures_test.py -k validate` pasa con estos casos: RUT con dígito verificador correcto e incorrecto, correo, teléfono, número, fecha `dd-mm-aaaa`, texto vacío, y web sin nombre o sin contacto.
-- [ ] **T-64 — Permitir `create_message` sin hilo** · (habilita RF-58, RF-95) · ~15 min [P]
+- [x] **T-64 — Permitir `create_message` sin hilo** · (habilita RF-58, RF-95) · ~15 min [P]
   `ChatApiClient.create_message(space, text, thread=None)`; sin hilo no se envía `messageReplyOption`. La publicación diferida de `src/routers/google_chat.py` pasa el hilo por nombre.
   Hecho cuando: `uv run pytest -q tests/area_notifier_test.py -k create_message tests/google_chat_test.py -k "api_client or slow"` pasa.
-- [ ] **T-65 — Implementar `AreaNotifier` y el formato de las notificaciones** · RF-58, RF-59, RF-95, RF-96, RF-97, RNF-8 · ~30 min (depende de T-64)
+- [x] **T-65 — Implementar `AreaNotifier` y el formato de las notificaciones** · RF-58, RF-59, RF-95, RF-96, RF-97, RNF-8 · ~30 min (depende de T-64)
   `src/services/area_notifier.py` con `notify(space, text)`, `format_request(procedure, datos, requester)` y `format_unanswered(question, area, requester)`; `NotificationDeliveryError` en `src/utils/exceptions/notification.py`.
   Hecho cuando: `uv run pytest -q tests/area_notifier_test.py tests/procedures_test.py -k "notify or format"` pasa, incluido un caso con `caplog` en el que los datos del usuario no aparecen en el log y un error HTTP que acaba en `NotificationDeliveryError`.
 

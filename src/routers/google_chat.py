@@ -63,6 +63,6 @@ async def publish_when_ready(task: asyncio.Task[dict[str, str]], event: ChatEven
             return
         async with session_factory() as session, httpx.AsyncClient(timeout=HTTP_TIMEOUT_SECONDS) as http:
             client = await build_chat_api_client(session, http)
-            await client.create_message(event.space.name, event.message.thread.name, response["text"])
+            await client.create_message(event.space.name, response["text"], thread=event.message.thread.name)
     except Exception:
         logger.exception("No se pudo publicar en Google Chat la respuesta diferida")

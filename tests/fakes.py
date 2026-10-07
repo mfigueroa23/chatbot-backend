@@ -183,3 +183,12 @@ def assigned_chat(id: int = 7, executive_id: int = 1) -> LiveChat:
     return LiveChat(id=id, web_session_id=web_session().id, status=LiveChatStatus.assigned, executive_id=executive_id,
                     customer_name="Ana", customer_contact="ana@correo.cl", pending_question="¿Cheque?",
                     executive_disconnected_at=None)
+
+
+def service_account_info(key_pem: str) -> dict[str, str]:
+    return {
+        "client_email": "bot@proyecto.iam.gserviceaccount.com",
+        "private_key": key_pem,
+        "private_key_id": "kid-1",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }

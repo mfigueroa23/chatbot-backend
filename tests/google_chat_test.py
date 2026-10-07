@@ -18,7 +18,7 @@ from src.routers import google_chat as google_chat_router
 from src.services import google_chat
 from src.services.google_chat import CHAT_ISSUER, ChatApiClient, handle_event, verify_chat_token
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
-from tests.fakes import property_session
+from tests.fakes import property_session, service_account_info
 
 AUDIENCE = "https://chatbot.autofin.cl/api/v1/google-chat/events"
 SESSION = cast(AsyncSession, object())
@@ -140,14 +140,9 @@ async def test_api_client_publica_en_el_hilo_original_con_token_bearer():
             return httpx.Response(200, json={"access_token": "token-de-acceso", "expires_in": 3600})
         return httpx.Response(200, json={})
 
-    service_account = {
-        "client_email": "bot@proyecto.iam.gserviceaccount.com",
-        "private_key": private_key_pem(GOOGLE_KEY),
-        "private_key_id": "kid-1",
-        "token_uri": "https://oauth2.googleapis.com/token",
-    }
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        await ChatApiClient(http, service_account).create_message("spaces/AAA", "spaces/AAA/threads/T1", "Hola")
+        client = ChatApiClient(http, service_account_info(private_key_pem(GOOGLE_KEY)))
+        await client.create_message("spaces/AAA", "Hola", thread="spaces/AAA/threads/T1")
 
     chat_request = requests[-1]
     assert str(chat_request.url) == (
@@ -171,10 +166,10 @@ def test_router_responde_401_sin_token():
 
 
 def test_slow_responde_procesando_y_publica_en_el_hilo_original(monkeypatch: pytest.MonkeyPatch):
-    published: list[tuple[str, str, str]] = []
+    published: list[tuple[str, str | None, str]] = []
 
     class FakeChatApiClient:
-        async def create_message(self, space: str, thread: str, text: str) -> None:
+        async def create_message(self, space: str, text: str, thread: str | None = None) -> None:
             published.append((space, thread, text))
 
     async def build_chat_api_client(session, http):

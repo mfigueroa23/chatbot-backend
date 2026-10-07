@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con patrón agéntico coordinador (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 0/59 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 1/59 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`, que no es un
@@ -10,7 +10,7 @@ archivo de tests.
 - [ ] **T-1 — Verificar pgvector en el servidor PostgreSQL** · (habilita RF-9) · ~15 min
   Consultar `pg_available_extensions` (nombre `vector`) y comprobar que el usuario de la app puede crear extensiones (o pedírselo al DBA). Anotar el resultado en R1 del plan.
   Hecho cuando: R1 del plan dice "vector disponible y creada" o enlaza la solicitud al DBA; con una solicitud abierta, T-9 queda bloqueada.
-- [ ] **T-2 — Verificar zoneinfo en la imagen base** · (habilita RF-21) · ~10 min [P]
+- [x] **T-2 — Verificar zoneinfo en la imagen base** · (habilita RF-21) · ~10 min [P]
   Ejecutar en `python:3.14-slim` la carga de `ZoneInfo("America/Santiago")`. Anotar el resultado en R7 del plan.
   Hecho cuando: el comando termina con código 0, o R7 registra que hace falta `tzdata` y se pidió su aprobación.
 

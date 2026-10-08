@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.graph import AgentGraph
 from src.interfaces.google_chat import AddonEvent
 from src.services.area_notifier import Requester
+from src.services.attachments import Attachment
 from src.services.chat_orchestrator import handle_internal_message
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 
@@ -67,4 +68,9 @@ async def handle_event(event: AddonEvent, session: AsyncSession, graph: AgentGra
     is_dm = payload.space is not None and payload.space.space_type == "DIRECT_MESSAGE"
     # En un space solo cuenta el texto que acompaña a la mención; en un mensaje directo, el texto completo.
     text = payload.message.text if is_dm else payload.message.argument_text
-    return await handle_internal_message(session, graph, text or "", requester, conversation_id(event))
+    attachments = [
+        Attachment(item.content_name, item.content_type,
+                   resource_name=item.attachment_data_ref.resource_name if item.attachment_data_ref else None,
+                   drive_file_id=item.drive_data_ref.drive_file_id if item.drive_data_ref else None)
+        for item in payload.message.attachment]
+    return await handle_internal_message(session, graph, text or "", requester, conversation_id(event), attachments=attachments)

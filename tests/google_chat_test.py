@@ -20,6 +20,8 @@ from src.services import google_chat
 from src.services.area_notifier import Requester
 from src.services.chat_api_client import ChatApiClient
 from src.services.google_chat import handle_event, verify_addon_token
+from src.services.attachments import Attachment
+from src.utils.exceptions.attachment import AttachmentTooLargeError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from tests.fakes import property_session, service_account_info
 
@@ -110,8 +112,8 @@ def message_event(text: str, argument_text: str | None = None, space_type: str =
 def echo_agent(monkeypatch: pytest.MonkeyPatch) -> list[tuple]:
     calls: list[tuple] = []
 
-    async def handle_internal_message(session, graph, text, requester, conversation_id):
-        calls.append((requester, conversation_id))
+    async def handle_internal_message(session, graph, text, requester, conversation_id, attachments=()):
+        calls.append((requester, conversation_id, list(attachments)))
         return f"eco: {text.strip()}"
 
     monkeypatch.setattr(google_chat, "handle_internal_message", handle_internal_message)
@@ -134,7 +136,7 @@ async def test_mention_responde_solo_con_el_texto_que_acompana_la_mencion(echo_a
 async def test_conversation_en_mensaje_directo_es_el_space(echo_agent: list[tuple]):
     await handle_event(message_event("¿Cuándo pagan?"), SESSION, GRAPH)
 
-    assert echo_agent == [(Requester("Ana Pérez", "ana@autofin.cl", "google_chat"), "spaces/AAA")]
+    assert [call[:2] for call in echo_agent] == [(Requester("Ana Pérez", "ana@autofin.cl", "google_chat"), "spaces/AAA")]
 
 
 @pytest.mark.anyio
@@ -212,6 +214,17 @@ async def test_download_media_descarga_el_adjunto_con_el_scope_de_chat():
     assert media.headers["Authorization"] == "Bearer token-de-acceso"
     assertion = dict(httpx.QueryParams(requests[0].content.decode()))["assertion"]
     assert jwt.decode(assertion, verify=False)["scope"] == "https://www.googleapis.com/auth/chat.bot"
+
+
+@pytest.mark.anyio
+async def test_download_media_corta_si_supera_el_tope():
+    requests: list[httpx.Request] = []
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(google_handler(requests, content=b"x" * 2048))) as http:
+        client = ChatApiClient(http, service_account_info(private_key_pem(GOOGLE_KEY)))
+
+        with pytest.raises(AttachmentTooLargeError):
+            await client.download_media("spaces/AAA/messages/M1/attachments/A1", max_bytes=1024)
 
 
 @pytest.mark.anyio
@@ -298,3 +311,44 @@ def test_slow_responde_procesando_y_publica_en_el_hilo_original(monkeypatch: pyt
 
     assert response.json() == chat_reply(google_chat_router.PROCESSING)
     assert published == [("spaces/AAA", "spaces/AAA/threads/T1", "respuesta lenta")]
+
+
+
+# --- Adjuntos (spec 005) --------------------------------------------------------------------------------------------
+
+def event_with_attachments(text: str | None, attachments: list[dict]) -> AddonEvent:
+    event = message_event(text or "")
+    payload = event.model_dump(by_alias=True, exclude_none=True)
+    payload["chat"]["messagePayload"]["message"]["attachment"] = attachments
+    if text is None:
+        payload["chat"]["messagePayload"]["message"].pop("text", None)
+    return AddonEvent.model_validate(payload)
+
+
+UPLOADED = {"name": "spaces/AAA/messages/M1/attachments/A1", "contentName": "error.png", "contentType": "image/png",
+            "source": "UPLOADED_CONTENT", "attachmentDataRef": {"resourceName": "spaces/AAA/messages/M1/attachments/A1"}}
+FROM_DRIVE = {"name": "spaces/AAA/messages/M1/attachments/A2", "contentName": "Minuta", "contentType":
+              "application/vnd.google-apps.document", "source": "DRIVE_FILE", "driveDataRef": {"driveFileId": "D1"}}
+
+
+@pytest.mark.anyio
+async def test_adjunto_subido_y_de_drive_llegan_al_orquestador(echo_agent: list[tuple]):
+    await handle_event(event_with_attachments("¿qué es esto?", [UPLOADED, FROM_DRIVE]), SESSION, GRAPH)
+
+    assert echo_agent[0][2] == [
+        Attachment("error.png", "image/png", resource_name="spaces/AAA/messages/M1/attachments/A1"),
+        Attachment("Minuta", "application/vnd.google-apps.document", drive_file_id="D1")]
+
+
+@pytest.mark.anyio
+async def test_adjunto_mensaje_solo_con_archivo_se_procesa(echo_agent: list[tuple]):
+    reply = await handle_event(event_with_attachments(None, [UPLOADED]), SESSION, GRAPH)
+
+    assert reply == "eco: " and len(echo_agent[0][2]) == 1
+
+
+@pytest.mark.anyio
+async def test_adjunto_sin_archivos_pasa_una_lista_vacia(echo_agent: list[tuple]):
+    await handle_event(message_event("hola"), SESSION, GRAPH)
+
+    assert echo_agent[0][2] == []

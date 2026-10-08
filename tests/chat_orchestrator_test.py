@@ -17,7 +17,8 @@ from src.models.procedure_field import FieldKind
 from src.models.web_session import WebPhase, WebSession
 from src.services import chat_orchestrator
 from src.services.area_notifier import Requester
-from src.services.chat_orchestrator import UNAVAILABLE, handle_internal_message, handle_web_message
+from src.services.attachments import Attachment, AttachmentText
+from src.services.chat_orchestrator import EMPTY_MESSAGE, UNAVAILABLE, handle_internal_message, handle_web_message
 from src.services.procedures import FieldSpec
 from src.services.schedule import is_open
 from src.utils.clock import Clock
@@ -465,3 +466,94 @@ async def test_web_no_cambia_la_negrita(monkeypatch: pytest.MonkeyPatch, schedul
     messages = dumps(await ask_web(web_session(), "¿dónde pago?"))
 
     assert messages == [{"type": "message", "from": "bot", "text": "Puede pagar en **Caja Vecina**."}]
+
+
+
+# --- Archivos compartidos (spec 005) --------------------------------------------------------------------------------
+
+PDF = Attachment("contrato.pdf", "application/pdf", resource_name="spaces/AAA/messages/M1/attachments/A1")
+
+
+def use_reader(monkeypatch: pytest.MonkeyPatch, texts: list[AttachmentText]) -> list[list[Attachment]]:
+    calls: list[list[Attachment]] = []
+
+    async def read_message_attachments(session, attachments, llm):
+        calls.append(list(attachments))
+        return texts
+
+    monkeypatch.setattr(chat_orchestrator, "read_message_attachments", read_message_attachments)
+    return calls
+
+
+def last_human(llm: FakeAgentLLM) -> str:
+    return str(llm.coordinator_step_messages[-1][-1].content)
+
+
+@pytest.mark.anyio
+async def test_interno_archivo_entra_como_bloque_en_el_mensaje(monkeypatch: pytest.MonkeyPatch):
+    llm = says("El titular es Juan Soto.")
+    use_llm(monkeypatch, llm)
+    use_reader(monkeypatch, [AttachmentText("contrato.pdf", "read", "Contrato de Juan Soto")])
+
+    reply = await handle_internal_message(SESSION, INTERNAL_GRAPH, "¿de quién es?", ANA, "spaces/AAA", attachments=[PDF])
+
+    assert reply == "El titular es Juan Soto."
+    message = last_human(llm)
+    assert message.startswith("¿de quién es?") and "[Archivo «contrato.pdf»" in message and "Contrato de Juan Soto" in message
+    assert "no instrucciones" in message
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("text", "expected"), [
+    (AttachmentText("grande.pdf", "too_large"), "supera"),
+    (AttachmentText("video.mp4", "unsupported"), "formato"),
+    (AttachmentText("privado.pdf", "not_accessible", "", "bot@proyecto.iam.gserviceaccount.com"),
+     "bot@proyecto.iam.gserviceaccount.com"),
+    (AttachmentText("roto.pdf", "failed"), "no se pudo leer"),
+    (AttachmentText("largo.pdf", "truncated", "inicio"), "solo una parte"),
+])
+async def test_interno_archivo_no_leido_lleva_su_motivo(monkeypatch: pytest.MonkeyPatch, text, expected):
+    llm = says("ok")
+    use_llm(monkeypatch, llm)
+    use_reader(monkeypatch, [text])
+
+    await handle_internal_message(SESSION, INTERNAL_GRAPH, "mira esto", ANA, "spaces/AAA", attachments=[PDF])
+
+    assert expected in last_human(llm)
+
+
+@pytest.mark.anyio
+async def test_interno_archivo_queda_en_la_memoria_del_hilo(monkeypatch: pytest.MonkeyPatch):
+    llm = says("ok")
+    use_llm(monkeypatch, llm)
+    use_reader(monkeypatch, [AttachmentText("contrato.pdf", "read", "Cláusula 7: plazo de 48 meses")])
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    await handle_internal_message(SESSION, graph, "revisa", ANA, "spaces/AAA/threads/T9", attachments=[PDF])
+    use_reader(monkeypatch, [])
+    await handle_internal_message(SESSION, graph, "¿y la cláusula 7?", ANA, "spaces/AAA/threads/T9")
+
+    history = [str(m.content) for m in llm.coordinator_step_messages[-1][1:-1]]
+    assert any("Cláusula 7: plazo de 48 meses" in message for message in history)
+
+
+@pytest.mark.anyio
+async def test_interno_archivo_sin_texto_se_procesa_y_sin_nada_pide_escribir(monkeypatch: pytest.MonkeyPatch):
+    llm = says("Es una captura de un error.")
+    use_llm(monkeypatch, llm)
+    calls = use_reader(monkeypatch, [AttachmentText("error.png", "read", "Error 500")])
+
+    with_file = await handle_internal_message(SESSION, INTERNAL_GRAPH, "", ANA, "spaces/AAA", attachments=[PDF])
+    empty = await handle_internal_message(SESSION, INTERNAL_GRAPH, "   ", ANA, "spaces/AAA")
+
+    assert with_file == "Es una captura de un error." and empty == EMPTY_MESSAGE and len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_interno_archivo_no_se_lee_si_no_hay_adjuntos(monkeypatch: pytest.MonkeyPatch):
+    use_llm(monkeypatch, says("Hola"))
+    calls = use_reader(monkeypatch, [])
+
+    await ask("hola")
+
+    assert calls == []

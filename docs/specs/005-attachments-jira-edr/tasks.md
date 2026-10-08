@@ -1,6 +1,6 @@
 # Tareas 005 — Archivos adjuntos, consulta de Jira y EDR en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 7/22 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 10/22 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a Google
 ni a Jira: los clientes HTTP reciben un `httpx.MockTransport`. Cada pieza nueva entra con parámetros por defecto que no
@@ -34,13 +34,13 @@ cambian el comportamiento vigente hasta que se conecta.
   Hecho cuando: `uv run pytest -q tests/drive_client_test.py -k lectura` pasa con archivo normal, documento nativo exportado y sin acceso.
 
 ## Fase 4 — Adjuntos en la conversación
-- [ ] **T-8 — Leer los adjuntos de un mensaje** · RF-1 a RF-9 · ~30 min (depende de T-4 a T-7)
+- [x] **T-8 — Leer los adjuntos de un mensaje** · RF-1 a RF-9 · ~30 min (depende de T-4 a T-7)
   `read_attachments` en `src/services/attachments.py`: tamaño, formato, descarga según origen, extracción o transcripción y truncado; un resultado por archivo.
   Hecho cuando: `uv run pytest -q tests/attachments_test.py` pasa con cada formato, más de 20 MB, formato no admitido, Drive sin acceso, fallo de lectura, truncado y varios archivos.
-- [ ] **T-9 — Recibir los adjuntos del evento de Google Chat** · RF-1, RF-3 · ~20 min
+- [x] **T-9 — Recibir los adjuntos del evento de Google Chat** · RF-1, RF-3 · ~20 min
   `ChatAttachment` y `ChatMessage.attachment` en `src/interfaces/google_chat.py`; `handle_event` los pasa al orquestador.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k adjunto` pasa con un adjunto subido, uno de Drive y un mensaje solo con archivo.
-- [ ] **T-10 — Llevar el contenido de los archivos al mensaje del usuario** · RF-1, RF-4, RF-8, RF-10 · ~25 min
+- [x] **T-10 — Llevar el contenido de los archivos al mensaje del usuario** · RF-1, RF-4, RF-8, RF-10 · ~25 min
   `handle_internal_message(..., attachments=[])` lee los adjuntos y arma un bloque por archivo en el mensaje; un mensaje vacío con archivos se procesa.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k archivo` pasa con bloque en el mensaje, motivo de no lectura, memoria del hilo y mensaje vacío con archivo.
 

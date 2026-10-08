@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 49/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 55/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -178,22 +178,22 @@ El grafo nuevo se construye como `build_coordinator_graph` en `src/agents/graph.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "caido_saludo or aclaracion_fuera_de_horario"` pasa.
 
 ## Fase 10 — Baterías, auditor y documentación
-- [ ] **T-51 — Ampliar los nombres internos del auditor** · RF-47 · ~10 min
+- [x] **T-51 — Ampliar los nombres internos del auditor** · RF-47 · ~10 min
   `INTERNAL_NAMES` con los kinds nuevos, `area_ids`, `chosen_options` y los nombres de las tools.
   Hecho cuando: `uv run pytest -q tests/audit_test.py` pasa con un texto que contiene `iniciar_procedimiento`.
-- [ ] **T-52 — Añadir ataques contra las tools a `jailbreak_check`** · RF-47 · ~15 min [P]
+- [x] **T-52 — Añadir ataques contra las tools a `jailbreak_check`** · RF-47 · ~15 min [P]
   Ataques que piden usar o nombrar `buscar_faq` e `iniciar_procedimiento`.
   Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py` pasa y `ATTACKS` tiene al menos 2 ataques nuevos.
-- [ ] **T-53 — Crear la batería de clasificación de `behavior_check`** · RNF-5, RF-49 · ~30 min
+- [x] **T-53 — Crear la batería de clasificación de `behavior_check`** · RNF-5, RF-49 · ~30 min
   `src/cli/behavior_check.py --scope internal|external`: tabla de la spec, un hilo `MemorySaver` por mensaje, notificador que solo registra, compara `outcome`; código 1 si falla alguno.
   Hecho cuando: `uv run pytest -q tests/behavior_check_test.py -k clasificacion` pasa con un grafo de dobles que acierta y otro que falla.
-- [ ] **T-54 — Añadir la batería de elección a `behavior_check`** · RNF-5, RF-23, RF-30, RF-31 · ~25 min
+- [x] **T-54 — Añadir la batería de elección a `behavior_check`** · RNF-5, RF-23, RF-30, RF-31 · ~25 min
   `--faqs ID,ID --procedure ID`: fija la pregunta con `graph.aupdate_state` y comprueba la opción u opciones atendidas por cada mensaje de la spec.
   Hecho cuando: `uv run pytest -q tests/behavior_check_test.py -k eleccion` pasa.
-- [ ] **T-55 — Actualizar el README y el plan 001** · todos · ~25 min
+- [x] **T-55 — Actualizar el README y el plan 001** · todos · ~25 min
   README: grafo de 4 nodos, alta de un área, `rag_clarify_similarity`, `agent_max_steps`, keys nuevas de `agent_prompt`, papel de coordinador de `internal_agent`/`external_agent`, `behavior_check` y oferta por texto. Plan 001: nota en D32 y RNF-10.
   Hecho cuando: `grep -c "rag_clarify_similarity\|agent_max_steps\|behavior_check\|external_greeting" README.md` da al menos 4 y el plan 001 cita la spec 002 en D32.
-- [ ] **T-56 — Verificación completa** · todos · ~15 min
+- [x] **T-56 — Verificación completa** · todos · ~15 min
   `uv run pyright` y `uv run pytest` (AGENTS.md), y la matriz de cobertura del plan revisada contra los tests creados.
   Hecho cuando: pyright da 0 errores, pytest no tiene fallos y cada test citado en la matriz del plan existe (`uv run pytest --collect-only -q`).
 

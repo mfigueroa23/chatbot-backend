@@ -2,7 +2,10 @@ import re
 
 GENERIC_REFUSAL = "Solo puedo ayudarte con consultas de las áreas de este canal."
 # Nombres de la respuesta estructurada: si aparecen en un texto para el usuario, el modelo está mostrando su interior.
-INTERNAL_NAMES = ["faq_ids", "procedure_id", "wants_human", "no_answer", "manipulation"]
+INTERNAL_NAMES = [
+    "faq_ids", "procedure_id", "wants_human", "no_answer", "manipulation", "area_ids", "chosen_options", "accept_offer",
+    "decline_offer", "off_topic", "buscar_faq", "buscar_procedimiento", "iniciar_procedimiento", "procedimiento_id",
+]
 # Un fragmento de este largo copiado de un prompt ya revela su contenido.
 LEAK_FRAGMENT_LENGTH = 30
 CODE_PATTERNS = [

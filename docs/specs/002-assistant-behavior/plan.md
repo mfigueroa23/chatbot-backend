@@ -174,7 +174,7 @@ llamadas de cada tipo; `FakeRetriever` con candidatos y búsquedas por área.
 ## 8. Matriz de cobertura
 | RF | Módulos | Tests |
 |---|---|---|
-| RF-1 | migración, `graph.load_catalog` | `agent_graph_test` |
+| RF-1 | migración, `graph.load_catalog` | `business_data_test` |
 | RF-2 | `graph.load_catalog` (sin caché) | `agent_graph_test` |
 | RF-3 | `graph.coordinate` | `agent_graph_test` (`caplog`) |
 | RF-4 | `graph.coordinate` | `agent_graph_test` |

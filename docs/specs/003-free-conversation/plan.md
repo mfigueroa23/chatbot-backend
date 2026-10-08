@@ -1,21 +1,22 @@
 # Plan 003 — Conversación libre en Google Chat
 
 **Spec:** `docs/specs/003-free-conversation/spec.md` · **Estado:** borrador (2026-10-08)
-Se reutiliza el grafo de la spec 002 (`coordinate → route → area_agent → finalize`) sin nodos nuevos: el grafo del canal
-interno se compila en modo conversacional, el agente del canal redacta además el texto de sus respuestas en la misma
-llamada, y `finalize` sustituye la plantilla de aclaración y el "sin respuesta" por una llamada de conversación.
+Se reutiliza el grafo de la spec 002 (`coordinate → route → area_agent → finalize`) sin nodos nuevos: los grafos de ambos
+canales redactan con la persona de su canal, el agente del canal redacta además el texto de sus respuestas en la misma
+llamada, y `finalize` sustituye la plantilla de aclaración por una llamada de conversación; solo en el canal interno
+sustituye también el "sin respuesta" por una respuesta libre.
 
 ## 1. Resumen
-`build_graph(AreaScope.internal)` activa el modo conversacional; el web sigue igual (RF-1). La persona del asistente vive
-en `agent_prompt` (`internal_persona`) y entra en los mensajes del agente del canal, de los agentes de área y de la
+Ambos grafos redactan con la persona de su canal; solo `build_graph(AreaScope.internal)` da respuestas libres (RF-1,
+RF-34). La persona del asistente vive en `agent_prompt` (`internal_persona` y `external_persona`) y entra en los mensajes del agente del canal, de los agentes de área y de la
 conversación (RF-2 a RF-4). El agente del canal devuelve, junto con su decisión, el texto del saludo, el cierre, el tema
 ajeno, la pregunta sobre el asistente o la negativa; el código lo audita y usa el texto fijo si viene vacío (RF-5, RF-6,
 RF-10 a RF-12, RF-19 a RF-24). Si ninguna área responde, `finalize` hace una llamada `converse`: con temas candidatos
 redacta la pregunta que los propone (RF-7 a RF-9); sin ellos, o si el colaborador no eligió, da una respuesta libre
-(RF-13 a RF-18). El orquestador interno solo avisa al área cuando el colaborador lo pide (RF-27, RF-28). La temperatura
-del canal interno sube para que los textos varíen (RNF-4).
+(RF-13 a RF-18; en el web, la spec 002, RF-34). El orquestador interno solo avisa al área cuando el colaborador lo pide (RF-27, RF-28). La temperatura
+de ambos canales sube para que los textos varíen (RNF-4).
 
-- **Alcance por canal (RF-1):** modo conversacional fijado por el ámbito al compilar el grafo.
+- **Alcance por canal (RF-1, RF-32 a RF-35):** textos redactados en ambos canales; respuesta libre y procedimiento agotado redactado fijados por el ámbito al compilar el grafo.
 - **Persona y textos redactados (RF-2 a RF-12):** `internal_persona`, campo `text` del agente del canal, kind `about_assistant`.
 - **Respuestas libres y temas ajenos (RF-13 a RF-20):** llamada `converse` en `finalize`; ajeno con texto del agente del canal.
 - **Seguridad (RF-21 a RF-26):** auditor sobre todo texto, detector de datos personales en las respuestas libres, negativa redactada con respaldo genérico.
@@ -26,31 +27,34 @@ del canal interno sube para que los textos varíen (RNF-4).
 | Módulo | Cambio | RF |
 |---|---|---|
 | `src/agents/llm.py` | `CoordinatorKind` añade `about_assistant`. `CoordinatorOutput` y `CoordinatorReply` añaden `text: str` (texto para el usuario cuando el kind es `greeting`, `closing`, `off_topic`, `about_assistant` o `manipulation` y el canal es conversacional; vacío en otro caso); la descripción de `kind` aclara que preguntar qué es el asistente, si es una IA o qué puede hacer es `about_assistant` y no `manipulation`, y que pedir avisar al área o que lo vea una persona es `wants_human`. `build_coordinator_messages(..., persona: str \| None)` añade la persona y la instrucción de redactar `text`. `build_area_messages(..., persona: str \| None)` añade la persona. Nuevo `AgentLLM.converse(messages) -> str` con salida estructurada `ConverseOutput(text)`. `build_converse_messages(persona, agent_prompt, area_names, topics, history, question, history_messages)`: con `topics` pide una pregunta natural que los proponga en ese orden y sin plantilla; sin `topics` pide una respuesta libre breve, con el aviso de no oficial con sus palabras si el tema es de Autofin, sin datos personales y con la cláusula de seguridad. `build_gemini_llm(session, temperature)`: `gemini_chat` recibe la temperatura (forma parte de la clave de `lru_cache`) | RF-2 a RF-7, RF-11 a RF-15, RF-19 a RF-22, RF-25, RNF-3, RNF-4 |
-| `src/agents/graph.py` | `Catalog.persona`; `load_catalog` lee `{scope}_persona`. `build_graph(scope, checkpointer)` fija `conversational = scope == AreaScope.internal`. Outcomes `about_assistant` y `free_answer`. **`coordinate`** (conversacional): `manipulation` responde el `text` auditado o `GENERIC_REFUSAL`; `greeting`, `closing`, `off_topic` y `about_assistant` responden su `text` auditado o el texto fijo; con `own_area_ids`, `off_topic` y `about_assistant` delegan (RF-18, como R10 de la spec 002); al saludo y al tema ajeno les añade la línea de áreas solo si el texto no nombra ninguna. **`finalize`** (conversacional), sin respuestas: con candidatos y `can_clarify` llama a `converse` con las etiquetas de `build_options` y guarda la `Clarification` (outcome `clarify`); en otro caso llama a `converse` sin temas y responde `free_answer`; ambos textos pasan por el auditor y el libre además por `personal_data_leaks`. Nunca hace la pregunta de áreas | RF-4 a RF-24, RF-29, RF-30, RNF-1 |
+| `src/agents/graph.py` | `Catalog.persona`; `load_catalog` lee `{scope}_persona`. `build_graph(scope, checkpointer)` fija `free_answers = scope == AreaScope.internal`; la persona entra en `turn_prompts` (la protege el auditor) y en `AreaTask`. Outcomes `about_assistant` y `free_answer`. **`coordinate`** (ambos canales): `manipulation` responde el `text` auditado o `GENERIC_REFUSAL`; `greeting`, `closing`, `off_topic` y `about_assistant` responden su `text` auditado o el texto fijo; con `own_area_ids`, `off_topic` y `about_assistant` delegan (RF-18, como R10 de la spec 002); al saludo y al tema ajeno les añade la línea de áreas solo si el texto no nombra ninguna. **`finalize`**, sin respuestas: con candidatos y `can_clarify` llama a `converse` con las etiquetas de `build_options` y guarda la `Clarification` (outcome `clarify`, ambos canales); en otro caso, en el interno llama a `converse` sin temas y responde `free_answer`, y en el web sigue la spec 002 (pregunta de áreas o `no_answer`); ambos textos pasan por el auditor y el libre además por `personal_data_leaks`. En el interno nunca hace la pregunta de áreas | RF-4 a RF-24, RF-29, RF-30, RF-33, RF-34, RNF-1 |
 | `src/agents/behavior.py` | `mentions_area(text, area_names) -> bool` y `ensure_areas(text, area_names)` (añade la línea de áreas solo si falta) | RF-5, RF-20 |
 | `src/agents/audit.py` | `personal_data_leaks(text) -> list[str]`: RUT (con o sin puntos y dígito verificador), correo y teléfono chileno (`+56`/9 dígitos) | RF-25 |
-| `src/services/chat_orchestrator.py` | `build_agent_context(session, requester, offer_pending=False, conversational=False)`: con `conversational` lee `conversation_temperature` (0.7) para `build_gemini_llm`. `handle_internal_message` pasa `conversational=True`; `rejected` responde `result.reply` si existe y si no `GENERIC_REFUSAL`; `free_answer`, `about_assistant` y `clarify` devuelven su texto sin `InternalStrategy`; solo `wants_human` (y lo que decida R1) pasa por `InternalStrategy.on_no_answer` | RF-17, RF-21 a RF-23, RF-27, RF-28, RNF-4 |
+| `src/services/chat_orchestrator.py` | `build_agent_context(session, requester, offer_pending=False)` lee `conversation_temperature` (0.7) para `build_gemini_llm` en ambos canales. `handle_web_message`: `rejected` responde `result.reply` si existe; `about_assistant` mantiene la fase como un mensaje fijo (RF-35). `handle_internal_message`: `rejected` responde `result.reply` si existe y si no `GENERIC_REFUSAL`; `free_answer`, `about_assistant` y `clarify` devuelven su texto sin `InternalStrategy`; solo `wants_human` (y lo que decida R1) pasa por `InternalStrategy.on_no_answer` | RF-17, RF-21 a RF-23, RF-27, RF-28, RF-35, RNF-4 |
 | `src/cli/behavior_check.py` | Caso interno «¿eres IA o un vil robot?» → `about_assistant`; `--variety N` cuenta textos distintos de N saludos en hilos nuevos; la clase `other` acepta `free_answer` y `clarify` | RF-11, RNF-4 |
 | `src/cli/jailbreak_check.py` | `--scope internal` ejecuta la batería en proceso contra el grafo interno (como `behavior_check`), además del modo WebSocket del web | RF-21, RF-24, RNF-5 |
-| `alembic/versions/<rev>_seed_internal_persona.py` (nuevo) | Migración de datos: `agent_prompt` `internal_persona` con la persona de la spec (`ON CONFLICT DO NOTHING`); el downgrade la borra | RF-2 |
-| `README.md` | Modo conversacional de Google Chat, `internal_persona`, `conversation_temperature`, avisos al área solo a pedido y `jailbreak_check --scope internal` | — |
+| `alembic/versions/<rev>_seed_personas.py` (nuevo) | Migración de datos: `agent_prompt` `internal_persona` y `external_persona` con las personas de la spec (`ON CONFLICT DO NOTHING`); el downgrade las borra | RF-2, RF-32 |
+| `README.md` | Modo conversacional de ambos canales, `internal_persona`, `external_persona`, `conversation_temperature`, avisos al área solo a pedido y `jailbreak_check --scope internal` | — |
 
 ## 3. Modelo de datos
 - **Sin cambios de esquema.**
-- **Migración de datos** `seed_internal_persona`: inserta `internal_persona` en `agent_prompt` con el texto de la
-  persona (cercano y profesional, trato de tú, humor ligero, sin modismos marcados, frases cortas, sin títulos ni
-  negritas) y `ON CONFLICT (key) DO NOTHING`; el downgrade la borra. No hay `external_persona`: el web no la usa.
+- **Migración de datos** `seed_personas`: inserta en `agent_prompt` `internal_persona` (cercano y profesional, trato de
+  tú, humor ligero, sin modismos marcados, frases cortas, sin títulos ni negritas) y `external_persona` (igual, con trato
+  de usted y sin humor ante un reclamo), con `ON CONFLICT (key) DO NOTHING`; el downgrade las borra. Se redactan como
+  instrucciones de estilo, sin frases largas de identidad que el modelo repetiría y el auditor tomaría por fuga.
 - **Property nueva** `conversation_temperature` (`float`, 0.7 por defecto en código, sin fila sembrada).
 - **Checkpointer:** sin campos nuevos; los textos redactados se guardan como `AIMessage` igual que hoy (RF-30).
 
 ## 4. Contrato
 - **Google Chat `/api/v1/google-chat/events`:** sin cambios de forma; cambian los textos (redactados) y deja de avisar al
   área salvo petición explícita.
-- **WebSocket `/ws/v1/chat`:** sin cambios (RF-1).
+- **WebSocket `/ws/v1/chat`:** sin cambios de forma; cambian los textos (redactados con `external_persona`).
 
 ## 5. Decisiones
-- **D1 — Modo conversacional fijado por el ámbito al compilar el grafo.** La spec lo limita a Google Chat y cada canal ya
-  tiene su grafo. *Descartada:* una property `conversational_channels` — configura algo que la spec fija.
+- **D1 — Textos redactados en ambos canales; respuesta libre fijada por el ámbito al compilar el grafo.** Decisión del
+  usuario (2026-10-08): el web también conversa con su persona, pero nunca da información no oficial a un cliente
+  (RF-34), así que `free_answers = scope == AreaScope.internal`. *Descartada:* una property `conversational_channels` —
+  configura algo que la spec fija.
 - **D2 — El agente del canal redacta el texto en la misma llamada (`CoordinatorOutput.text`).** Saludos, cierres, temas
   ajenos, preguntas sobre el asistente y negativas no suman llamadas ni latencia. *Descartada:* una llamada aparte para
   redactar — duplica la latencia de los mensajes más frecuentes.
@@ -70,13 +74,15 @@ del canal interno sube para que los textos varíen (RNF-4).
 - **D7 — `about_assistant` como kind propio.** Separa la identidad de la manipulación (RF-11, RF-12) y permite medirlo en
   `behavior_check`. *Descartada:* delegarlo siempre en Ayuda General — sin FAQ de identidad cargada, terminaría en
   respuesta libre con una llamada más.
-- **D8 — Temperatura 0.7 solo en el canal interno (`conversation_temperature`).** Cumple RNF-4 sin tocar la clasificación
-  del web; la clasificación interna se valida con `behavior_check` al 100 %. *Descartada:* dos llamadas (clasificar a 0 y
+- **D8 — Temperatura 0.7 en ambos canales (`conversation_temperature`).** Cumple RNF-4 en los dos canales; la
+  clasificación se valida con `behavior_check --scope internal` y `--scope external` al 100 %. *Descartada:* dos llamadas (clasificar a 0 y
   redactar a 0.7) — duplica la latencia; *descartada:* temperatura 0 — los saludos serían siempre idénticos.
 - **D9 — Negativa redactada con respaldo genérico.** El texto de `manipulation` se audita; vacío o con fuga ⇒
   `GENERIC_REFUSAL` (RF-22, RF-23). *Descartada:* mantener siempre la negativa fija — contradice RF-22.
 - **D10 — Persona en `agent_prompt` (`internal_persona`).** Editable sin desplegar, como los demás prompts (RF-2, RF-3).
   *Descartada:* incluirla dentro de `internal_agent` — los agentes de área y `converse` no leen ese prompt.
+- **D11 — `about_assistant` en el web mantiene la fase (RF-35).** Se trata como un saludo: no cancela una oferta de
+  ejecutivo ni una petición de datos. Si el texto viene vacío sigue el flujo normal; con fuga, la negativa genérica.
 
 ## 6. Estrategia de tests
 Sin BD ni red. `FakeAgentLLM` añade `converse` guionizado y `text` en los `CoordinatorReply`.
@@ -90,9 +96,9 @@ Sin BD ni red. `FakeAgentLLM` añade `converse` guionizado y `text` en los `Coor
   redactada y de respaldo; aclaración redactada que guarda las opciones y elección por texto; respuesta libre sin
   candidatos, tras no elegir y nunca con FAQ sobre el umbral; respuesta libre con RUT ⇒ respaldo; sin pregunta de áreas;
   `converse` solo cuando nadie responde (recuento de llamadas, RNF-1). Con el grafo web, los mismos mensajes siguen la
-  spec 002 (RF-1).
-- **Servicio — `tests/chat_orchestrator_test.py`:** `rejected` con texto y sin texto; `free_answer` sin aviso al área;
-  `wants_human` interno avisa al área; temperatura del contexto interno y del web.
+  RF-33 y RF-34: textos redactados con `external_persona` y, sin candidatos, la pregunta de áreas y `no_answer`.
+- **Servicio — `tests/chat_orchestrator_test.py`:** `rejected` con texto y sin texto en ambos canales; `free_answer` sin
+  aviso al área; `wants_human` interno avisa al área; `about_assistant` web mantiene la fase; temperatura de ambos canales.
 - **CLI — `tests/behavior_check_test.py` y `tests/jailbreak_check_test.py`:** `--variety`, caso `about_assistant` y modo
   `--scope internal` con grafos de dobles.
 - **Migración:** `uv run alembic upgrade head` y `downgrade -1` en local, a mano.
@@ -100,19 +106,23 @@ Sin BD ni red. `FakeAgentLLM` añade `converse` guionizado y `text` en los `Coor
   de 8 pasos.
 
 ## 7. Orden de implementación
-1. Migración `seed_internal_persona` y `Catalog.persona`; tests.
+1. Migración `seed_personas` y `Catalog.persona`; tests.
 2. `behavior.ensure_areas` y `audit.personal_data_leaks`; tests.
 3. `llm.py`: `text`, `about_assistant`, persona en los mensajes, `converse` y temperatura; tests y dobles.
 4. Grafo: modo conversacional en `coordinate` (textos, negativa, `about_assistant`, delegación con FAQ propia); tests.
 5. Grafo: `finalize` conversacional (aclaración redactada y respuesta libre); tests.
 6. Orquestador: contexto conversacional, `rejected` con texto y avisos solo a pedido; tests.
 7. `behavior_check` y `jailbreak_check --scope internal`; README; `uv run pyright` y `uv run pytest`.
-8. Despliegue: cargar el prompt `internal_agent` con la instrucción de redactar `text`, migrar, ejecutar las baterías y la demo.
+8. Despliegue: cargar los prompts `internal_agent` y `external_agent` con la instrucción de redactar `text`, migrar, ejecutar las baterías y la demo.
 
 ## 8. Matriz de cobertura
 | RF | Módulos | Tests |
 |---|---|---|
 | RF-1 | `graph.build_graph` (D1), `chat_orchestrator` | `agent_graph_test` (grafo web), `chat_orchestrator_test` |
+| RF-32 | migración, `graph.load_catalog` | `business_data_test` |
+| RF-33 | `graph.coordinate`, `graph.finalize` | `agent_graph_test` (grafo web) |
+| RF-34 | `graph.finalize` (D1) | `agent_graph_test` (grafo web), `chat_orchestrator_test` |
+| RF-35 | `chat_orchestrator.handle_web_message` (D11) | `chat_orchestrator_test` |
 | RF-2 | migración, `graph.load_catalog` | `business_data_test` |
 | RF-3 | `graph.load_catalog` (sin caché) | `agent_graph_test` |
 | RF-4 | `llm.build_*_messages` (persona) | `gemini_llm_test` |
@@ -156,11 +166,11 @@ Sin BD ni red. `FakeAgentLLM` añade `converse` guionizado y `text` en los `Coor
   dato y ofrece avisar al área si el colaborador lo pide, sin avisar; queda en RF-31 de la spec. `finalize` llama a
   `converse` con una instrucción de procedimiento agotado (nombre del procedimiento, sin los datos entregados) y el
   orquestador no pasa ese resultado por `InternalStrategy`.
-- **R2 — La temperatura puede desestabilizar la clasificación.** *Mitigación:* `behavior_check --scope internal` al 100 %
-  con 0.7; si falla, bajar `conversation_temperature` sin desplegar.
+- **R2 — La temperatura puede desestabilizar la clasificación.** *Mitigación:* `behavior_check --scope internal` y
+  `--scope external` al 100 % con 0.7; si falla, bajar `conversation_temperature` sin desplegar.
 - **R3 — Las respuestas libres pueden inventar datos de Autofin.** Riesgo aceptado por la spec; el aviso de no oficial lo
   redacta el modelo y no es verificable en código. *Mitigación:* la demo y la revisión de `converse` en `behavior_check`.
-- **R4 — Prompts de la BD.** `internal_agent` debe pedir redactar `text` con la persona; si no, el modelo deja `text`
+- **R4 — Prompts de la BD.** `internal_agent` y `external_agent` deben pedir redactar `text` con la persona; si no, el modelo deja `text`
   vacío y se usan los textos fijos (RF-10). Se actualiza en el paso 8.
 - **R5 — Latencia del camino sin respuesta.** Suma una llamada (`converse`) tras los agentes de área. *Mitigación:* se
   mide aparte en la prueba de carga (RNF-2).

@@ -10,11 +10,13 @@ responde con su propio conocimiento cuando no hay una FAQ (avisando que no es in
 de temas ajenos antes de reconducir. El principio es **holgura en la forma y rigidez en la seguridad**: el modelo decide
 cómo decir las cosas y las respuestas no son siempre idénticas, mientras que lo que protege al asistente (no revelar
 instrucciones ni datos internos, no entregar datos personales, validar los procedimientos en código y auditar cada texto
-antes de enviarlo) sigue siendo determinista. El chat web de clientes no cambia: sigue con las reglas estrictas de las
-specs 001 y 002.
+antes de enviarlo) sigue siendo determinista. El chat web de clientes también conversa con su propia persona (trato de
+usted), pero sin respuestas libres: cuando no hay FAQ ni procedimiento sigue el flujo de la spec 002 (pregunta de áreas y
+oferta de ejecutivo o canales oficiales).
 
 ## Usuarios / actores
 - **Colaborador** del canal interno de Google Chat.
+- **Cliente** del chat web.
 - **Área** que recibe avisos del canal interno (spec 001).
 
 ## Historias de usuario
@@ -22,18 +24,19 @@ specs 001 y 002.
 - H2: Como colaborador quiero que el asistente me diga qué es y qué puede hacer cuando se lo pregunto, en lugar de una negativa.
 - H3: Como colaborador quiero una respuesta aunque no exista una FAQ, sabiendo que no es información oficial, para no quedarme sin ayuda.
 - H4: Como área quiero recibir avisos del canal interno solo cuando un colaborador lo pide, para no atender consultas que el asistente ya respondió.
+- H5: Como cliente del chat web quiero que el asistente me salude, me aclare y me hable de sí mismo con naturalidad, sin recibir información que no sea oficial.
 
 ## Requisitos funcionales (criterios de aceptación en EARS)
 
 Definiciones usadas en esta sección:
-- **Persona del asistente:** descripción de la personalidad y el tono del asistente del canal interno (cercano y profesional, trato de tú, humor ligero, sin modismos marcados).
+- **Persona del asistente:** descripción de la personalidad y el tono del asistente de cada canal: en el canal interno, cercano y profesional, trato de tú, humor ligero, sin modismos marcados; en el chat web, cercano y profesional, trato de usted, sin humor ante un reclamo.
 - **Respuesta libre:** respuesta que el modelo redacta con su propio conocimiento, sin apoyo en una FAQ ni en un procedimiento.
 - **Aviso de no oficial:** frase, redactada por el modelo con sus palabras, que deja claro que una respuesta libre no es información oficial de Autofin.
 - **Temas candidatos:** los candidatos de la spec 002 (FAQ o procedimientos entre el umbral de aclaración y el de respuesta), que el código entrega al modelo solo por su etiqueta.
 - Se mantienen las definiciones de la spec 002 (saludo, cierre, ajeno, mensaje sin respuesta, aclaración, agente del canal, agente de área).
 
 ### Alcance por canal
-- RF-1: MIENTRAS el mensaje llegue por el chat web, EL SISTEMA aplicará los requisitos de las specs 001 y 002 sin los cambios de esta spec.
+- RF-1: MIENTRAS el mensaje llegue por el chat web, EL SISTEMA aplicará esta spec con las diferencias de RF-32 a RF-35.
 
 ### Persona del asistente
 - RF-2: EL SISTEMA leerá de la base de datos la persona del asistente del canal interno.
@@ -77,6 +80,12 @@ Definiciones usadas en esta sección:
 - RF-28: CUANDO el sistema dé una respuesta libre, EL SISTEMA no notificará la consulta al área.
 - RF-31: SI el colaborador no entrega datos válidos de un procedimiento tras 3 intentos (RF-94 de la spec 001), ENTONCES EL SISTEMA responderá con un texto redactado que explique que no pudo validar los datos y ofrezca avisar al área si el colaborador lo pide, sin notificarla.
 
+### Chat web
+- RF-32: EL SISTEMA leerá de la base de datos una persona propia del asistente del chat web, con trato de usted.
+- RF-33: MIENTRAS el mensaje llegue por el chat web, EL SISTEMA redactará con la persona del chat web los saludos, cierres, temas ajenos, respuestas sobre el asistente, negativas y la pregunta con temas candidatos (RF-5 a RF-12 y RF-19 a RF-24).
+- RF-34: CUANDO llegue por el chat web un mensaje sin respuesta sin temas candidatos, o el cliente no elija ninguno de los propuestos, EL SISTEMA seguirá la spec 002 (pregunta de áreas y oferta de ejecutivo o canales oficiales); RF-13 a RF-18, RF-25, RF-27, RF-28 y RF-31 solo aplican al canal interno.
+- RF-35: CUANDO el cliente pregunte por el asistente, EL SISTEMA responderá sin cambiar la fase del chat web, como ante un saludo.
+
 ### Convivencia con las specs 001 y 002
 - RF-29: EL SISTEMA mantendrá en el canal interno la prioridad de RF-39 de la spec 002, con la respuesta libre en el lugar del flujo de "sin respuesta" (nivel 11).
 - RF-30: EL SISTEMA guardará en la memoria de la conversación los textos redactados y las respuestas libres.
@@ -84,8 +93,8 @@ Definiciones usadas en esta sección:
 ## Requisitos no funcionales
 - RNF-1: En el canal interno, la respuesta libre suma como máximo 1 llamada de generación a las de RNF-1 de la spec 002, y solo cuando ninguna área responde.
 - RNF-2: Se mantiene RNF-2 de la spec 002 para las respuestas con FAQ; la respuesta libre se mide aparte en la misma prueba de carga.
-- RNF-3: Las respuestas del canal interno están en español, con trato de tú.
-- RNF-4: Variedad: de 5 conversaciones nuevas con el mismo saludo, al menos 3 reciben textos distintos.
+- RNF-3: Las respuestas están en español: con trato de tú en el canal interno y de usted en el chat web.
+- RNF-4: Variedad: en cada canal, de 5 conversaciones nuevas con el mismo saludo, al menos 3 reciben textos distintos.
 - RNF-5: `jailbreak_check` contra el canal interno termina con código 0: ninguna respuesta filtra prompts, herramientas, nombres internos ni código.
 
 ## Casos límite
@@ -100,9 +109,11 @@ Definiciones usadas en esta sección:
 - Cualquier texto redactado que copia un fragmento del prompt → negativa genérica por el auditor (RF-24).
 - Respuesta libre de un tema general (no de Autofin) → sin aviso de no oficial (RF-15 solo aplica a temas de Autofin).
 - Mensaje mixto entre ámbitos → sigue la RF-8 de la spec 001 (pedir reformular).
+- Chat web, «¿es usted un robot?» → respuesta con la persona del web, sin cambiar la fase (RF-35).
+- Chat web, consulta sin FAQ ni candidatos → pregunta de áreas y luego oferta de ejecutivo, nunca una respuesta libre (RF-34).
 
 ## Fuera de alcance
-- Cambios en el chat web de clientes.
+- Respuestas libres en el chat web de clientes.
 - Búsquedas en internet o en sistemas externos para las respuestas libres.
 - Garantizar la exactitud de una respuesta libre: el aviso de no oficial cubre ese riesgo.
 - Un texto exacto para el aviso de no oficial: lo redacta el modelo.
@@ -113,6 +124,7 @@ Definiciones usadas en esta sección:
 - Todos los RF tienen al menos un test `*_test.py` en verde, con dobles del modelo y del recuperador, sin base de datos ni red.
 - `uv run pyright` sin errores.
 - `behavior_check --scope internal` actualizado y con el 100 % de aciertos contra el despliegue.
+- `behavior_check --scope external` con el 100 % de aciertos contra el despliegue.
 - `jailbreak_check` sigue terminando con código 0.
 - Demo en Google Chat con el resultado esperado de cada mensaje:
   1. «hola» dos veces en conversaciones nuevas → saludos redactados con las áreas del canal, no idénticos.
@@ -128,7 +140,8 @@ Definiciones usadas en esta sección:
 - Ninguna.
 
 ## Decisiones registradas
-- **Conversación libre solo en Google Chat (2026-10-08, decisión del usuario):** el chat web de clientes sigue estricto.
+- ~~**Conversación libre solo en Google Chat (2026-10-08, decisión del usuario):** el chat web de clientes sigue estricto.~~ Sustituida por la siguiente.
+- **Chat web conversacional sin respuestas libres (2026-10-08, decisión del usuario):** el web también redacta saludos, cierres, ajenos, respuestas sobre el asistente, negativas y aclaraciones con su propia persona (`external_persona`, trato de usted); sin FAQ ni candidatos sigue la spec 002 y nunca da información no oficial a un cliente (RF-1, RF-32 a RF-35).
 - **Responder libre sin FAQ (2026-10-08, decisión del usuario):** sin FAQ, el asistente responde con su conocimiento avisando que no es información oficial; solo avisa al área si el colaborador lo pide. Relaja en el canal interno RF-9 y RF-89 de la spec 001.
 - **Temas ajenos: charla breve y reconduce (2026-10-08, decisión del usuario).**
 - **Saludos, cierres y aclaraciones redactados por el modelo con respaldo fijo (2026-10-08, decisión del usuario).**

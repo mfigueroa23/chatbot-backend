@@ -1,3 +1,4 @@
+import base64
 import httpx
 import pytest
 from typing import cast
@@ -5,11 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.edr_document import EdrDocumentRecord
 from src.services.drive_client import DriveUpload
 from jinja2 import StrictUndefined
+from jinja2.exceptions import SecurityError
 from src.services import edr as edr_module
 from src.services.edr import (
     PENDIENTE_DEFINIR, EdrAplicacionAfectada, EdrBloqueEspecificacion, EdrCriterioAceptacion, EdrDocument,
     EdrEspecificacionRF, EdrGlosarioEntry, EdrHistorialEntry, EdrImpacto, EdrItemBloque, EdrMiembroEquipo, EdrPersona,
-    EdrRequerimientoEntry, EdrRolPermiso, EdrSeguridad, get_edr, render_edr_html, save_edr)
+    EdrRequerimientoEntry, EdrRolPermiso, EdrSeguridad, get_edr, load_edr_template, render_edr_html, save_edr)
 
 # Las secciones numeradas de la plantilla institucional del EDR (la misma de agente-ti).
 SECTIONS = ["1.&nbsp;&nbsp; Objetivo General", "2.&nbsp;&nbsp; Visión General", "a.&nbsp;&nbsp; Product Owner",
@@ -102,11 +104,13 @@ class FakeDriveWriter:
         self.fail = fail
         self.created: list[tuple[str, str]] = []
         self.replaced: list[str] = []
+        self.html: list[str] = []
 
     async def create_document_from_html(self, name: str, folder_id: str, html: str) -> DriveUpload:
         if self.fail:
             raise httpx.HTTPStatusError("500", request=httpx.Request("POST", "https://x"), response=httpx.Response(500))
         self.created.append((name, folder_id))
+        self.html.append(html)
         return DriveUpload("DOC1", "https://docs.google.com/document/d/DOC1/edit")
 
     async def replace_document_html(self, file_id: str, html: str) -> DriveUpload:
@@ -167,3 +171,56 @@ async def test_guardar_y_leer_el_edr_de_la_conversacion():
     missing = await get_edr(cast(AsyncSession, EdrSession()), "spaces/BBB")
 
     assert found is not None and found.objetivo_general == "Objetivo guardado" and missing is None
+
+
+# --- Plantilla del EDR en la tabla property, en base64 ----------------------------------------------------------------
+
+class PropertySession:
+    def __init__(self, value: str | None):
+        self.value = value
+
+    async def scalar(self, statement):
+        return self.value
+
+
+def encoded(template: str) -> str:
+    return base64.b64encode(template.encode()).decode()
+
+
+@pytest.mark.anyio
+async def test_plantilla_de_la_bd_se_decodifica_desde_base64():
+    template = await load_edr_template(cast(AsyncSession, PropertySession(encoded("<h1>{{ edr.titulo }} ñ</h1>"))))
+
+    assert template == "<h1>{{ edr.titulo }} ñ</h1>"
+
+
+@pytest.mark.anyio
+async def test_sin_plantilla_en_la_bd_se_usa_la_del_repo():
+    assert await load_edr_template(cast(AsyncSession, PropertySession(None))) is None
+
+
+@pytest.mark.anyio
+async def test_plantilla_de_la_bd_mal_codificada_falla():
+    with pytest.raises(ValueError):
+        await load_edr_template(cast(AsyncSession, PropertySession("no es base64 ñ")))
+
+
+def test_plantilla_propia_reemplaza_a_la_del_repo_y_escapa_el_html():
+    html = render_edr_html(edr(objetivo_general="<b>Curse</b>"), "<h1>{{ edr.objetivo_general }}</h1>")
+
+    assert html == "<h1>&lt;b&gt;Curse&lt;/b&gt;</h1>"
+
+
+def test_plantilla_propia_corre_en_sandbox():
+    # La plantilla viene de la BD: no debe poder salir del EDR hacia el intérprete.
+    with pytest.raises(SecurityError):
+        render_edr_html(edr(), "{{ edr.__class__.__mro__[1].__subclasses__() }}")
+
+
+@pytest.mark.anyio
+async def test_guardar_con_plantilla_propia():
+    session, drive = EdrSession(), FakeDriveWriter()
+
+    await save_edr(cast(AsyncSession, session), "spaces/AAA", edr(), drive, "CARPETA", template="<p>{{ edr.titulo }}</p>")
+
+    assert drive.html == ["<p>EDR DAIA-52 Curse automatizado</p>"]

@@ -89,6 +89,10 @@ Migración de esquema nueva y revisada a mano (constitución, punto 8):
   queda versionada y el contenido se guarda en `edr_document.content` para editarlo. *Descartada:* la API de Google Docs
   con `batchUpdate` — mucho más código para tablas y listas; *descartada:* copiar una plantilla de Drive — la estructura
   quedaría fuera del repo.
+  **Ajuste (2026-10-08, decisión del usuario):** la plantilla puede venir de la property `edr_template_base64` (HTML en
+  base64) para cambiar el formato sin desplegar; sin ella se usa `src/templates/edr.html`, que es la de `agente-ti`.
+  Se renderiza con `SandboxedEnvironment` porque el texto viene de la BD. *Descartada:* una tabla propia para
+  plantillas — cambia el esquema para un único valor de configuración.
 - **D7 — Drive con la cuenta de servicio de Chat y una carpeta de unidad compartida.** Una cuenta de servicio no tiene
   cuota propia para crear documentos fuera de una unidad compartida. *Descartada:* OAuth de una cuenta de Workspace
   propia (como `agente-ti`) — otra credencial y refresco de token.

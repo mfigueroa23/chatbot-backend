@@ -2,18 +2,24 @@
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
-from jinja2 import Environment, FileSystemLoader, select_autoescape
+import base64
+from jinja2 import FileSystemLoader, select_autoescape
+from jinja2.sandbox import SandboxedEnvironment
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.edr_document import EdrDocumentRecord
 from src.services.drive_client import DriveUpload
+from src.services.property import get_str_property
 from src.utils.exceptions.database import DatabaseUnavailableError
 
 PENDIENTE_DEFINIR = "[PENDIENTE DEFINIR]"
-TEMPLATES = Environment(loader=FileSystemLoader(Path(__file__).resolve().parent.parent / "templates"),
-                        autoescape=select_autoescape(["html"]))
+# La plantilla puede venir de la BD: el sandbox impide que una plantilla salga del EDR hacia el intérprete.
+TEMPLATES = SandboxedEnvironment(loader=FileSystemLoader(Path(__file__).resolve().parent.parent / "templates"),
+                                 autoescape=select_autoescape(["html"], default_for_string=True))
+# Plantilla HTML en base64 en la tabla property; sin ella se usa src/templates/edr.html.
+EDR_TEMPLATE_PROPERTY = "edr_template_base64"
 
 class EdrModel(BaseModel):
     # Campos de más del modelo se ignoran: un nombre mal escrito no debe impedir guardar el resto del EDR.
@@ -127,8 +133,14 @@ class DriveWriter(Protocol):
     async def create_document_from_html(self, name: str, folder_id: str, html: str) -> DriveUpload: ...
     async def replace_document_html(self, file_id: str, html: str) -> DriveUpload: ...
 
-def render_edr_html(edr: EdrDocument) -> str:
-    return TEMPLATES.get_template("edr.html").render(edr=edr, pending=PENDIENTE_DEFINIR)
+async def load_edr_template(session: AsyncSession) -> str | None:
+    encoded = await get_str_property(session, EDR_TEMPLATE_PROPERTY, "")
+    # Un base64 mal formado falla aquí y el EDR no se guarda: mejor un error visible que otro formato en silencio.
+    return base64.b64decode(encoded, validate=True).decode("utf-8") if encoded else None
+
+def render_edr_html(edr: EdrDocument, template: str | None = None) -> str:
+    compiled = TEMPLATES.from_string(template) if template is not None else TEMPLATES.get_template("edr.html")
+    return compiled.render(edr=edr, pending=PENDIENTE_DEFINIR)
 
 async def latest_record(session: AsyncSession, conversation_id: str) -> EdrDocumentRecord | None:
     statement = (select(EdrDocumentRecord).where(EdrDocumentRecord.conversation_id == conversation_id)
@@ -143,10 +155,10 @@ async def get_edr(session: AsyncSession, conversation_id: str) -> EdrDocument | 
     return EdrDocument.model_validate(record.content) if record is not None else None
 
 async def save_edr(session: AsyncSession, conversation_id: str, edr: EdrDocument, drive: DriveWriter, folder_id: str,
-                   new: bool = False) -> EdrSaved:
+                   new: bool = False, template: str | None = None) -> EdrSaved:
     """Crea el Google Doc del primer EDR de la conversación y actualiza el mismo después; un fallo de Drive no deja fila."""
     record = None if new else await latest_record(session, conversation_id)
-    html = render_edr_html(edr)
+    html = render_edr_html(edr, template)
     content = edr.model_dump()
     if record is None:
         upload = await drive.create_document_from_html(edr.titulo, folder_id, html)

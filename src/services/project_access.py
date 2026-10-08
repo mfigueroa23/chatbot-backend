@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.jira_board import JiraBoard
 from src.models.project_collaborator import ProjectCollaborator
 from src.services.drive_client import build_drive_client
-from src.services.edr import EdrDocument, EdrSaved, get_edr, save_edr
+from src.services.edr import EdrDocument, EdrSaved, get_edr, load_edr_template, save_edr
 from src.services.jira_client import JiraIssue, JiraIssueRef, build_jira_client
 from src.services.property import get_int_property, get_str_property
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -94,4 +94,5 @@ class ProjectGateway:
         async with self._session_factory() as session, httpx.AsyncClient(timeout=DRIVE_HTTP_TIMEOUT_SECONDS) as http:
             drive = await build_drive_client(session, http)
             folder_id = await get_str_property(session, "edr_drive_folder_id")
-            return await save_edr(session, conversation_id, edr, drive, folder_id, new)
+            template = await load_edr_template(session)
+            return await save_edr(session, conversation_id, edr, drive, folder_id, new, template)

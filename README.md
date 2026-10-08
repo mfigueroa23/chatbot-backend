@@ -43,7 +43,8 @@ En **Google Chat** el asistente además ([spec 005](docs/specs/005-attachments-j
   leen en código. El texto entra en el mensaje marcado como información (no instrucciones) y queda en la memoria del hilo.
 - **Consulta Jira en solo lectura** y **redacta EDR** como Google Docs desde las áreas con herramientas habilitadas
   (`business_area.tools`, p. ej. Proyectos con `{jira,edr}`), solo para los colaboradores de `project_collaborator` y
-  los tableros de `jira_board`. El EDR usa la plantilla institucional de `agente-ti` (`src/templates/edr.html`), deja
+  los tableros de `jira_board`. El EDR usa la plantilla institucional de `agente-ti` (`src/templates/edr.html`, o la de la
+  property `edr_template_base64` si existe), deja
   «[PENDIENTE DEFINIR]» lo que nadie entregó y se actualiza sobre el mismo documento en la conversación. La guía de
   redacción de cada sección va en el `system_prompt` del área (BD), así que se ajusta sin desplegar.
 
@@ -118,6 +119,7 @@ Properties usadas actualmente:
 | `jira_api_token` | Token de API de esa cuenta (secreto: ver SECURITY.md) | — |
 | `jira_max_results` | Tickets por búsqueda o por lista de hijos | `20` |
 | `edr_drive_folder_id` | Carpeta de una unidad compartida de Drive donde se crean los EDR | — |
+| `edr_template_base64` | Plantilla HTML (Jinja2, en sandbox) del EDR en base64; reemplaza a `src/templates/edr.html` sin desplegar | — (usa la del repo) |
 | `scope_topics_per_area` | Temas (FAQ) y trámites (procedimientos) de cada área que conoce el agente de ámbito | `50` |
 | `conversation_temperature` | Temperatura de Gemini en ambos canales: con `0` los textos redactados serían siempre idénticos | `0.7` |
 

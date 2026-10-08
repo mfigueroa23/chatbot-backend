@@ -120,3 +120,5 @@ Definiciones usadas en esta sección:
 - **Reimplementar en el chatbot (2026-10-08, decisión del usuario):** sin depender de `agente-ti`; el acceso a Jira por MCP lo pidió el usuario y se evalúa en el plan.
 - **Datos de archivos y Jira como evidencia (2026-10-08, decisión del usuario):** un dato personal que aparece en un archivo compartido o en un ticket consultado se puede mostrar; lo que el modelo invente sigue bloqueado.
 - **Entrega junto al fix 1.4.1 (2026-10-08, decisión del usuario):** en la rama `fix/coordinator-tool-names`.
+- **Formato y redacción del EDR editables sin desplegar (2026-10-08, decisión del usuario):** la plantilla visual y la
+  guía de redacción de cada sección se guardan en la base de datos.

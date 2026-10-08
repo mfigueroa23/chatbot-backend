@@ -18,6 +18,7 @@ from src.agents.llm import AgentLLM, AreaInfo, CallBudget, ProcedureHit, build_c
 from src.agents.retriever import Retriever
 from src.agents.scope_agent import ScopeReport, ScopeRequest, run_scope_agent
 from src.agents.strategies import Notifier
+from src.agents.tools import ProjectServices
 from src.models.business_area import AreaScope
 from src.services.area_notifier import Requester
 from src.services.business_data import AreaTopics, get_agent_prompt, get_area_topics, get_areas
@@ -60,6 +61,7 @@ class AgentContext:
     max_model_calls: int = 100  # llamadas al modelo por mensaje entre todos los agentes
     fallback_space: Callable[[], Awaitable[str | None]] | None = None  # space general del canal interno
     is_open: Callable[[], Awaitable[bool]] | None = None  # horario de atención del chat web
+    projects: ProjectServices | None = None  # Jira y EDR de las áreas que los tengan habilitados (solo Google Chat)
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -142,7 +144,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
                 rules=catalog.area_rules, question=query, history=history, pending=pending,
                 attempts=state.get("procedure_attempts") or {}, requester=context.requester, notifier=context.notifier,
                 history_messages=context.history_messages, max_attempts=context.max_attempts,
-                max_steps=context.max_steps, original=question), budget)
+                max_steps=context.max_steps, original=question, projects=context.projects), budget)
 
         toolbox = CoordinatorToolbox(scope, consult, context.notifier, context.requester, question,
                                      context.fallback_space, context.is_open, context.offer_pending)
@@ -213,7 +215,8 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     # El auditor del web prohíbe los nombres de las áreas internas; en Google Chat no hace falta la otra lista.
     other_names = [area.name for area in await get_areas(session, AreaScope.internal)] if scope == AreaScope.external else []
     return Catalog(
-        [AreaInfo(area.id, area.name, area.description, area.scope, area.system_prompt, area.chat_space) for area in areas],
+        [AreaInfo(area.id, area.name, area.description, area.scope, area.system_prompt, area.chat_space, tuple(area.tools or ()))
+         for area in areas],
         prompts[f"{scope}_coordinator"] or "",
         prompts[f"{scope}_agent"] or "",
         prompts["area_rules"] or "",

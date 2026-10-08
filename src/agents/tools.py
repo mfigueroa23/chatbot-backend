@@ -4,7 +4,10 @@ from src.agents.procedure_flow import ProcedureResult, handle_procedure
 from src.agents.strategies import Notifier
 from src.models.business_area import AreaScope
 from src.services.area_notifier import Requester
+from src.services.jira_client import JiraIssue, JiraIssueRef
 from src.services.procedures import web_contact_fields
+from src.services.project_access import board_of, scoped_jql
+from src.utils.exceptions.jira import JiraUnavailableError
 
 QUERY_PARAMETERS = {
     "type": "object",
@@ -38,6 +41,43 @@ START_PROCEDURE = ToolSpec(
     "Inicia o continúa un procedimiento del área con los datos entregados; explica los pasos en el texto de tu respuesta.",
     START_PARAMETERS)
 
+SEARCH_TICKETS = ToolSpec(
+    "buscar_tickets",
+    "Busca tickets de Jira con JQL, sin indicar el proyecto: la búsqueda se acota sola a los tableros permitidos.",
+    {"type": "object", "properties": {"jql": {"type": "string", "description": "Condición JQL, p. ej. text ~ \"pagaré\""}},
+     "required": ["jql"]})
+READ_TICKET = ToolSpec(
+    "leer_ticket",
+    "Lee un ticket o una épica de Jira: estado, tipo, responsable, descripción, subtareas y tickets hijos.",
+    {"type": "object", "properties": {"clave": {"type": "string", "description": "Clave del ticket, p. ej. DAIA-52"}},
+     "required": ["clave"]})
+NOT_ENABLED = ("La función de Jira y EDR no está habilitada para este colaborador. Indícale que esa función no está "
+               "habilitada para él, sin más detalles.")
+JIRA_DOWN = "No se pudo consultar Jira en este momento."
+INVALID_SEARCH = "La búsqueda no es válida: escribe una condición JQL sin indicar el proyecto."
+
+class ProjectServices(Protocol):
+    async def is_enabled(self, email: str | None) -> bool: ...
+    async def allowed_boards(self) -> list[str]: ...
+    async def search(self, jql: str) -> list[JiraIssueRef]: ...
+    async def get_issue(self, key: str) -> JiraIssue | None: ...
+    async def children(self, key: str) -> list[JiraIssueRef]: ...
+
+def describe_refs(refs: list[JiraIssueRef]) -> str:
+    return "\n".join(f"- {ref.key} {ref.summary} ({ref.status})" for ref in refs)
+
+def describe_issue(issue: JiraIssue, children: list[JiraIssueRef]) -> str:
+    lines = [f"{issue.key} · {issue.summary} · {issue.status}",
+             f"Tipo: {issue.issue_type} · Responsable: {issue.assignee or 'sin asignar'} · Informante: {issue.reporter or '—'}"]
+    if issue.parent:
+        lines.append(f"Pertenece a: {issue.parent}")
+    lines.append(f"Descripción:\n{issue.description or '(sin descripción)'}")
+    if issue.subtasks:
+        lines.append(f"Subtareas:\n{describe_refs(issue.subtasks)}")
+    if children:
+        lines.append(f"Tickets hijos:\n{describe_refs(children)}")
+    return "\n".join(lines)
+
 class AreaSearch(Protocol):
     async def search_area_faqs(self, area_id: int, query: str) -> list[FaqHit]: ...
     async def search_area_procedures(self, area_id: int, query: str) -> list[ProcedureHit]: ...
@@ -57,6 +97,7 @@ class AreaToolbox:
         pending: ProcedureHit | None,
         attempts: dict[int, int],
         max_attempts: int,
+        projects: ProjectServices | None = None,
     ):
         self.area = area
         self._retriever = retriever
@@ -71,14 +112,18 @@ class AreaToolbox:
         self.attempts = dict(attempts)
         self.result: ProcedureResult | None = None
         self.procedure: ProcedureHit | None = None
+        self._projects = projects
+        # Lo leído en Jira o guardado en un EDR: es evidencia para el guardarraíl y el control posterior.
+        self.documents: list[str] = []
 
     @property
     def evidence(self) -> bool:
         # Un texto solo vale si se apoya en contenido del área o en el procedimiento en curso.
-        return bool(self.faqs or self.procedures or self.pending)
+        return bool(self.faqs or self.procedures or self.pending or self.documents)
 
     def specs(self) -> list[ToolSpec]:
-        return [SEARCH_FAQ, SEARCH_PROCEDURE, START_PROCEDURE]
+        jira = [SEARCH_TICKETS, READ_TICKET] if "jira" in self.area.tools and self._projects is not None else []
+        return [SEARCH_FAQ, SEARCH_PROCEDURE, START_PROCEDURE, *jira]
 
     async def execute(self, call: ToolCall, model_text: str) -> str:
         match call.name:
@@ -88,7 +133,33 @@ class AreaToolbox:
                 return await self._search_procedures(str(call.args.get("consulta", "")))
             case "iniciar_procedimiento":
                 return await self._start(call, model_text)
+            case "buscar_tickets" | "leer_ticket" if any(spec.name == call.name for spec in self.specs()):
+                return await self._jira(call)
         return f"La herramienta {call.name} no existe."
+
+    async def _jira(self, call: ToolCall) -> str:
+        assert self._projects is not None
+        # El acceso se comprueba antes de tocar Jira, con el correo que da Google Chat (nunca lo que escribe el usuario).
+        if not await self._projects.is_enabled(self._requester.contact if self._requester else None):
+            return NOT_ENABLED
+        boards = await self._projects.allowed_boards()
+        try:
+            if call.name == "leer_ticket":
+                key = str(call.args.get("clave", "")).strip().upper()
+                # Fuera de los tableros permitidos se responde igual que si no existiera.
+                issue = await self._projects.get_issue(key) if board_of(key) in boards else None
+                if issue is None:
+                    return f"No encuentro el ticket {key}."
+                text = describe_issue(issue, await self._projects.children(key))
+            else:
+                jql = scoped_jql(str(call.args.get("jql", "")), boards)
+                if jql is None:
+                    return INVALID_SEARCH
+                text = describe_refs(await self._projects.search(jql)) or "Sin tickets para esa búsqueda."
+        except JiraUnavailableError:
+            return JIRA_DOWN
+        self.documents.append(text)
+        return text
 
     async def _search_faq(self, query: str) -> str:
         hits = await self._retriever.search_area_faqs(self.area.id, query)

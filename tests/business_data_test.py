@@ -56,6 +56,7 @@ class Area:
     def __init__(self, area_id: int, name: str, system_prompt: str | None):
         self.id, self.name, self.description = area_id, name, f"Dudas de {name}"
         self.scope, self.system_prompt, self.chat_space = AreaScope.external, system_prompt, None
+        self.tools: list[str] = []
 
 
 class AreasResult:
@@ -174,3 +175,15 @@ async def test_load_catalog_el_web_conoce_los_nombres_internos_para_prohibirlos(
     assert catalog.other_area_names == expected
     if scope == AreaScope.external:
         assert "business_area.scope = 'internal'" in compiled(session.statements[-1])
+
+
+
+@pytest.mark.anyio
+async def test_load_catalog_pasa_las_herramientas_de_cada_area():
+    area = Area(3, "Proyectos", "Prompt de Proyectos")
+    area.tools = ["jira", "edr"]
+    session = CatalogSession([area], {})
+
+    catalog = await load_catalog(cast(AsyncSession, session), AreaScope.internal)
+
+    assert catalog.areas[0].tools == ("jira", "edr")

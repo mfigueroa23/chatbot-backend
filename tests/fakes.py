@@ -15,6 +15,7 @@ from src.models.executive_session import ExecutiveSession
 from src.models.live_chat import LiveChat, LiveChatStatus
 from src.models.web_session import WebPhase, WebSession
 from src.services.realtime import ConnectionHub, Event
+from src.utils.exceptions.jira import JiraUnavailableError
 from src.utils.exceptions.notification import NotificationDeliveryError
 
 
@@ -214,6 +215,45 @@ class FakeRetriever:
 
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
         self.refreshed_area_ids.extend(area_ids)
+
+
+class FakeProjects:
+    """Jira y el acceso de Proyectos en memoria: cuenta las llamadas a Jira para comprobar que el acceso va antes."""
+
+    def __init__(self, enabled: bool = True, boards: list[str] | None = None, issues: dict | None = None,
+                 children: dict | None = None, found: list | None = None, down: bool = False):
+        self.enabled = enabled
+        self.boards = boards if boards is not None else ["DAIA"]
+        self.issues = issues or {}
+        self.children_of = children or {}
+        self.found = found or []
+        self.down = down
+        self.jira_calls = 0
+        self.searches: list[str] = []
+
+    async def is_enabled(self, email: str | None) -> bool:
+        return self.enabled
+
+    async def allowed_boards(self) -> list[str]:
+        return list(self.boards)
+
+    def _call(self) -> None:
+        self.jira_calls += 1
+        if self.down:
+            raise JiraUnavailableError("caído")
+
+    async def search(self, jql: str):
+        self._call()
+        self.searches.append(jql)
+        return list(self.found)
+
+    async def get_issue(self, key: str):
+        self._call()
+        return self.issues.get(key)
+
+    async def children(self, key: str):
+        self._call()
+        return list(self.children_of.get(key, []))
 
 
 class FakeNotifier:

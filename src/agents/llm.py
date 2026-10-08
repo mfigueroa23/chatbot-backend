@@ -26,6 +26,7 @@ class AreaInfo:
     scope: AreaScope
     system_prompt: str | None
     chat_space: str | None = None
+    tools: tuple[str, ...] = ()  # herramientas extra del agente del área (jira, edr)
 
 @dataclass(frozen=True)
 class FaqHit:

@@ -10,7 +10,7 @@ from src.agents.llm import (
 from src.agents.retriever import Retriever, ScopeSignals
 from src.agents.strategies import Notifier
 from src.agents.sub_agent import AreaAnswer, run_sub_agent
-from src.agents.tools import AreaToolbox
+from src.agents.tools import AreaToolbox, ProjectServices
 from src.models.business_area import AreaScope
 from src.services.area_notifier import Requester
 from src.services.business_data import AreaTopics
@@ -33,6 +33,7 @@ class ScopeRequest:
     max_attempts: int = 3
     max_steps: int = 4
     original: str = ""  # el mensaje del usuario, que acompaña a la solicitud de un procedimiento
+    projects: ProjectServices | None = None
 
 @dataclass(frozen=True)
 class ScopeReport:
@@ -80,7 +81,7 @@ async def run_scope_agent(llm: AgentLLM, retriever: Retriever, request: ScopeReq
         knowledge = await retriever.search_area(area.id, signals.embedding)
         toolbox = AreaToolbox(area, retriever, request.notifier, request.requester, request.original or request.question,
                               list(knowledge.faqs), list(knowledge.procedures), pending, request.attempts,
-                              request.max_attempts)
+                              request.max_attempts, projects=request.projects)
         extra_fields = web_contact_fields() if area.scope == AreaScope.external else []
         messages = build_area_messages(area, request.rules, toolbox.faqs, toolbox.procedures, pending, request.history,
                                        question, request.history_messages, extra_fields)

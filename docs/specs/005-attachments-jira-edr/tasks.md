@@ -1,6 +1,6 @@
 # Tareas 005 — Archivos adjuntos, consulta de Jira y EDR en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 10/22 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 13/22 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a Google
 ni a Jira: los clientes HTTP reciben un `httpx.MockTransport`. Cada pieza nueva entra con parámetros por defecto que no
@@ -45,13 +45,13 @@ cambian el comportamiento vigente hasta que se conecta.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k archivo` pasa con bloque en el mensaje, motivo de no lectura, memoria del hilo y mensaje vacío con archivo.
 
 ## Fase 5 — Jira (solo lectura)
-- [ ] **T-11 — Crear el cliente de Jira de solo lectura** · RF-12, RF-14, RF-17 · ~30 min
+- [x] **T-11 — Crear el cliente de Jira de solo lectura** · RF-12, RF-14, RF-17 · ~30 min
   `src/services/jira_client.py`: `search`, `get_issue`, `children`, `adf_to_text`; credenciales por property; sin métodos de escritura.
   Hecho cuando: `uv run pytest -q tests/jira_client_test.py` pasa con búsqueda, ticket con subtareas, descripción ADF, Jira caído y sin el token en los logs.
-- [ ] **T-12 — Aplicar el acceso por colaborador y tablero** · RF-13, RF-16, RF-26 a RF-29 · ~25 min [P]
+- [x] **T-12 — Aplicar el acceso por colaborador y tablero** · RF-13, RF-16, RF-26 a RF-29 · ~25 min [P]
   `src/services/project_access.py`: `is_enabled`, `allowed_boards`, `scoped_jql` (rechaza JQL que intente salir del paréntesis).
   Hecho cuando: `uv run pytest -q tests/project_access_test.py` pasa con correo en mayúsculas, inactivo, JQL acotado y JQL malicioso.
-- [ ] **T-13 — Dar las herramientas de Jira al área habilitada** · RF-12, RF-13, RF-15, RF-16, RF-26, RF-29, RF-32 · ~30 min (depende de T-11, T-12)
+- [x] **T-13 — Dar las herramientas de Jira al área habilitada** · RF-12, RF-13, RF-15, RF-16, RF-26, RF-29, RF-32 · ~30 min (depende de T-11, T-12)
   `AreaInfo.tools`, `load_catalog` lo lee; `AreaToolbox` añade `buscar_tickets` y `leer_ticket` solo si el área tiene `jira`, con acceso comprobado antes de llamar a Jira.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k jira` pasa con área sin herramienta, colaborador no habilitado (sin llamada a Jira), tablero no permitido y épica con subtareas.
 

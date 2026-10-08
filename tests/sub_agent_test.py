@@ -6,7 +6,8 @@ from src.models.business_area import AreaScope
 from src.models.procedure_field import FieldKind
 from src.services.area_notifier import Requester
 from src.services.procedures import FieldSpec
-from tests.fakes import FakeAgentLLM, FakeNotifier, FakeRetriever
+from src.services.jira_client import JiraIssue, JiraIssueRef
+from tests.fakes import FakeAgentLLM, FakeNotifier, FakeProjects, FakeRetriever
 
 CREDITS = AreaInfo(1, "Créditos", "Créditos automotrices", AreaScope.internal, "Eres el área de Créditos", "spaces/CRED")
 INSURANCE = AreaInfo(2, "Seguros", "Seguros", AreaScope.internal, "Eres el área de Seguros", "spaces/SEG")
@@ -212,3 +213,72 @@ async def test_evidencia_vacia_sin_respuesta():
     answer = await run_sub_agent(llm, box, messages_for(box), max_steps=4)
 
     assert answer.kind == "no_answer" and (answer.faqs, answer.procedures) == ([], [])
+
+
+
+# --- Jira en el área habilitada (spec 005) --------------------------------------------------------------------------
+
+PROJECTS_AREA = AreaInfo(3, "Proyectos", "Jefes de Proyecto de TI", AreaScope.internal, "Eres Proyectos", None, ("jira", "edr"))
+EPIC = JiraIssue("DAIA-52", "Curse automatizado", "En curso", "Epic", "Automatizar el curse", "Luis Ramos", "Ana Pérez", None,
+                 [JiraIssueRef("DAIA-53", "RF-01 fechas del pagaré", "Hecho")])
+
+
+def project_toolbox(projects: FakeProjects, area: AreaInfo = PROJECTS_AREA) -> AreaToolbox:
+    return AreaToolbox(area, FakeRetriever(), FakeNotifier(), REQUESTER, "¿En qué está DAIA-52?", [], [], None, {}, 3,
+                       projects=projects)
+
+
+def test_jira_sin_herramienta_en_el_area_no_se_ofrece():
+    names = [spec.name for spec in project_toolbox(FakeProjects(), CREDITS).specs()]
+
+    assert "buscar_tickets" not in names and "leer_ticket" not in names
+
+
+@pytest.mark.anyio
+async def test_jira_colaborador_no_habilitado_no_llama_a_jira():
+    projects = FakeProjects(enabled=False, issues={"DAIA-52": EPIC})
+    box = project_toolbox(projects)
+
+    result = await box.execute(ToolCall("c1", "leer_ticket", {"clave": "DAIA-52"}), "")
+
+    assert "no está habilitada" in result and projects.jira_calls == 0 and not box.evidence
+
+
+@pytest.mark.anyio
+async def test_jira_tablero_no_permitido_no_se_encuentra():
+    projects = FakeProjects(issues={"OTRO-1": EPIC})
+    box = project_toolbox(projects)
+
+    result = await box.execute(ToolCall("c1", "leer_ticket", {"clave": "OTRO-1"}), "")
+
+    assert result == "No encuentro el ticket OTRO-1." and projects.jira_calls == 0
+
+
+@pytest.mark.anyio
+async def test_jira_epica_con_subtareas_e_hijos_cuenta_como_evidencia():
+    projects = FakeProjects(issues={"DAIA-52": EPIC}, children={"DAIA-52": [JiraIssueRef("DAIA-60", "Notificaciones", "Por hacer")]})
+    box = project_toolbox(projects)
+
+    result = await box.execute(ToolCall("c1", "leer_ticket", {"clave": "daia-52"}), "")
+
+    assert "DAIA-52 · Curse automatizado · En curso" in result and "DAIA-53 RF-01 fechas del pagaré (Hecho)" in result
+    assert "DAIA-60 Notificaciones (Por hacer)" in result and box.evidence and box.documents == [result]
+
+
+@pytest.mark.anyio
+async def test_jira_buscar_tickets_acota_el_jql_a_los_tableros():
+    projects = FakeProjects(found=[JiraIssueRef("DAIA-53", "RF-01", "Hecho")])
+    box = project_toolbox(projects)
+
+    result = await box.execute(ToolCall("c1", "buscar_tickets", {"jql": 'text ~ "pagaré"'}), "")
+
+    assert projects.searches == ['project in ("DAIA") AND (text ~ "pagaré")'] and "DAIA-53 RF-01 (Hecho)" in result
+
+
+@pytest.mark.anyio
+async def test_jira_caido_responde_sin_detalles():
+    box = project_toolbox(FakeProjects(down=True))
+
+    result = await box.execute(ToolCall("c1", "leer_ticket", {"clave": "DAIA-52"}), "")
+
+    assert result == "No se pudo consultar Jira en este momento."

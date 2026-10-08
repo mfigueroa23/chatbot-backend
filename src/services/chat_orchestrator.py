@@ -23,6 +23,7 @@ from src.services.drive_client import build_drive_client
 from src.services.live_chat import enqueue
 from src.services.area_notifier import AreaNotifier, Requester
 from src.services.message_validation import MAX_MESSAGE_LENGTH, validate_user_message
+from src.services.project_access import ProjectGateway
 from src.services.property import get_float_property, get_int_property
 from src.services.schedule import is_open, load_schedule
 from src.services.web_session import answer_offer, start_offer, submit_contact, touch_last_message
@@ -79,6 +80,8 @@ async def build_agent_context(
         max_model_calls=await get_int_property(session, "agent_max_model_calls", 100),
         fallback_space=fallback_space,
         is_open=open_now,
+        # Jira y EDR solo existen para los colaboradores de Google Chat.
+        projects=ProjectGateway(SessionLocal) if requester is not None else None,
     )
 
 async def load_catalog_in_own_session(scope: AreaScope) -> Catalog:

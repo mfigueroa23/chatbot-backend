@@ -1,6 +1,6 @@
 # Tareas 005 — Archivos adjuntos, consulta de Jira y EDR en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 5/22 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 7/22 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a Google
 ni a Jira: los clientes HTTP reciben un `httpx.MockTransport`. Cada pieza nueva entra con parámetros por defecto que no
@@ -26,10 +26,10 @@ cambian el comportamiento vigente hasta que se conecta.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k transcribe` pasa con imagen, PDF y error del proveedor.
 
 ## Fase 3 — Clientes de Google
-- [ ] **T-6 — Descargar adjuntos de Google Chat** · RF-1 · ~20 min
+- [x] **T-6 — Descargar adjuntos de Google Chat** · RF-1 · ~20 min
   `ChatApiClient.download_media(resource_name)` y token por scope en `src/services/chat_api_client.py`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k download_media` pasa con descarga correcta y error HTTP.
-- [ ] **T-7 — Leer archivos de Drive** · RF-1, RF-7 · ~25 min
+- [x] **T-7 — Leer archivos de Drive** · RF-1, RF-7 · ~25 min
   `src/services/drive_client.py`: `file_metadata`, `download`, `export` y `DriveFileNotAccessibleError` ante 403/404.
   Hecho cuando: `uv run pytest -q tests/drive_client_test.py -k lectura` pasa con archivo normal, documento nativo exportado y sin acceso.
 

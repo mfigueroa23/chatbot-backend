@@ -189,6 +189,40 @@ async def test_api_client_publica_en_el_hilo_original_con_token_bearer():
     assert json.loads(chat_request.content) == {"text": "Hola", "thread": {"name": "spaces/AAA/threads/T1"}}
 
 
+def google_handler(requests: list[httpx.Request], status: int = 200, content: bytes = b"%PDF-1.7 contenido"):
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        if request.url.host == "oauth2.googleapis.com":
+            return httpx.Response(200, json={"access_token": "token-de-acceso", "expires_in": 3600})
+        return httpx.Response(status, content=content)
+    return handler
+
+
+@pytest.mark.anyio
+async def test_download_media_descarga_el_adjunto_con_el_scope_de_chat():
+    requests: list[httpx.Request] = []
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(google_handler(requests))) as http:
+        client = ChatApiClient(http, service_account_info(private_key_pem(GOOGLE_KEY)))
+        data = await client.download_media("spaces/AAA/messages/M1/attachments/A1")
+
+    assert data == b"%PDF-1.7 contenido"
+    media = requests[-1]
+    assert str(media.url) == "https://chat.googleapis.com/v1/media/spaces/AAA/messages/M1/attachments/A1?alt=media"
+    assert media.headers["Authorization"] == "Bearer token-de-acceso"
+    assertion = dict(httpx.QueryParams(requests[0].content.decode()))["assertion"]
+    assert jwt.decode(assertion, verify=False)["scope"] == "https://www.googleapis.com/auth/chat.bot"
+
+
+@pytest.mark.anyio
+async def test_download_media_error_http_se_propaga():
+    async with httpx.AsyncClient(transport=httpx.MockTransport(google_handler([], status=404))) as http:
+        client = ChatApiClient(http, service_account_info(private_key_pem(GOOGLE_KEY)))
+
+        with pytest.raises(httpx.HTTPStatusError):
+            await client.download_media("spaces/AAA/messages/M1/attachments/A1")
+
+
 # --- Router -------------------------------------------------------------------------------------------------------
 
 PROPERTIES = {"google_chat_audience": AUDIENCE, "google_chat_addon_service_account": ADDON_ACCOUNT}

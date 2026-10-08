@@ -28,24 +28,38 @@ class ChatApiClient:
         )
         response.raise_for_status()
 
-    async def _access_token(self) -> str:
-        # OAuth de cuenta de servicio con JWT-bearer: evita google.auth.transport.requests, que es síncrono.
-        signer = crypt.RSASigner.from_service_account_info(self._service_account)
-        token_uri = self._service_account["token_uri"]
-        now = int(time.time())
-        assertion = jwt.encode(signer, {
-            "iss": self._service_account["client_email"],
-            "scope": CHAT_SCOPE,
-            "aud": token_uri,
-            "iat": now,
-            "exp": now + 3600,
-        })
-        response = await self._http.post(token_uri, data={
-            "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            "assertion": assertion.decode(),
-        })
+    async def download_media(self, resource_name: str) -> bytes:
+        # Adjunto subido directamente a Chat (attachmentDataRef): se descarga con el mismo scope chat.bot.
+        response = await self._http.get(
+            f"{CHAT_API_URL}/media/{resource_name}",
+            params={"alt": "media"},
+            headers={"Authorization": f"Bearer {await self._access_token()}"},
+        )
         response.raise_for_status()
-        return response.json()["access_token"]
+        return response.content
+
+    async def _access_token(self) -> str:
+        return await service_account_token(self._http, self._service_account, CHAT_SCOPE)
+
+async def service_account_token(http: httpx.AsyncClient, service_account: dict[str, Any], scope: str) -> str:
+    # OAuth de cuenta de servicio con JWT-bearer: evita google.auth.transport.requests, que es síncrono. El scope se pide
+    # por llamada para usar la misma cuenta de servicio con Chat y con Drive.
+    signer = crypt.RSASigner.from_service_account_info(service_account)
+    token_uri = service_account["token_uri"]
+    now = int(time.time())
+    assertion = jwt.encode(signer, {
+        "iss": service_account["client_email"],
+        "scope": scope,
+        "aud": token_uri,
+        "iat": now,
+        "exp": now + 3600,
+    })
+    response = await http.post(token_uri, data={
+        "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        "assertion": assertion.decode(),
+    })
+    response.raise_for_status()
+    return response.json()["access_token"]
 
 async def build_chat_api_client(session: AsyncSession, http: httpx.AsyncClient) -> ChatApiClient:
     service_account = json.loads(await get_str_property(session, "google_chat_service_account_json"))

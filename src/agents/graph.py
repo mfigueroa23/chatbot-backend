@@ -25,8 +25,9 @@ from src.agents.strategies import Notifier
 from src.agents.tools import AreaToolbox
 from src.models.business_area import AreaScope
 from src.services.area_notifier import Requester
-from src.services.business_data import get_agent_prompt, get_areas
+from src.services.business_data import AreaTopics, get_agent_prompt, get_area_topics, get_areas
 from src.services.procedures import web_contact_fields
+from src.services.property import get_int_property
 
 logger = logging.getLogger(__name__)
 
@@ -43,6 +44,9 @@ class Catalog:
     fixed: dict[str, str | None] = field(default_factory=dict)  # texto de cada mensaje fijo; None si falta en la BD
     area_names: list[str] = field(default_factory=list)  # todas las áreas activas del ámbito, tengan prompt o no
     persona: str | None = None  # tono del asistente del canal; se lee en cada mensaje para aplicar los cambios de la BD
+    coordinator_prompt: str = ""  # el coordinador conversa sin conocer las áreas: su prompt no las nombra
+    scope_prompt: str = ""  # agente de ámbito: decide a qué áreas corresponde la consulta
+    topics: dict[int, AreaTopics] = field(default_factory=dict)  # temas y trámites de cada área, sin su contenido
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -422,6 +426,9 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     prompts = {key: await get_agent_prompt(session, key) for key in (f"{scope}_agent", "area_rules")}
     fixed = {kind: await get_agent_prompt(session, f"{scope}_{kind}") for kind in FIXED_KINDS}
     persona = await get_agent_prompt(session, f"{scope}_persona")
+    coordinator_prompt = await get_agent_prompt(session, f"{scope}_coordinator")
+    topics = await get_area_topics(session, [area.id for area in areas],
+                                   await get_int_property(session, "scope_topics_per_area", 50))
     missing = [key for key, value in prompts.items() if value is None]
     if missing:
         logger.warning("Faltan prompts en agent_prompt: %s", ", ".join(missing))
@@ -432,4 +439,7 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
         fixed,
         [area.name for area in areas],
         persona,
+        coordinator_prompt or "",
+        prompts[f"{scope}_agent"] or "",
+        topics,
     )

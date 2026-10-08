@@ -1,16 +1,16 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 0/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 2/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
 cambiar el grafo vigente; la fase 6 lo sustituye.
 
 ## Fase 1 — Datos y catálogo
-- [ ] **T-1 — Leer los temas y trámites de cada área** · RF-9, RF-57 · ~20 min
+- [x] **T-1 — Leer los temas y trámites de cada área** · RF-9, RF-57 · ~20 min
   `get_area_topics(session, area_ids, limit)` en `src/services/business_data.py`: nombres de FAQ y procedimientos activos por área, por id, acotados por `limit`, sin respuestas ni pasos.
   Hecho cuando: `uv run pytest -q tests/business_data_test.py -k topics` pasa con dos áreas, el tope y FAQ inactivas excluidas.
-- [ ] **T-2 — Ampliar el catálogo con los prompts y temas de la spec 004** · RF-6, RF-9, RF-10, RF-56 · ~25 min
+- [x] **T-2 — Ampliar el catálogo con los prompts y temas de la spec 004** · RF-6, RF-9, RF-10, RF-56 · ~25 min
   `Catalog` añade `coordinator_prompt` (`{scope}_coordinator`), `scope_prompt` (`{scope}_agent`) y `topics` por área; `load_catalog` lee `scope_topics_per_area` (50) y solo áreas de su ámbito. Los campos viejos se mantienen hasta la fase 6.
   Hecho cuando: `uv run pytest -q tests/business_data_test.py -k "load_catalog and coordinador"` pasa con los prompts presentes y ausentes.
 

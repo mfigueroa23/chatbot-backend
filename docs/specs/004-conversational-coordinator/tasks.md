@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 2/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 5/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -15,13 +15,13 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
   Hecho cuando: `uv run pytest -q tests/business_data_test.py -k "load_catalog and coordinador"` pasa con los prompts presentes y ausentes.
 
 ## Fase 2 — Control posterior
-- [ ] **T-3 — Devolver los datos personales con su valor** · RF-53 · ~15 min
+- [x] **T-3 — Devolver los datos personales con su valor** · RF-53 · ~15 min
   `personal_data_values(text)` en `src/agents/audit.py`; `personal_data_leaks` pasa a apoyarse en ella.
   Hecho cuando: `uv run pytest -q tests/audit_test.py -k personal_data` pasa, incluidos los tests existentes.
-- [ ] **T-4 — Detectar promesas de seguimiento y acciones afirmadas** · RF-54, RF-55 · ~20 min [P]
+- [x] **T-4 — Detectar promesas de seguimiento y acciones afirmadas** · RF-54, RF-55 · ~20 min [P]
   `FUTURE_PROMISES`/`future_promises` («te avisaré», «te contactaremos», «le notificaremos»…) y `CLAIMED_ACTIONS`/`claimed_actions` («envié tu solicitud», «ya avisé al área», «quedaste en la cola»…).
   Hecho cuando: `uv run pytest -q tests/audit_test.py -k "promesa or accion"` pasa con frases de tú y de usted y un texto limpio.
-- [ ] **T-5 — Componer la revisión del texto final** · RF-13, RF-51, RF-53, RF-54, RF-55 · ~25 min
+- [x] **T-5 — Componer la revisión del texto final** · RF-13, RF-51, RF-53, RF-54, RF-55 · ~25 min
   `review(text, prompts, names, evidence, delivered) -> list[str]`; `INTERNAL_NAMES` añade `consultar_areas`, `avisar_area`, `ofrecer_ejecutivo` y `responder_oferta`.
   Hecho cuando: `uv run pytest -q tests/audit_test.py -k review` pasa con dato en la evidencia (permitido) y fuera (rechazado), promesa y acción con y sin entrega, y nombres prohibidos.
 

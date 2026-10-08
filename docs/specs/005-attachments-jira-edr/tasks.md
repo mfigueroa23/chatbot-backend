@@ -1,6 +1,6 @@
 # Tareas 005 — Archivos adjuntos, consulta de Jira y EDR en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 3/22 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 5/22 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a Google
 ni a Jira: los clientes HTTP reciben un `httpx.MockTransport`. Cada pieza nueva entra con parámetros por defecto que no
@@ -18,10 +18,10 @@ cambian el comportamiento vigente hasta que se conecta.
   Hecho cuando: en local `uv run alembic upgrade head`, `downgrade -1` y otra vez `upgrade head` terminan sin error.
 
 ## Fase 2 — Extracción de contenido
-- [ ] **T-4 — Extraer texto de Word, Excel, PowerPoint y texto plano** · RF-1 · ~25 min
+- [x] **T-4 — Extraer texto de Word, Excel, PowerPoint y texto plano** · RF-1 · ~25 min
   `src/services/document_extractor.py`: `extract_docx`, `extract_xlsx`, `extract_pptx`, `decode_text`.
   Hecho cuando: `uv run pytest -q tests/document_extractor_test.py` pasa con archivos generados en memoria y texto en UTF-8 y Latin-1.
-- [ ] **T-5 — Transcribir imágenes y PDF con el modelo** · RF-1, RF-2 · ~20 min [P]
+- [x] **T-5 — Transcribir imágenes y PDF con el modelo** · RF-1, RF-2 · ~20 min [P]
   `GeminiAgentLLM.transcribe(data, mime_type)` en `src/agents/llm.py` (mensaje multimodal); `FakeAgentLLM.transcribe` guionizado.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k transcribe` pasa con imagen, PDF y error del proveedor.
 

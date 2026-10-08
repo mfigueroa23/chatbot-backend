@@ -83,11 +83,14 @@ class FakeAgentLLM:
     """
 
     def __init__(self, *replies: AgentReply, steps: dict[str, list[AgentStep]] | None = None,
-                 scope: list[ScopeDecision] | None = None, coordinator_steps: list[AgentStep] | None = None):
+                 scope: list[ScopeDecision] | None = None, coordinator_steps: list[AgentStep] | None = None,
+                 transcripts: list[str] | None = None):
         self.replies = list(replies) or [AgentReply("no_answer", "")]
         self.steps = {area: list(script) for area, script in (steps or {}).items()}
         self.scope = list(scope or [])
         self.coordinator_steps = list(coordinator_steps or [])
+        self.transcripts = list(transcripts or [])
+        self.transcribe_calls = 0
         self.scope_calls = 0
         self.coordinator_step_calls = 0
         self.scope_messages: list[list[BaseMessage]] = []
@@ -125,6 +128,12 @@ class FakeAgentLLM:
             call = ToolCall("call-1", "iniciar_procedimiento", {"procedimiento_id": reply.procedure_id, "datos": data})
             return ToolCalls([call], reply.text)
         return FinalText(reply.text if reply.kind == "answer" else "")
+
+    async def transcribe(self, data: bytes, mime_type: str) -> str:
+        self.transcribe_calls += 1
+        if not self.transcripts:
+            return ""
+        return self.transcripts.pop(0) if len(self.transcripts) > 1 else self.transcripts[0]
 
     def coordinator_step(self, messages: list[BaseMessage]) -> AgentStep:
         self.coordinator_step_calls += 1

@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 10/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 15/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -46,19 +46,19 @@ referencia de los agentes de área está en `git show 60a517e^:src/agents/{sub_a
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k combine` pasa con una, dos y una parcial.
 
 ## Fase 3 — Recuperador
-- [ ] **T-12 — Leer el umbral de aclaración** · RF-20, RF-21, RF-22 · ~20 min
+- [x] **T-12 — Leer el umbral de aclaración** · RF-20, RF-21, RF-22 · ~20 min
   `read_clarify_similarity()` en `src/agents/retriever.py`; `FaqRetriever` recibe `clarify_similarity: float | None`; `build_faq_retriever` lo pasa con 0.55 por defecto.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k clarify` pasa con valor ausente (0.55), no numérico, ≥ `rag_min_similarity` (los dos últimos devuelven `None` y registran un aviso con `caplog`).
-- [ ] **T-13 — Crear `scope_signals` con áreas propias y otro ámbito** · (habilita RF-36, RF-52) · ~25 min
+- [x] **T-13 — Crear `scope_signals` con áreas propias y otro ámbito** · (habilita RF-36, RF-52) · ~25 min
   `ScopeSignals(embedding, own_area_ids, candidates, other_scope_match)`; consultas solo de ids, etiquetas y similitudes; reutiliza el filtrado por ámbito y activo de `search_scope`.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k scope_signals` pasa y las sentencias compiladas no seleccionan `answer` ni `steps`.
-- [ ] **T-14 — Añadir los candidatos a `scope_signals`** · RF-10 · ~20 min
+- [x] **T-14 — Añadir los candidatos a `scope_signals`** · RF-10 · ~20 min
   FAQ y procedimientos entre el umbral de aclaración y el de respuesta, con su etiqueta y área; sin candidatos si el umbral de aclaración es `None`.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k candidates` pasa con aciertos por encima, entre y por debajo de los umbrales.
-- [ ] **T-15 — Crear `search_area` con el embedding del turno** · RF-56 · ~20 min
+- [x] **T-15 — Crear `search_area` con el embedding del turno** · RF-56 · ~20 min
   FAQ y procedimientos de un área sobre el umbral de respuesta, con campos de los procedimientos, sin llamar al embedder.
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k search_area` pasa y el `FakeEmbedder` registra 0 llamadas.
-- [ ] **T-16 — Crear las búsquedas de las tools y `get_faq`** · RF-25, RF-56 · ~25 min
+- [x] **T-16 — Crear las búsquedas de las tools y `get_faq`** · RF-25, RF-56 · ~25 min
   `search_area_faqs(area_id, query)`, `search_area_procedures(area_id, query)` (con su propio embedding) y `get_faq(area_id, faq_id)` (solo activa y del área).
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k "area_faqs or area_procedures or get_faq"` pasa, incluida una FAQ inactiva que devuelve `None`.
 

@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents import strategies
 from src.agents.audit import GENERIC_REFUSAL
 from src.agents.graph import AgentContext, Catalog, build_graph
-from src.agents.llm import AgentReply, AreaInfo, FaqHit
+from src.agents.llm import AreaInfo, CoordinatorReply, FaqHit
 from src.agents.retriever import ProcedureHit
 from src.models.business_area import AreaScope
 from src.models.official_channel import OfficialChannel
@@ -22,7 +22,7 @@ from src.services.chat_orchestrator import (
 from src.services.procedures import FieldSpec
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
-from tests.fakes import FakeAgentLLM, FakeClock, FakeNotifier, FakeRetriever, answer, procedure, property_session, web_session
+from tests.fakes import AgentReply, FakeAgentLLM, FakeClock, FakeNotifier, FakeRetriever, answer, procedure, property_session, web_session
 
 SESSION = property_session({})
 PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos", AreaScope.internal, "Eres Remuneraciones", "spaces/RRHH")
@@ -39,7 +39,7 @@ CONTACT = {"rut": "12.345.678-5", "nombre": "Ana", "contacto": "ana@correo.cl"}
 
 
 class DownLLM(FakeAgentLLM):
-    async def respond(self, messages: list[BaseMessage]) -> AgentReply:
+    async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
         raise LlmUnavailableError("timeout")
 
 
@@ -150,8 +150,8 @@ async def test_internal_thread_recuerda_la_conversacion_y_aisla_otros_hilos(monk
     await ask("¿Y el bono?", graph, "spaces/AAA/threads/T1")
     await ask("Hola", graph, "spaces/AAA/threads/T2")
 
-    assert [str(m.content) for m in llm.messages[1][1:-1]] == ["¿Cuándo pagan?", "El día 30"]
-    assert len(llm.messages[2]) == 2
+    assert [str(m.content) for m in llm.coordinator_messages[1][1:-1]] == ["¿Cuándo pagan?", "El día 30"]
+    assert len(llm.coordinator_messages[2]) == 2
 
 
 @pytest.mark.anyio
@@ -183,9 +183,9 @@ class CommitAwareLLM(FakeAgentLLM):
         self.session = session
         self.commits_at_call = -1
 
-    async def respond(self, messages: list[BaseMessage]) -> AgentReply:
+    async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
         self.commits_at_call = self.session.commits
-        return await super().respond(messages)
+        return await super().coordinate(messages)
 
 
 @pytest.mark.anyio

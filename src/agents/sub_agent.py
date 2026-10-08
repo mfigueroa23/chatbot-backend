@@ -15,7 +15,7 @@ class AreaAnswer:
     kind: AreaAnswerKind
     text: str | None
     attempts: dict[int, int]
-    procedure_id: int | None = None  # procedimiento que queda en curso tras pedir datos
+    procedure_id: int | None = None  # procedimiento iniciado por la tool, si lo hubo
 
 async def run_sub_agent(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMessage], max_steps: int) -> AreaAnswer:
     area = toolbox.area
@@ -38,14 +38,14 @@ async def run_sub_agent(llm: AgentLLM, toolbox: AreaToolbox, messages: list[Base
             messages.append(ToolMessage(content=output, tool_call_id=call.id, name=call.name))
             if toolbox.result is not None and toolbox.procedure is not None:
                 # La tool de procedimiento es terminal: su plantilla es la respuesta, sin volver al modelo.
-                result = toolbox.result
+                result, procedure_id = toolbox.result, toolbox.procedure.id
                 match result.kind:
                     case "ask":
-                        return AreaAnswer(area, "procedure_ask", result.text, result.attempts, toolbox.procedure.id)
+                        return AreaAnswer(area, "procedure_ask", result.text, result.attempts, procedure_id)
                     case "sent":
-                        return AreaAnswer(area, "procedure_sent", result.text, result.attempts)
+                        return AreaAnswer(area, "procedure_sent", result.text, result.attempts, procedure_id)
                     case "failed":
-                        return AreaAnswer(area, "notification_failed", None, result.attempts)
-                return AreaAnswer(area, "gave_up", None, result.attempts)
+                        return AreaAnswer(area, "notification_failed", None, result.attempts, procedure_id)
+                return AreaAnswer(area, "gave_up", None, result.attempts, procedure_id)
     logger.warning("El área %s superó el máximo de %s pasos sin responder", area.name, max_steps)
     return AreaAnswer(area, "no_answer", None, toolbox.attempts)

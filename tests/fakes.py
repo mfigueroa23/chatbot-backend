@@ -5,8 +5,10 @@ from langchain_core.messages import BaseMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 import re
 from src.agents.behavior import Candidate
-from src.agents.llm import AgentReply, AgentStep, CoordinatorReply, FaqHit, FinalText, ToolCall, ToolCalls, ToolSpec
-from src.agents.retriever import AreaKnowledge, Knowledge, ProcedureHit, ScopeSignals
+from dataclasses import dataclass, field
+from typing import Literal
+from src.agents.llm import AgentStep, CoordinatorReply, FaqHit, FinalText, ToolCall, ToolCalls, ToolSpec
+from src.agents.retriever import AreaKnowledge, ProcedureHit, ScopeSignals
 from src.models.business_area import AreaScope
 from src.models.executive import Executive
 from src.models.executive_session import ExecutiveSession
@@ -59,12 +61,22 @@ def property_session(values: dict[str, str]) -> AsyncSession:
 AREA_HEADER = re.compile(r"### Área: (.+)")
 
 
+@dataclass(frozen=True)
+class AgentReply:
+    """Guion breve de un mensaje: el agente del canal delega (o marca manipulación o persona) y el agente de área
+    responde con el texto o inicia el procedimiento con sus datos."""
+    kind: Literal["answer", "no_answer", "wants_human", "manipulation", "procedure"]
+    text: str
+    faq_ids: list[int] = field(default_factory=list)
+    procedure_id: int | None = None
+    data: dict[str, str] = field(default_factory=dict)
+
+
 class FakeAgentLLM:
     """Guioniza el modelo y cuenta sus llamadas.
 
-    Las respuestas de la llamada única (AgentReply) también sirven para el grafo de agentes de área: el agente del
-    canal delega (o marca manipulación o persona) y cada agente de área responde con el texto o inicia el procedimiento.
-    `coordinator` y `steps` (por nombre de área) guionizan el grafo nuevo de forma explícita.
+    Cada AgentReply guioniza un mensaje completo; `coordinator` y `steps` (por nombre de área) guionizan por separado
+    al agente del canal y a cada agente de área.
     """
 
     def __init__(self, *replies: AgentReply, coordinator: list[CoordinatorReply] | None = None,
@@ -72,18 +84,15 @@ class FakeAgentLLM:
         self.replies = list(replies) or [AgentReply("no_answer", "")]
         self.coordinator = list(coordinator or [])
         self.steps = {area: list(script) for area, script in (steps or {}).items()}
-        self.calls = 0
         self.coordinator_calls = 0
         self.step_calls = 0
-        self.messages: list[list[BaseMessage]] = []
         self.coordinator_messages: list[list[BaseMessage]] = []
         self.step_messages: list[list[BaseMessage]] = []
         self.current: AgentReply | None = None
 
-    async def respond(self, messages: list[BaseMessage]) -> AgentReply:
-        self.calls += 1
-        self.messages.append(list(messages))
-        return self.next_reply()
+    @property
+    def calls(self) -> int:
+        return self.coordinator_calls + self.step_calls
 
     async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
         self.coordinator_calls += 1
@@ -172,10 +181,6 @@ class FakeRetriever:
 
     async def get_faq(self, area_id: int, faq_id: int) -> FaqHit | None:
         return next((f for f in self.stored_faqs if f.id == faq_id and f.area_id == area_id), None)
-
-    async def search_scope(self, scope: AreaScope, query: str) -> Knowledge:
-        self.searches.append((scope, query))
-        return Knowledge(list(self.faqs), list(self.procedures), self.other_scope_match)
 
     async def get_procedure(self, area_id: int, procedure_id: int) -> ProcedureHit | None:
         return next((p for p in self.stored if p.id == procedure_id and p.area_id == area_id), None)

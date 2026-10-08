@@ -33,13 +33,6 @@ class Embedder(Protocol):
     async def embed_documents(self, texts: list[str]) -> list[list[float]]: ...
 
 @dataclass(frozen=True)
-class Knowledge:
-    """Lo recuperado del ámbito para un mensaje. Del otro ámbito solo se sabe si se parece: nunca su contenido."""
-    faqs: list[FaqHit]
-    procedures: list[ProcedureHit]
-    other_scope_match: bool
-
-@dataclass(frozen=True)
 class ScopeSignals:
     """Lo que el agente del canal necesita del ámbito sin ver contenido: ids, etiquetas y similitudes."""
     embedding: list[float]  # se reutiliza en la búsqueda de cada área: un solo embedding por mensaje
@@ -53,7 +46,11 @@ class AreaKnowledge:
     procedures: list[ProcedureHit]
 
 class Retriever(Protocol):
-    async def search_scope(self, scope: AreaScope, query: str) -> Knowledge: ...
+    async def scope_signals(self, scope: AreaScope, query: str) -> ScopeSignals: ...
+    async def search_area(self, area_id: int, embedding: list[float]) -> AreaKnowledge: ...
+    async def search_area_faqs(self, area_id: int, query: str) -> list[FaqHit]: ...
+    async def search_area_procedures(self, area_id: int, query: str) -> list[ProcedureHit]: ...
+    async def get_faq(self, area_id: int, faq_id: int) -> FaqHit | None: ...
     async def get_procedure(self, area_id: int, procedure_id: int) -> ProcedureHit | None: ...
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None: ...
 
@@ -84,52 +81,6 @@ class FaqRetriever:
         self._top_k = top_k
         self._min_similarity = min_similarity
         self._clarify_similarity = clarify_similarity
-
-    async def search_scope(self, scope: AreaScope, query: str) -> Knowledge:
-        # Un solo embedding por mensaje para FAQ, procedimientos y el otro ámbito.
-        embedding = await self._embedder.embed_query(query)
-        faq_distance = Faq.embedding.cosine_distance(embedding)
-        procedure_distance = Procedure.embedding.cosine_distance(embedding)
-        max_distance = 1 - self._min_similarity
-        faqs_statement = (
-            select(Faq.id, Faq.question, Faq.answer, FaqCategory.area_id, faq_distance.label("distance"))
-            .join(FaqCategory, Faq.category_id == FaqCategory.id)
-            .join(BusinessArea, FaqCategory.area_id == BusinessArea.id)
-            .where(BusinessArea.scope == scope, BusinessArea.active, Faq.active, faq_distance <= max_distance)
-            .order_by(faq_distance)
-            .limit(self._top_k)
-        )
-        procedures_statement = (
-            select(Procedure.id, Procedure.name, Procedure.steps, Procedure.area_id, procedure_distance.label("distance"))
-            .join(BusinessArea, Procedure.area_id == BusinessArea.id)
-            .where(BusinessArea.scope == scope, BusinessArea.active, Procedure.active, procedure_distance <= max_distance)
-            .order_by(procedure_distance)
-            .limit(self._top_k)
-        )
-        other = AreaScope.internal if scope == AreaScope.external else AreaScope.external
-        try:
-            async with self._session_factory() as session:
-                faq_rows = list(await session.execute(faqs_statement))
-                procedure_rows = list(await session.execute(procedures_statement))
-                fields = await self._fields_of(session, [row.id for row in procedure_rows])
-                other_faq = await session.scalar(
-                    select(func.min(faq_distance)).select_from(Faq)
-                    .join(FaqCategory, Faq.category_id == FaqCategory.id)
-                    .join(BusinessArea, FaqCategory.area_id == BusinessArea.id)
-                    .where(BusinessArea.scope == other, BusinessArea.active, Faq.active))
-                other_procedure = await session.scalar(
-                    select(func.min(procedure_distance)).select_from(Procedure)
-                    .join(BusinessArea, Procedure.area_id == BusinessArea.id)
-                    .where(BusinessArea.scope == other, BusinessArea.active, Procedure.active))
-        except (SQLAlchemyError, OSError) as exc:
-            raise DatabaseUnavailableError(str(exc)) from exc
-        distances = [distance for distance in (other_faq, other_procedure) if distance is not None]
-        return Knowledge(
-            [FaqHit(row.question, row.answer, 1 - row.distance, row.id, row.area_id) for row in faq_rows],
-            [ProcedureHit(row.id, row.name, row.steps, fields.get(row.id, []), 1 - row.distance, row.area_id)
-             for row in procedure_rows],
-            bool(distances) and min(distances) <= max_distance,
-        )
 
     async def scope_signals(self, scope: AreaScope, query: str) -> ScopeSignals:
         embedding = await self._embedder.embed_query(query)

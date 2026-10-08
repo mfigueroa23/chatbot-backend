@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -10,12 +11,15 @@ from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
+from langgraph.types import Send
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.audit import GENERIC_REFUSAL, INTERNAL_NAMES, find_leaks, strip_citations
-from src.agents.llm import AgentLLM, AgentReply, AreaInfo, AreaSection, FaqHit, ProcedureHit, build_reply_messages
-from src.agents.procedure_flow import handle_procedure
-from src.agents.retriever import Retriever
+from src.agents.behavior import Candidate, Clarification, combine, requester_key
+from src.agents.llm import AgentLLM, AreaInfo, ProcedureHit, build_area_messages, build_coordinator_messages
+from src.agents.retriever import Retriever, ScopeSignals
+from src.agents.sub_agent import AreaAnswer, run_sub_agent
 from src.agents.strategies import Notifier
+from src.agents.tools import AreaToolbox
 from src.models.business_area import AreaScope
 from src.services.area_notifier import Requester
 from src.services.business_data import get_agent_prompt, get_areas
@@ -45,6 +49,8 @@ class AgentContext:
     requester: Requester | None  # None en el canal web: el cliente es anónimo y da sus datos en el procedimiento
     history_messages: int = 20
     max_attempts: int = 3
+    offer_pending: bool = False  # el cliente web tiene una oferta de ejecutivo sin responder
+    max_steps: int = 4  # pasos del bucle de cada agente de área
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -55,12 +61,39 @@ class AgentResult:
 class AgentInput(TypedDict):
     messages: list[BaseMessage]
 
+def merge_answers(current: list[AreaAnswer], update: list[AreaAnswer]) -> list[AreaAnswer]:
+    # Una lista vacía reinicia las respuestas al empezar cada mensaje; el fan-out las va acumulando.
+    return current + update if update else []
+
+def merge_attempts(current: dict[int, int], update: dict[int, int]) -> dict[int, int]:
+    # Las áreas corren en paralelo y cada una devuelve los contadores de sus procedimientos.
+    return {**current, **update}
+
+class AreaTask(TypedDict):
+    """Lo que recibe cada agente de área por Send: ids, no contenido; el agente busca lo suyo."""
+    area: AreaInfo
+    rules: str
+    question: str
+    history: list[BaseMessage]
+    embedding: list[float]
+    pending_procedure_id: int | None
+    granted_faq_ids: list[int]
+    granted_procedure_ids: list[int]
+    attempts: dict[int, int]
+
 class AgentState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
-    # Procedimiento en curso: se recuerda entre mensajes del mismo hilo aunque la búsqueda ya no lo devuelva.
+    # Persisten entre mensajes del mismo hilo.
     pending_area_id: int | None
     pending_procedure_id: int | None
-    procedure_attempts: dict[int, int]
+    procedure_attempts: Annotated[dict[int, int], merge_attempts]
+    clarifications: dict[str, Clarification]  # una aclaración pendiente por usuario (requester_key)
+    # Por turno: coordinate los reinicia.
+    turn_prompts: list[str]
+    area_names: list[str]
+    turn_candidates: list[Candidate]
+    area_tasks: list[AreaTask]
+    area_answers: Annotated[list[AreaAnswer], merge_answers]
     selected_areas: list[AreaInfo]
     outcome: Outcome | None
     reply: str | None
@@ -71,6 +104,10 @@ AgentGraph = CompiledStateGraph[AgentState, AgentContext, AgentInput, AgentState
 CHECKPOINT_TYPES = [
     ("src.agents.llm", "AreaInfo"),
     ("src.models.business_area", "AreaScope"),
+    ("src.agents.behavior", "Candidate"),
+    ("src.agents.behavior", "Clarification"),
+    ("src.agents.behavior", "ClarifyOption"),
+    ("src.agents.sub_agent", "AreaAnswer"),
 ]
 
 def checkpoint_serializer() -> JsonPlusSerializer:
@@ -97,91 +134,137 @@ def audited(text: str, prompts: list[str], used: list[AreaInfo]) -> dict:
         return finish("rejected", memory=GENERIC_REFUSAL)
     return finish("answered", text, used)
 
+def previous_question(history: list[BaseMessage]) -> str | None:
+    # El mensaje anterior del usuario da contexto a las preguntas de seguimiento sin otra llamada al modelo.
+    return next((text_of(message) for message in reversed(history) if isinstance(message, HumanMessage)), None)
+
 def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = None) -> AgentGraph:
-    async def answer(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
+    async def coordinate(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
         context = runtime.context
         *history, last = state["messages"]
         question = text_of(last)
         catalog = await context.load_catalog(scope)
-        # Un área sin prompt no puede responder: su contenido no llega al modelo.
+        # Un área sin prompt no puede responder: el agente del canal no delega en ella.
         areas = {area.id: area for area in catalog.areas if area.system_prompt}
-        await context.retriever.refresh_stale_embeddings(list(areas))
-        # El mensaje anterior del usuario da contexto a las preguntas de seguimiento sin otra llamada al modelo.
-        previous = next((text_of(message) for message in reversed(history) if isinstance(message, HumanMessage)), None)
-        knowledge = await context.retriever.search_scope(scope, f"{previous}\n{question}" if previous else question)
-        faqs = [faq for faq in knowledge.faqs if faq.area_id in areas]
-        procedures = [procedure for procedure in knowledge.procedures if procedure.area_id in areas]
-        if (faqs or procedures) and knowledge.other_scope_match:
-            return finish("mixed_scope")
+        pending = await pending_procedure(state, areas, context)
+        clarification = (state.get("clarifications") or {}).get(requester_key(context.requester))
+        options = clarification.options if clarification is not None else []
+        previous = previous_question(history)
+        query = f"{previous}\n{question}" if previous else question
 
-        pending_area_id, pending_id = state.get("pending_area_id"), state.get("pending_procedure_id")
-        pending = None
-        if pending_area_id in areas and pending_id is not None:
-            pending = await context.retriever.get_procedure(pending_area_id, pending_id)
-        sections = [AreaSection(area, [f for f in faqs if f.area_id == area.id], [p for p in procedures if p.area_id == area.id])
-                    for area in areas.values()
-                    if any(f.area_id == area.id for f in faqs) or any(p.area_id == area.id for p in procedures)]
-        extra_fields = web_contact_fields() if scope == AreaScope.external else []
-        reply = await context.llm.respond(build_reply_messages(
-            catalog.agent_prompt, catalog.area_rules, sections, pending, history, question, context.history_messages, extra_fields))
+        async def scope_signals() -> ScopeSignals:
+            await context.retriever.refresh_stale_embeddings([area.id for area in catalog.areas])
+            return await context.retriever.scope_signals(scope, query)
 
-        prompts = [catalog.agent_prompt, catalog.area_rules, *(area.system_prompt or "" for area in catalog.areas)]
-        used_areas = [section.area for section in sections]
-        match reply.kind:
-            case "manipulation":
-                return finish("rejected", memory=GENERIC_REFUSAL)
-            case "wants_human":
-                return finish("wants_human", areas=used_areas)
-            case "answer":
-                return answered(reply, faqs, areas, prompts, used_areas)
-            case "procedure":
-                return await procedure_step(reply, question, areas, procedures, pending, prompts, state, context)
-        return finish("no_answer", areas=used_areas)
+        # La llamada del agente del canal y el embedding con las señales del ámbito corren a la vez.
+        decision, signals = await asyncio.gather(
+            context.llm.coordinate(build_coordinator_messages(
+                catalog.agent_prompt, list(areas.values()), options, context.offer_pending, pending, history, question,
+                context.history_messages)),
+            scope_signals(),
+        )
+        turn = {
+            "turn_prompts": [catalog.agent_prompt, catalog.area_rules, *(area.system_prompt or "" for area in catalog.areas)],
+            "area_names": catalog.area_names,
+            "turn_candidates": signals.candidates,
+            "area_tasks": [],
+            "area_answers": [],
+            "selected_areas": [],
+            "outcome": None,
+            "reply": None,
+        }
+        own = [areas[area_id] for area_id in signals.own_area_ids if area_id in areas]
+        if decision.kind == "manipulation":
+            return turn | finish("rejected", memory=GENERIC_REFUSAL)
+        if decision.kind == "wants_human":
+            return turn | finish("wants_human", areas=own)
+        if own and signals.other_scope_match:
+            return turn | finish("mixed_scope")
 
-    def answered(reply: AgentReply, faqs: list[FaqHit], areas: dict[int, AreaInfo], prompts: list[str],
-                 used_areas: list[AreaInfo]) -> dict:
-        retrieved = {faq.id: faq for faq in faqs}
-        # Guardarraíl: solo vale una respuesta que cita FAQ recuperadas para este mensaje.
-        if not reply.faq_ids or any(faq_id not in retrieved for faq_id in reply.faq_ids):
-            logger.info("Respuesta descartada: no se apoya en FAQ recuperadas")
-            return finish("no_answer", areas=used_areas)
-        cited = list({retrieved[faq_id].area_id: areas[retrieved[faq_id].area_id] for faq_id in reply.faq_ids}.values())
-        return audited(strip_citations(reply.text), prompts, cited)
+        def task(area: AreaInfo, pending_id: int | None = None) -> AreaTask:
+            return AreaTask(area=area, rules=catalog.area_rules, question=question, history=history,
+                            embedding=signals.embedding, pending_procedure_id=pending_id, granted_faq_ids=[],
+                            granted_procedure_ids=[], attempts=state.get("procedure_attempts") or {})
 
-    async def procedure_step(
-        reply: AgentReply, question: str, areas: dict[int, AreaInfo], procedures: list[ProcedureHit],
-        pending: ProcedureHit | None, prompts: list[str], state: AgentState, context: AgentContext,
-    ) -> dict:
-        candidates = {procedure.id: procedure for procedure in procedures}
         if pending is not None:
-            candidates.setdefault(pending.id, pending)
-        procedure = candidates.get(reply.procedure_id) if reply.procedure_id is not None else None
-        if procedure is None:
-            logger.info("Respuesta descartada: el procedimiento no fue recuperado ni está en curso")
-            return finish("no_answer")
-        area = areas[procedure.area_id]
-        result = await handle_procedure(
-            procedure, area, reply.data, context.requester, question, state.get("procedure_attempts") or {},
-            context.max_attempts, context.notifier, strip_citations(reply.text), pending is None or pending.id != procedure.id)
-        attempts = {"procedure_attempts": result.attempts}
-        if result.kind == "ask":
-            updates = audited(result.text or "", prompts, [area])
-            if updates["outcome"] == "answered":
-                updates |= {"pending_area_id": area.id, "pending_procedure_id": procedure.id}
-            return updates | attempts
-        cleared = {"pending_area_id": None, "pending_procedure_id": None} | attempts
-        if result.kind == "sent":
-            return finish("answered", result.text, [area]) | cleared
-        if result.kind == "failed":
-            return finish("notification_failed", areas=[area]) | cleared
-        # Tras los intentos permitidos se aplica el flujo de sin respuesta del canal.
-        return finish("no_answer", areas=[area]) | cleared | {"procedure_attempts": {**result.attempts, procedure.id: 0}}
+            # Un procedimiento en curso sigue en su área aunque el agente del canal elija otra.
+            return turn | {"area_tasks": [task(areas[pending.area_id], pending.id)]}
+        if decision.kind == "delegate":
+            chosen = [areas[area_id] for area_id in dict.fromkeys(decision.area_ids) if area_id in areas]
+            # Si el agente del canal no elige áreas válidas, se delega en las que tienen coincidencias.
+            return turn | {"area_tasks": [task(area) for area in chosen or own]}
+        return turn
+
+    def route(state: AgentState) -> list[Send] | str:
+        if state.get("outcome") is not None:
+            return END
+        tasks = state.get("area_tasks") or []
+        if not tasks:
+            return "finalize"
+        return [Send("area_agent", task) for task in tasks]
+
+    async def area_agent(state: AreaTask, runtime: Runtime[AgentContext]) -> dict:
+        context, area = runtime.context, state["area"]
+        pending = None
+        if state["pending_procedure_id"] is not None:
+            pending = await context.retriever.get_procedure(area.id, state["pending_procedure_id"])
+        knowledge = await context.retriever.search_area(area.id, state["embedding"])
+        faqs, procedures = list(knowledge.faqs), list(knowledge.procedures)
+        for faq_id in state["granted_faq_ids"]:
+            granted = await context.retriever.get_faq(area.id, faq_id)
+            if granted is not None and all(faq.id != granted.id for faq in faqs):
+                faqs.append(granted)
+        for procedure_id in state["granted_procedure_ids"]:
+            granted_procedure = await context.retriever.get_procedure(area.id, procedure_id)
+            if granted_procedure is not None and all(p.id != granted_procedure.id for p in procedures):
+                procedures.append(granted_procedure)
+        extra_fields = web_contact_fields() if area.scope == AreaScope.external else []
+        toolbox = AreaToolbox(area, context.retriever, context.notifier, context.requester, state["question"], faqs,
+                              procedures, pending, state["attempts"], context.max_attempts)
+        messages = build_area_messages(area, state["rules"], faqs, procedures, pending, state["history"], state["question"],
+                                       context.history_messages, extra_fields)
+        answer = await run_sub_agent(context.llm, toolbox, messages, context.max_steps)
+        return {"area_answers": [answer], "procedure_attempts": answer.attempts}
+
+    async def finalize(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
+        answers = state.get("area_answers") or []
+        cleared = {"pending_area_id": None, "pending_procedure_id": None}
+        # No poder avisar al área cambia el flujo del canal: tiene prioridad sobre cualquier texto.
+        failed = next((answer for answer in answers if answer.kind == "notification_failed"), None)
+        if failed is not None:
+            return finish("notification_failed", areas=[failed.area]) | cleared
+        gave_up = next((answer for answer in answers if answer.kind == "gave_up"), None)
+        if gave_up is not None and gave_up.procedure_id is not None:
+            # Tras los intentos permitidos se aplica el flujo de sin respuesta del canal.
+            return finish("no_answer", areas=[gave_up.area]) | cleared | {"procedure_attempts": {gave_up.procedure_id: 0}}
+        with_text = ("answered", "procedure_ask", "procedure_sent")
+        reply = combine([(answer.area.name, strip_citations(answer.text) if answer.text and answer.kind in with_text else None)
+                         for answer in answers])
+        if reply is None:
+            return finish("no_answer", areas=[answer.area for answer in answers])
+        updates = audited(reply, state["turn_prompts"], [answer.area for answer in answers if answer.text])
+        asked = next((answer for answer in answers if answer.kind == "procedure_ask"), None)
+        if asked is not None and updates["outcome"] == "answered":
+            return updates | {"pending_area_id": asked.area.id, "pending_procedure_id": asked.procedure_id}
+        if any(answer.kind == "procedure_sent" for answer in answers):
+            return updates | cleared
+        return updates
 
     graph = StateGraph(AgentState, context_schema=AgentContext, input_schema=AgentInput)
-    graph.add_node("answer", answer)
-    graph.add_edge(START, "answer")
-    graph.add_edge("answer", END)
+    graph.add_node("coordinate", coordinate)
+    graph.add_node("area_agent", area_agent)
+    graph.add_node("finalize", finalize)
+    graph.add_edge(START, "coordinate")
+    graph.add_conditional_edges("coordinate", route, [END, "finalize", "area_agent"])
+    graph.add_edge("area_agent", "finalize")
+    graph.add_edge("finalize", END)
     return graph.compile(checkpointer=checkpointer)
+
+async def pending_procedure(state: AgentState, areas: dict[int, AreaInfo], context: AgentContext) -> ProcedureHit | None:
+    area_id, procedure_id = state.get("pending_area_id"), state.get("pending_procedure_id")
+    if area_id not in areas or procedure_id is None:
+        return None
+    return await context.retriever.get_procedure(area_id, procedure_id)
 
 async def run_agent(graph: AgentGraph, question: str, context: AgentContext, thread_id: str | None = None) -> AgentResult:
     config: RunnableConfig = {"configurable": {"thread_id": thread_id}} if thread_id else {}

@@ -15,8 +15,8 @@ from langgraph.types import Send
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.audit import GENERIC_REFUSAL, INTERNAL_NAMES, find_leaks, strip_citations
 from src.agents.behavior import (
-    Candidate, Clarification, areas_question, build_options, can_clarify, chosen, combine, fixed_text, options_text,
-    other_procedures_text, requester_key)
+    Candidate, Clarification, areas_question, build_options, can_clarify, chosen, combine, ensure_areas, fixed_text,
+    options_text, other_procedures_text, requester_key)
 from src.agents.llm import AgentLLM, AreaInfo, ProcedureHit, build_area_messages, build_coordinator_messages
 from src.agents.retriever import Retriever, ScopeSignals
 from src.agents.sub_agent import AreaAnswer, run_sub_agent
@@ -30,7 +30,7 @@ from src.services.procedures import web_contact_fields
 logger = logging.getLogger(__name__)
 
 Outcome = Literal["answered", "no_answer", "mixed_scope", "wants_human", "notification_failed", "rejected", "greeting",
-                  "closing", "off_topic", "offer_accepted", "offer_declined", "clarify"]
+                  "closing", "off_topic", "offer_accepted", "offer_declined", "clarify", "about_assistant", "free_answer"]
 # Mensajes fijos de cada canal: viven en agent_prompt con la key "<ámbito>_<tipo>".
 FIXED_KINDS = ("greeting", "closing", "off_topic")
 
@@ -77,6 +77,7 @@ class AreaTask(TypedDict):
     """Lo que recibe cada agente de área por Send: ids, no contenido; el agente busca lo suyo."""
     area: AreaInfo
     rules: str
+    persona: str | None
     question: str
     history: list[BaseMessage]
     embedding: list[float]
@@ -94,6 +95,7 @@ class AgentState(TypedDict):
     clarifications: dict[str, Clarification]  # una aclaración pendiente por usuario (requester_key)
     # Por turno: coordinate los reinicia.
     turn_prompts: list[str]
+    turn_persona: str | None
     area_names: list[str]
     turn_candidates: list[Candidate]
     area_tasks: list[AreaTask]
@@ -139,6 +141,16 @@ def audited(text: str, prompts: list[str], used: list[AreaInfo]) -> dict:
         return finish("rejected", memory=GENERIC_REFUSAL)
     return finish("answered", text, used)
 
+def drafted(text: str, prompts: list[str]) -> str | None:
+    """Texto que redactó el modelo, si puede enviarse: None si viene vacío o el auditor encuentra una fuga."""
+    if not text.strip():
+        return None
+    leaks = find_leaks(text, prompts, INTERNAL_NAMES)
+    if leaks:
+        logger.warning("Texto redactado sustituido por el auditor: %s", ", ".join(leaks))
+        return None
+    return text.strip()
+
 def settle_clarification(state: AgentState, key: str, updates: dict) -> dict:
     # Cualquier respuesta que no sea una aclaración descarta la aclaración pendiente de ese usuario, y solo la suya.
     current = state.get("clarifications") or {}
@@ -175,11 +187,15 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         decision, signals = await asyncio.gather(
             context.llm.coordinate(build_coordinator_messages(
                 catalog.agent_prompt, list(areas.values()), options, context.offer_pending, pending, history, question,
-                context.history_messages)),
+                context.history_messages, catalog.persona)),
             scope_signals(),
         )
+        # La persona también es un prompt: un texto que la copie se trata como fuga.
+        prompts = [catalog.agent_prompt, catalog.area_rules, *(area.system_prompt or "" for area in catalog.areas),
+                   *([catalog.persona] if catalog.persona else [])]
         turn = {
-            "turn_prompts": [catalog.agent_prompt, catalog.area_rules, *(area.system_prompt or "" for area in catalog.areas)],
+            "turn_prompts": prompts,
+            "turn_persona": catalog.persona,
             "area_names": catalog.area_names,
             "turn_candidates": signals.candidates,
             "area_tasks": [],
@@ -191,7 +207,9 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         }
         own = [areas[area_id] for area_id in signals.own_area_ids if area_id in areas]
         if decision.kind == "manipulation":
-            return turn | finish("rejected", memory=GENERIC_REFUSAL)
+            # La negativa redactada pasa por el auditor; vacía o con fuga, la genérica.
+            refusal = drafted(decision.text, prompts)
+            return turn | (finish("rejected", refusal) if refusal else finish("rejected", memory=GENERIC_REFUSAL))
         if decision.kind == "wants_human":
             return turn | finish("wants_human", areas=own)
         # La respuesta a la oferta de ejecutivo solo cuenta si hay una oferta pendiente.
@@ -201,6 +219,11 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
             return turn | finish("offer_declined")
         if own and signals.other_scope_match:
             return turn | finish("mixed_scope")
+        # Una pregunta sobre el asistente con una FAQ propia sobre el umbral la responde el área; sin texto sigue el
+        # flujo normal, y un texto con fuga recibe la negativa genérica.
+        if decision.kind == "about_assistant" and not own and decision.text.strip():
+            about = drafted(decision.text, prompts)
+            return turn | (finish("about_assistant", about) if about else finish("rejected", memory=GENERIC_REFUSAL))
         # Una FAQ o un procedimiento propio sobre el umbral demuestran que el mensaje no es ajeno al canal.
         fixed_kind = None
         if decision.kind in ("greeting", "closing") or (decision.kind == "off_topic" and not own):
@@ -208,16 +231,20 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if fixed_kind is None and signals.other_scope_match and not own:
             fixed_kind = "off_topic"
         if fixed_kind is not None:
+            # El saludo y el fuera de tema dicen con qué puede ayudar el asistente; el cierre no.
+            names = [] if fixed_kind == "closing" else catalog.area_names
+            # El texto redactado solo vale para lo que clasificó el agente del canal; vacío o con fuga, el texto fijo.
+            text = drafted(decision.text, prompts) if decision.kind == fixed_kind else None
+            if text:
+                return turn | finish(fixed_kind, ensure_areas(text, names))
             template = catalog.fixed.get(fixed_kind)
             if template:
-                # El saludo y el fuera de tema dicen con qué puede ayudar el asistente; el cierre no.
-                names = [] if fixed_kind == "closing" else catalog.area_names
                 return turn | finish(fixed_kind, fixed_text(template, names))
             # Sin texto en la BD el mensaje sigue el flujo normal: procedimiento, FAQ, aclaración o sin respuesta.
             logger.error("Falta el texto fijo %s_%s en agent_prompt", scope, fixed_kind)
 
         def task(area: AreaInfo, pending_id: int | None = None) -> AreaTask:
-            return AreaTask(area=area, rules=catalog.area_rules, question=question, history=history,
+            return AreaTask(area=area, rules=catalog.area_rules, persona=catalog.persona, question=question, history=history,
                             embedding=signals.embedding, pending_procedure_id=pending_id, granted_faq_ids=[],
                             granted_procedure_ids=[], attempts=state.get("procedure_attempts") or {})
 
@@ -270,7 +297,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         toolbox = AreaToolbox(area, context.retriever, context.notifier, context.requester, state["question"], faqs,
                               procedures, pending, state["attempts"], context.max_attempts)
         messages = build_area_messages(area, state["rules"], faqs, procedures, pending, state["history"], state["question"],
-                                       context.history_messages, extra_fields)
+                                       context.history_messages, extra_fields, state["persona"])
         answer = await run_sub_agent(context.llm, toolbox, messages, context.max_steps)
         return {"area_answers": [answer], "procedure_attempts": answer.attempts}
 

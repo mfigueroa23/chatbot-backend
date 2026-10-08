@@ -1,6 +1,6 @@
 # Tareas 003 — Conversación libre en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 11/31 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 15/31 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. "Grafo interno" es `build_graph(AreaScope.internal)`
@@ -49,16 +49,16 @@ y "grafo web" es `build_graph(AreaScope.external)`. T-30 y T-31 se añadieron al
   Hecho cuando: la suite sigue en verde y `uv run pytest -q tests/gemini_llm_test.py` no cambia de resultado.
 
 ## Fase 4 — Grafo: agente del canal conversacional
-- [ ] **T-11 — Redactar saludo y cierre** · RF-1, RF-5, RF-6, RF-10, RF-24, RF-33 · ~30 min
+- [x] **T-11 — Redactar saludo y cierre** · RF-1, RF-5, RF-6, RF-10, RF-24, RF-33 · ~30 min
   `build_graph` fija `free_answers` por el ámbito; en `coordinate` (ambos canales), `greeting` y `closing` responden su `text` auditado (el saludo con `ensure_areas`); vacío o con fuga ⇒ texto fijo; persona del catálogo en los mensajes y en el auditor.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k conversacional_saludo` pasa con texto, texto vacío y texto con fuga.
-- [ ] **T-12 — Redactar tema ajeno y respuesta sobre el asistente** · RF-11, RF-18, RF-19, RF-20, RF-33 · ~25 min
+- [x] **T-12 — Redactar tema ajeno y respuesta sobre el asistente** · RF-11, RF-18, RF-19, RF-20, RF-33 · ~25 min
   `off_topic` y `about_assistant` con su `text` auditado y `ensure_areas` en el ajeno; con `own_area_ids` delegan en esas áreas; `about_assistant` vacío sigue el flujo normal y con fuga da la negativa genérica.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "conversacional_ajeno or about_assistant"` pasa, incluido el caso con FAQ propia.
-- [ ] **T-13 — Redactar la negativa con respaldo genérico** · RF-21, RF-22, RF-23, RF-24 · ~20 min
+- [x] **T-13 — Redactar la negativa con respaldo genérico** · RF-21, RF-22, RF-23, RF-24 · ~20 min
   `manipulation` responde su `text` auditado; vacío o con fuga ⇒ `GENERIC_REFUSAL`; nunca llama a agentes de área.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k conversacional_negativa` pasa con texto, vacío y con fuga.
-- [ ] **T-14 — Comprobar el grafo web conversacional** · RF-1, RF-32, RF-33 · ~15 min [P]
+- [x] **T-14 — Comprobar el grafo web conversacional** · RF-1, RF-32, RF-33 · ~15 min [P]
   Con el grafo web, `greeting`, `about_assistant` y `manipulation` responden su `text` auditado con `external_persona` en los mensajes; vacío ⇒ texto fijo o negativa genérica.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k web_conversacional` pasa.
 

@@ -1,6 +1,6 @@
 # Tareas 003 — Conversación libre en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 2/31 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 4/31 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. "Grafo interno" es `build_graph(AreaScope.internal)`
@@ -16,10 +16,10 @@ y "grafo web" es `build_graph(AreaScope.external)`. T-30 y T-31 se añadieron al
   Hecho cuando: la spec tiene RF-32 a RF-35 y la decisión registrada, y el plan y estas tareas los cubren.
 
 ## Fase 1 — Datos
-- [ ] **T-2 — Crear la migración de datos de las personas** · RF-2, RF-32 · ~20 min
+- [x] **T-2 — Crear la migración de datos de las personas** · RF-2, RF-32 · ~20 min
   `alembic/versions/<rev>_seed_personas.py` con `down_revision = '20be34b82e76'`: keys `internal_persona` y `external_persona` en `agent_prompt` con las personas de la sección 3 del plan y `ON CONFLICT (key) DO NOTHING`; el downgrade las borra.
   Hecho cuando: en local, `uv run alembic upgrade head` deja ambas keys en `agent_prompt` y `uv run alembic downgrade -1` las quita.
-- [ ] **T-3 — Leer la persona en el catálogo** · RF-2, RF-3, RF-32 · ~15 min
+- [x] **T-3 — Leer la persona en el catálogo** · RF-2, RF-3, RF-32 · ~15 min
   `Catalog.persona: str | None`; `load_catalog` lee `{scope}_persona` con `get_agent_prompt`, sin caché.
   Hecho cuando: `uv run pytest -q tests/business_data_test.py -k persona` pasa con la persona presente y ausente.
 

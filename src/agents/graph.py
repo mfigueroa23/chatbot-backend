@@ -41,6 +41,7 @@ class Catalog:
     area_rules: str  # reglas comunes de todas las áreas
     fixed: dict[str, str | None] = field(default_factory=dict)  # texto de cada mensaje fijo; None si falta en la BD
     area_names: list[str] = field(default_factory=list)  # todas las áreas activas del ámbito, tengan prompt o no
+    persona: str | None = None  # tono del asistente del canal; se lee en cada mensaje para aplicar los cambios de la BD
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -346,6 +347,7 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     areas = await get_areas(session, scope)
     prompts = {key: await get_agent_prompt(session, key) for key in (f"{scope}_agent", "area_rules")}
     fixed = {kind: await get_agent_prompt(session, f"{scope}_{kind}") for kind in FIXED_KINDS}
+    persona = await get_agent_prompt(session, f"{scope}_persona")
     missing = [key for key, value in prompts.items() if value is None]
     if missing:
         logger.warning("Faltan prompts en agent_prompt: %s", ", ".join(missing))
@@ -355,4 +357,5 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
         prompts["area_rules"] or "",
         fixed,
         [area.name for area in areas],
+        persona,
     )

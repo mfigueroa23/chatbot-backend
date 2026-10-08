@@ -93,3 +93,22 @@ async def test_load_catalog_lee_textos_fijos_y_nombres_de_areas():
     assert catalog.fixed == {"greeting": "¡Hola!", "closing": None, "off_topic": "No puedo."}
     # Un área sin prompt no responde, pero sigue siendo un área activa del canal: se nombra en los mensajes fijos.
     assert catalog.area_names == ["Pagos", "Seguros"]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("scope", [AreaScope.internal, AreaScope.external])
+async def test_load_catalog_lee_la_persona_de_cada_canal(scope: AreaScope):
+    session = CatalogSession([Area(1, "Pagos", "Prompt de Pagos")], {f"{scope}_persona": f"Persona {scope}"})
+
+    catalog = await load_catalog(cast(AsyncSession, session), scope)
+
+    assert catalog.persona == f"Persona {scope}"
+
+
+@pytest.mark.anyio
+async def test_load_catalog_sin_persona_la_deja_vacia():
+    session = CatalogSession([Area(1, "Pagos", "Prompt de Pagos")], {"internal_agent": "Agente"})
+
+    catalog = await load_catalog(cast(AsyncSession, session), AreaScope.internal)
+
+    assert catalog.persona is None

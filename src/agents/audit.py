@@ -56,6 +56,8 @@ CLAIMED_ACTIONS = [
                r"\b(?:solicitud|consulta|caso)\b", re.IGNORECASE),
     re.compile(r"\b(?:avisé|notifiqué|he avisado|hemos avisado|he notificado|hemos notificado)\b", re.IGNORECASE),
     re.compile(r"\b(?:quedaste|quedó|queda)\s+en\s+(?:la\s+)?cola\b", re.IGNORECASE),
+    re.compile(r"\b(?:guardé|he guardado|hemos guardado|dejé guardado|quedó guardado|subí|he subido)\b.{0,40}?"
+               r"\b(?:edr|documento|borrador)\b", re.IGNORECASE),
 ]
 
 def personal_data_values(text: str) -> list[tuple[str, str]]:

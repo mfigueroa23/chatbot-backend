@@ -21,6 +21,7 @@ from src.agents.strategies import Notifier
 from src.agents.tools import ProjectServices
 from src.models.business_area import AreaScope
 from src.services.area_notifier import Requester
+from src.services.attachments import FILES_NOTE
 from src.services.business_data import AreaTopics, get_agent_prompt, get_area_topics, get_areas
 from src.services.property import get_int_property
 
@@ -158,12 +159,18 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
                    *(area.system_prompt or "" for area in catalog.areas)]
         # El cliente web nunca debe ver nombres de áreas internas; en Google Chat las áreas son de su ámbito.
         names = INTERNAL_NAMES + (catalog.other_area_names if scope == AreaScope.external else [])
-        problems = review(turn.text, prompts, names, toolbox.evidence, toolbox.delivered)
+        # Los archivos que el colaborador compartió en la conversación también son evidencia: puede preguntar por sus datos.
+        files = [text_of(message) for message in state["messages"]
+                 if isinstance(message, HumanMessage) and FILES_NOTE in text_of(message)]
+        evidence = toolbox.evidence + files
+        # Afirmar una acción vale si en este mensaje se entregó un aviso o se guardó un EDR.
+        done = toolbox.delivered or toolbox.saved_edr
+        problems = review(turn.text, prompts, names, evidence, done)
         if problems and all(problem.startswith(RETRYABLE) for problem in problems):
             logger.info("Se pide reescribir la respuesta del coordinador: %s", ", ".join(problems))
             retry = [*messages, AIMessage(turn.text), HumanMessage(RETRY_NOTE.format(problems=", ".join(problems)))]
             turn = await run_coordinator(context.llm, toolbox, retry, budget)
-            problems = review(turn.text, prompts, names, toolbox.evidence, toolbox.delivered)
+            problems = review(turn.text, prompts, names, toolbox.evidence + files, toolbox.delivered or toolbox.saved_edr)
         updates = procedure_state(toolbox)
         if problems:
             # El texto rechazado no se envía ni queda en la memoria del hilo.

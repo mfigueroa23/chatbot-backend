@@ -1,6 +1,6 @@
 # Tareas 005 — Archivos adjuntos, consulta de Jira y EDR en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 17/22 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 18/22 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a Google
 ni a Jira: los clientes HTTP reciben un `httpx.MockTransport`. Cada pieza nueva entra con parámetros por defecto que no
@@ -70,7 +70,7 @@ cambian el comportamiento vigente hasta que se conecta.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k edr` y `uv run pytest -q tests/coordinator_test.py -k edr` pasan con guardado, enlace, colaborador no habilitado y fallo de Drive.
 
 ## Fase 7 — Control posterior
-- [ ] **T-18 — Contar archivos y Jira como evidencia** · RF-10, RF-30, RF-31, RF-32 · ~25 min
+- [x] **T-18 — Contar archivos y Jira como evidencia** · RF-10, RF-30, RF-31, RF-32 · ~25 min
   `AreaAnswer.documents` y bloques de archivo del historial en la evidencia de `review`; el web sigue sin herramientas.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "evidencia_archivo or evidencia_jira or archivo_instrucciones or web_sin_herramientas"` pasa.
 

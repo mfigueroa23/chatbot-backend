@@ -1,13 +1,13 @@
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from langchain_core.messages import BaseMessage
+from langchain_core.messages import BaseMessage, HumanMessage, ToolMessage
 from sqlalchemy.ext.asyncio import AsyncSession
 import re
 from src.agents.behavior import Candidate
 from dataclasses import dataclass, field
 from typing import Literal
-from src.agents.llm import AgentStep, CoordinatorReply, FaqHit, FinalText, ToolCall, ToolCalls, ToolSpec
+from src.agents.llm import AgentStep, CoordinatorReply, FaqHit, FinalText, ScopeDecision, ToolCall, ToolCalls, ToolSpec
 from src.agents.retriever import AreaKnowledge, ProcedureHit, ScopeSignals
 from src.models.business_area import AreaScope
 from src.models.executive import Executive
@@ -59,6 +59,8 @@ def property_session(values: dict[str, str]) -> AsyncSession:
 
 
 AREA_HEADER = re.compile(r"### Área: (.+)")
+# Cabecera de cada área en el resultado de consultar_areas: el coordinador por defecto la quita al retransmitir.
+RESULT_HEADER = re.compile(r"^\[[^\]]+\]$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -77,14 +79,23 @@ class FakeAgentLLM:
 
     Cada AgentReply guioniza un mensaje completo; `coordinator` y `steps` (por nombre de área) guionizan por separado
     al agente del canal y a cada agente de área, y `converse` los textos de la conversación (vacío si no se guioniza).
+    Spec 004: `scope` guioniza las decisiones del agente de ámbito y `coordinator_steps` los pasos del coordinador; sin
+    guion, el coordinador consulta las áreas con la pregunta y responde con el contenido recibido.
     """
 
     def __init__(self, *replies: AgentReply, coordinator: list[CoordinatorReply] | None = None,
-                 steps: dict[str, list[AgentStep]] | None = None, converse: list[str] | None = None):
+                 steps: dict[str, list[AgentStep]] | None = None, converse: list[str] | None = None,
+                 scope: list[ScopeDecision] | None = None, coordinator_steps: list[AgentStep] | None = None):
         self.replies = list(replies) or [AgentReply("no_answer", "")]
         self.coordinator = list(coordinator or [])
         self.steps = {area: list(script) for area, script in (steps or {}).items()}
         self.conversations = list(converse or [])
+        self.scope = list(scope or [])
+        self.coordinator_steps = list(coordinator_steps or [])
+        self.scope_calls = 0
+        self.coordinator_step_calls = 0
+        self.scope_messages: list[list[BaseMessage]] = []
+        self.coordinator_step_messages: list[list[BaseMessage]] = []
         self.coordinator_calls = 0
         self.step_calls = 0
         self.converse_calls = 0
@@ -95,7 +106,7 @@ class FakeAgentLLM:
 
     @property
     def calls(self) -> int:
-        return self.coordinator_calls + self.step_calls + self.converse_calls
+        return self.coordinator_calls + self.step_calls + self.converse_calls + self.scope_calls
 
     async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
         self.coordinator_calls += 1
@@ -108,10 +119,21 @@ class FakeAgentLLM:
         # Sin áreas: el grafo delega en las áreas con coincidencias, como hacía la búsqueda de la llamada única.
         return CoordinatorReply("delegate")
 
+    async def decide_scope(self, messages: list[BaseMessage]) -> ScopeDecision:
+        self.scope_calls += 1
+        self.scope_messages.append(list(messages))
+        if self.scope:
+            return self.scope.pop(0) if len(self.scope) > 1 else self.scope[0]
+        # Sin guion decide como hacía el agente del canal sin áreas: el respaldo por coincidencias elige el área.
+        self.current = self.next_reply()
+        return ScopeDecision([], str(messages[-1].content) if messages else "", False)
+
     async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep:
+        match = AREA_HEADER.search(str(messages[0].content)) if messages else None
+        if match is None:
+            return self.coordinator_step(messages)
         self.step_calls += 1
         self.step_messages.append(list(messages))
-        match = AREA_HEADER.search(str(messages[0].content)) if messages else None
         script = self.steps.get(match.group(1)) if match else None
         if script:
             return script.pop(0) if len(script) > 1 else script[0]
@@ -128,6 +150,17 @@ class FakeAgentLLM:
         if not self.conversations:
             return ""
         return self.conversations.pop(0) if len(self.conversations) > 1 else self.conversations[0]
+
+    def coordinator_step(self, messages: list[BaseMessage]) -> AgentStep:
+        self.coordinator_step_calls += 1
+        self.coordinator_step_messages.append(list(messages))
+        if self.coordinator_steps:
+            return self.coordinator_steps.pop(0) if len(self.coordinator_steps) > 1 else self.coordinator_steps[0]
+        results = [message for message in messages if isinstance(message, ToolMessage)]
+        if not results:
+            question = next((str(m.content) for m in reversed(messages) if isinstance(m, HumanMessage)), "")
+            return ToolCalls([ToolCall("consulta-1", "consultar_areas", {"consulta": question})])
+        return FinalText(RESULT_HEADER.sub("", str(results[-1].content)).strip())
 
     def next_reply(self) -> AgentReply:
         return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]

@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field, SecretStr
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.behavior import ClarifyOption
 from src.models.business_area import AreaScope
+from src.services.business_data import AreaTopics
 from src.services.procedures import FieldSpec
 from src.services.property import get_float_property, get_str_property
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
@@ -83,6 +84,13 @@ class FinalText:
 
 AgentStep = ToolCalls | FinalText
 
+@dataclass(frozen=True)
+class ScopeDecision:
+    """Decisión del agente de ámbito: a qué áreas va la consulta, reformulada, o si el usuario pide el catálogo."""
+    area_ids: list[int]
+    consulta: str
+    catalogo: bool
+
 class AgentLLM(Protocol):
     # Agente del canal: clasifica o delega en una llamada con salida estructurada.
     async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply: ...
@@ -90,6 +98,8 @@ class AgentLLM(Protocol):
     async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep: ...
     # Conversación: aclaración redactada o respuesta libre cuando ningún agente de área respondió.
     async def converse(self, messages: list[BaseMessage]) -> str: ...
+    # Agente de ámbito: decide en una llamada a qué áreas va la consulta.
+    async def decide_scope(self, messages: list[BaseMessage]) -> ScopeDecision: ...
 
 class CoordinatorOutput(BaseModel):
     kind: CoordinatorKind = Field(description=(
@@ -109,6 +119,16 @@ class CoordinatorOutput(BaseModel):
     text: str = Field(default="", description=(
         "Respuesta para el usuario redactada con la persona del asistente, solo si kind es greeting, closing, off_topic, "
         "about_assistant o manipulation y se te pide redactarla; vacío en otro caso"))
+
+class ScopeOutput(BaseModel):
+    area_ids: list[int] = Field(default_factory=list, description=(
+        "Ids [A…] de todas las áreas a las que corresponde la consulta, según su descripción y sus temas; vacío si no "
+        "corresponde a ninguna"))
+    consulta: str = Field(default="", description=(
+        "La consulta completa para buscar en esas áreas, reformulada con el contexto de la conversación (p. ej. «¿y de "
+        "Remuneraciones?» tras preguntar por el sueldo)"))
+    catalogo: bool = Field(default=False, description=(
+        "true si el usuario pregunta qué puede consultar o con qué temas puede ayudarle el asistente"))
 
 class ConverseOutput(BaseModel):
     text: str = Field(description="Respuesta para el usuario redactada con la persona del asistente")
@@ -165,7 +185,15 @@ def history_window(history: list[BaseMessage], size: int) -> list[BaseMessage]:
         window = window[1:]
     return window
 
-def build_coordinator_messages(
+def describe_topics(area: AreaInfo, topics: AreaTopics | None, with_id: bool = True) -> str:
+    lines = [f"{f'[A{area.id}] ' if with_id else ''}{area.name}: {area.description}"]
+    if topics is not None and topics.faqs:
+        lines.append("  Temas: " + "; ".join(topics.faqs))
+    if topics is not None and topics.procedures:
+        lines.append("  Trámites: " + "; ".join(topics.procedures))
+    return "\n".join(lines)
+
+def build_scope_messages(
     agent_prompt: str,
     areas: list[AreaInfo],
     options: list[ClarifyOption],
@@ -175,10 +203,13 @@ def build_coordinator_messages(
     question: str,
     history_messages: int,
     persona: str | None = None,
+    topics: dict[int, AreaTopics] | None = None,
 ) -> list[BaseMessage]:
-    # El agente del canal decide con el nombre y la descripción de cada área: el contenido solo lo ve el agente del área.
-    # Sin persona no se le pide redactar: el código usa los textos fijos.
-    parts = [agent_prompt, *persona_part(persona), *([COORDINATOR_TEXT] if persona else []), "Áreas del canal:\n" + "\n".join(f"[A{area.id}] {area.name}: {area.description}" for area in areas)]
+    # El agente de ámbito decide con el nombre, la descripción y los temas de cada área: el contenido solo lo ve el
+    # agente del área. Sin persona no se le pide redactar: el código usa los textos fijos.
+    known = topics or {}
+    parts = [agent_prompt, *persona_part(persona), *([COORDINATOR_TEXT] if persona else []),
+             "Áreas del canal:\n" + "\n".join(describe_topics(area, known.get(area.id)) for area in areas)]
     if options:
         parts.append("Opciones ofrecidas al usuario:\n" + "\n".join(f"{option.number}. {option.label}" for option in options))
     if offer_pending:
@@ -242,6 +273,13 @@ class GeminiAgentLLM:
             raise LlmUnavailableError(str(exc)) from exc
         return CoordinatorReply(output.kind, list(output.area_ids), list(output.chosen_options), output.text.strip())
 
+    async def decide_scope(self, messages: list[BaseMessage]) -> ScopeDecision:
+        try:
+            output = cast(ScopeOutput, await self._chat.with_structured_output(ScopeOutput).ainvoke(messages))
+        except Exception as exc:
+            raise LlmUnavailableError(str(exc)) from exc
+        return ScopeDecision(list(output.area_ids), output.consulta.strip(), output.catalogo)
+
     async def converse(self, messages: list[BaseMessage]) -> str:
         try:
             output = cast(ConverseOutput, await self._chat.with_structured_output(ConverseOutput).ainvoke(messages))
@@ -259,6 +297,19 @@ class GeminiAgentLLM:
             calls = [ToolCall(call["id"] or call["name"], call["name"], dict(call["args"])) for call in message.tool_calls]
             return ToolCalls(calls, str(message.text))
         return FinalText(str(message.text))
+
+class CallBudget:
+    """Tope de llamadas al modelo de un mensaje, compartido por el coordinador, el agente de ámbito y las áreas."""
+
+    def __init__(self, limit: int):
+        self.limit = limit
+        self.used = 0
+
+    def spend(self) -> None:
+        if self.used >= self.limit:
+            logger.warning("Se agotó el presupuesto de %s llamadas al modelo del mensaje", self.limit)
+            raise LlmUnavailableError("presupuesto de llamadas agotado")
+        self.used += 1
 
 async def get_llm_property(session: AsyncSession, key: str) -> str:
     try:

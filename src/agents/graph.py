@@ -18,7 +18,7 @@ from src.agents.behavior import (
     FREE_ANSWER_FALLBACK, PROCEDURE_EXHAUSTED, Candidate, Clarification, areas_question, build_options, can_clarify, chosen,
     combine, ensure_areas, fixed_text, options_text, other_procedures_text, requester_key)
 from src.agents.llm import (
-    AgentLLM, AreaInfo, ProcedureHit, build_area_messages, build_converse_messages, build_coordinator_messages)
+    AgentLLM, AreaInfo, ProcedureHit, build_area_messages, build_converse_messages, build_scope_messages)
 from src.agents.retriever import Retriever, ScopeSignals
 from src.agents.sub_agent import AreaAnswer, run_sub_agent
 from src.agents.strategies import Notifier
@@ -205,9 +205,9 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
 
         # La llamada del agente del canal y el embedding con las señales del ámbito corren a la vez.
         decision, signals = await asyncio.gather(
-            context.llm.coordinate(build_coordinator_messages(
+            context.llm.coordinate(build_scope_messages(
                 catalog.agent_prompt, list(areas.values()), options, context.offer_pending, pending, history, question,
-                context.history_messages, catalog.persona)),
+                context.history_messages, catalog.persona, catalog.topics)),
             scope_signals(),
         )
         # La persona también es un prompt: un texto que la copie se trata como fuga.

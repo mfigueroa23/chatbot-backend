@@ -2,18 +2,20 @@ import logging
 from typing import cast
 import pytest
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.agents.behavior import ClarifyOption
 from src.agents.llm import (
     AgentLLM, AreaInfo, AreaSection, ConverseOutput, CoordinatorOutput, CoordinatorReply, FaqHit, FinalText,
-    GeminiAgentLLM, ToolCall, ToolCalls, ToolSpec, build_area_messages, build_converse_messages, build_coordinator_messages,
+    GeminiAgentLLM, ToolCall, ToolCalls, ToolSpec, build_area_messages, build_converse_messages, build_scope_messages,
     build_gemini_llm, gemini_chat)
 from src.agents.retriever import ProcedureHit
 from src.models.business_area import AreaScope
 from src.models.procedure_field import FieldKind
 from src.services.procedures import FieldSpec
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
+from src.agents.llm import CallBudget, ScopeDecision, ScopeOutput
+from src.services.business_data import AreaTopics
 from tests.fakes import FakeAgentLLM, property_session
 
 API_KEY = "clave-secreta-de-prueba"
@@ -64,7 +66,7 @@ SECTION = AreaSection(CREDITS, [FaqHit("¿Plazo?", "Hasta 48 meses", 0.9, id=11,
 def test_coordinator_messages_cortan_el_historial_en_un_mensaje_del_usuario():
     history = [HumanMessage("q1"), AIMessage("a1"), HumanMessage("q2"), AIMessage("a2"), HumanMessage("q3"), AIMessage("a3")]
 
-    messages = build_coordinator_messages("Prompt", [], [], False, None, history, "q4", 3)
+    messages = build_scope_messages("Prompt", [], [], False, None, history, "q4", 3)
 
     assert [str(m.content) for m in messages[1:]] == ["q3", "a3", "q4"]
 
@@ -98,7 +100,7 @@ OPTIONS = [ClarifyOption(1, "faq", 11, 1, "¿Plazo del crédito?"), ClarifyOptio
 
 
 def test_coordinator_messages_nombran_las_areas_sin_su_contenido():
-    messages = build_coordinator_messages("Prompt del canal", [CREDITS, INSURANCE], [], False, None, [], "¿Plazo?", 20)
+    messages = build_scope_messages("Prompt del canal", [CREDITS, INSURANCE], [], False, None, [], "¿Plazo?", 20)
     system = str(messages[0].content)
 
     assert system.startswith("Prompt del canal")
@@ -111,7 +113,7 @@ def test_coordinator_messages_nombran_las_areas_sin_su_contenido():
 def test_coordinator_messages_con_opciones_oferta_y_procedimiento_en_curso():
     pending = ProcedureHit(7, "Copia del contrato", "Se envía", [], 1.0, 1)
 
-    system = str(build_coordinator_messages("Prompt", [CREDITS], OPTIONS, True, pending, [], "la 2", 20)[0].content)
+    system = str(build_scope_messages("Prompt", [CREDITS], OPTIONS, True, pending, [], "la 2", 20)[0].content)
 
     assert "Opciones ofrecidas al usuario" in system and "1. ¿Plazo del crédito?" in system and "2. Copia del contrato" in system
     assert "oferta de hablar con un ejecutivo" in system
@@ -196,7 +198,7 @@ def test_coordinate_describe_la_identidad_y_el_aviso_al_area():
 
 
 def test_coordinator_messages_con_persona_piden_redactar_el_texto():
-    messages = build_coordinator_messages("Prompt del canal", [CREDITS], [], False, None, [], "hola", 20,
+    messages = build_scope_messages("Prompt del canal", [CREDITS], [], False, None, [], "hola", 20,
                                           persona="Tono cercano, con trato de tú.")
     system = str(messages[0].content)
 
@@ -205,8 +207,8 @@ def test_coordinator_messages_con_persona_piden_redactar_el_texto():
 
 
 def test_coordinator_messages_sin_persona_no_cambian():
-    without = build_coordinator_messages("Prompt del canal", [CREDITS], [], False, None, [], "hola", 20)
-    with_none = build_coordinator_messages("Prompt del canal", [CREDITS], [], False, None, [], "hola", 20, persona=None)
+    without = build_scope_messages("Prompt del canal", [CREDITS], [], False, None, [], "hola", 20)
+    with_none = build_scope_messages("Prompt del canal", [CREDITS], [], False, None, [], "hola", 20, persona=None)
 
     assert [m.content for m in with_none] == [m.content for m in without]
     assert "text" not in str(without[0].content)
@@ -299,3 +301,83 @@ async def test_fake_agent_llm_guioniza_converse_y_cuenta_sus_llamadas():
     assert await llm.converse([HumanMessage("c")]) == "segundo"
     assert (llm.converse_calls, llm.calls) == (3, 3)
     assert await FakeAgentLLM().converse([HumanMessage("d")]) == ""
+
+
+
+# --- Spec 004: agente de ámbito, dobles y presupuesto ---------------------------------------------------------------
+
+def test_scope_messages_incluyen_los_temas_de_cada_area_sin_contenido():
+    topics = {1: AreaTopics(["¿Plazo máximo?", "¿Tasa de interés?"], ["Copia del contrato"])}
+
+    system = str(build_scope_messages("Prompt del ámbito", [CREDITS], [], False, None, [], "¿y el plazo?", 20,
+                                      topics=topics)[0].content)
+
+    assert "[A1] Créditos" in system and "¿Plazo máximo?; ¿Tasa de interés?" in system and "Copia del contrato" in system
+    assert "Hasta 48 meses" not in system
+
+
+def test_scope_messages_sin_temas_no_cambian():
+    without = build_scope_messages("Prompt", [CREDITS], [], False, None, [], "hola", 20)
+    empty = build_scope_messages("Prompt", [CREDITS], [], False, None, [], "hola", 20, topics={})
+
+    assert [m.content for m in empty] == [m.content for m in without]
+
+
+@pytest.mark.anyio
+async def test_decide_scope_traduce_la_salida():
+    output = ScopeOutput(area_ids=[1, 2], consulta="¿Plazo del crédito?", catalogo=False)
+
+    decision = await GeminiAgentLLM(cast(BaseChatModel, StructuredChat(output))).decide_scope([HumanMessage("¿plazo?")])
+
+    assert decision == ScopeDecision([1, 2], "¿Plazo del crédito?", False)
+
+
+@pytest.mark.anyio
+async def test_decide_scope_error_del_proveedor_es_llm_no_disponible():
+    with pytest.raises(LlmUnavailableError):
+        await GeminiAgentLLM(cast(BaseChatModel, StructuredChat(error=RuntimeError("x")))).decide_scope([HumanMessage("a")])
+
+
+def test_decide_scope_describe_el_catalogo():
+    description = ScopeOutput.model_json_schema()["properties"]["catalogo"]["description"]
+
+    assert "qué puede consultar" in description
+
+
+@pytest.mark.anyio
+async def test_fake_decide_scope_guionizado_y_por_defecto():
+    scripted = FakeAgentLLM(scope=[ScopeDecision([2], "¿Robo?", False)])
+
+    assert await scripted.decide_scope([HumanMessage("¿robo?")]) == ScopeDecision([2], "¿Robo?", False)
+    assert await FakeAgentLLM().decide_scope([HumanMessage("¿plazo?")]) == ScopeDecision([], "¿plazo?", False)
+    assert (scripted.scope_calls, scripted.calls) == (1, 1)
+
+
+@pytest.mark.anyio
+async def test_fake_coordinador_por_defecto_consulta_y_retransmite():
+    llm = FakeAgentLLM()
+    first = await llm.step([SystemMessage("Coordinador"), HumanMessage("¿Plazo?")], [])
+    final = await llm.step([SystemMessage("Coordinador"), HumanMessage("¿Plazo?"),
+                            ToolMessage("[Créditos]\nHasta 48 meses", tool_call_id="c1")], [])
+
+    assert isinstance(first, ToolCalls) and first.calls[0].name == "consultar_areas"
+    assert first.calls[0].args == {"consulta": "¿Plazo?"}
+    assert final == FinalText("Hasta 48 meses")
+    assert llm.coordinator_step_calls == 2
+
+
+@pytest.mark.anyio
+async def test_fake_coordinador_guionizado():
+    llm = FakeAgentLLM(coordinator_steps=[FinalText("¡Hola! ¿En qué te ayudo?")])
+
+    assert await llm.step([SystemMessage("Coordinador"), HumanMessage("hola")], []) == FinalText("¡Hola! ¿En qué te ayudo?")
+
+
+def test_presupuesto_permite_hasta_el_tope(caplog: pytest.LogCaptureFixture):
+    budget = CallBudget(2)
+    budget.spend()
+    budget.spend()
+
+    with pytest.raises(LlmUnavailableError):
+        budget.spend()
+    assert "presupuesto" in caplog.text and budget.used == 2

@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 8/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 14/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -37,22 +37,22 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k evidencia` pasa y `tests/sub_agent_test.py` sigue en verde.
 
 ## Fase 4 — Agente de ámbito
-- [ ] **T-9 — Convertir los mensajes del agente del canal en mensajes del agente de ámbito** · RF-9, RF-10, RF-19 · ~20 min
+- [x] **T-9 — Convertir los mensajes del agente del canal en mensajes del agente de ámbito** · RF-9, RF-10, RF-19 · ~20 min
   `build_coordinator_messages` actual pasa a llamarse `build_scope_messages` e incluye los temas de cada área; se actualizan su llamada en `graph.py` y sus tests.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k scope_messages` pasa con temas solo del ámbito y la suite sigue verde.
-- [ ] **T-10 — Añadir la decisión del agente de ámbito** · RF-11, RF-12 · ~20 min
+- [x] **T-10 — Añadir la decisión del agente de ámbito** · RF-11, RF-12 · ~20 min
   `ScopeDecision(area_ids, consulta, catalogo)` y `GeminiAgentLLM.decide_scope(messages)` con salida estructurada; `AgentLLM` la declara.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k decide_scope` pasa con conversión y error del proveedor.
-- [ ] **T-11 — Ampliar los dobles del modelo** · (habilita RF-1 a RF-58) · ~20 min
+- [x] **T-11 — Ampliar los dobles del modelo** · (habilita RF-1 a RF-58) · ~20 min
   `FakeAgentLLM` en `tests/fakes.py`: `decide_scope` guionizado (`scope=`), `coordinator_steps` guionizados y, sin guion, un coordinador que llama `consultar_areas` con la pregunta y responde con el contenido recibido.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k fake` pasa y la suite sigue verde.
-- [ ] **T-12 — Añadir el presupuesto de llamadas** · RNF-1 · ~15 min
+- [x] **T-12 — Añadir el presupuesto de llamadas** · RNF-1 · ~15 min
   `CallBudget(limit)` en `src/agents/llm.py` con `spend()`; al agotarse lanza `LlmUnavailableError` y registra un aviso.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k presupuesto` pasa.
-- [ ] **T-13 — Crear el agente de ámbito con derivación a las áreas** · RF-11, RF-14, RF-19 · ~30 min (depende de T-8, T-10, T-12)
+- [x] **T-13 — Crear el agente de ámbito con derivación a las áreas** · RF-11, RF-14, RF-19 · ~30 min (depende de T-8, T-10, T-12)
   `run_scope_agent` en `src/agents/scope_agent.py`: decisión en paralelo con `scope_signals`, respaldo por coincidencias, procedimiento en curso a su área y agentes de área en paralelo; devuelve `ScopeReport`.
   Hecho cuando: `uv run pytest -q tests/scope_agent_test.py -k "elige or respaldo or en_curso"` pasa.
-- [ ] **T-14 — Responder el catálogo del ámbito** · RF-10, RF-12, RF-13 · ~20 min
+- [x] **T-14 — Responder el catálogo del ámbito** · RF-10, RF-12, RF-13 · ~20 min
   Con `catalogo`, `run_scope_agent` devuelve los temas y trámites sin llamar a las áreas; el agente externo nunca recibe áreas internas.
   Hecho cuando: `uv run pytest -q tests/scope_agent_test.py -k "catalogo or externo"` pasa.
 

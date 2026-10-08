@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 3/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 10/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -23,25 +23,25 @@ referencia de los agentes de área está en `git show 60a517e^:src/agents/{sub_a
   Hecho cuando: `uv run pytest -q tests/business_data_test.py -k catalog` pasa con un texto presente, uno ausente (`None`) y los nombres de todas las áreas activas del ámbito.
 
 ## Fase 2 — Lógica pura (`src/agents/behavior.py`)
-- [ ] **T-5 — Crear los tipos de aclaración y `requester_key`** · (habilita RF-24) · ~15 min
+- [x] **T-5 — Crear los tipos de aclaración y `requester_key`** · (habilita RF-24) · ~15 min
   `ClarifyOption`, `Clarification` y `requester_key(requester)` (correo de Google Chat o `"web"`).
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k requester_key` pasa.
-- [ ] **T-6 — Implementar `build_options`** · RF-11, RF-12, RF-13 · ~25 min
+- [x] **T-6 — Implementar `build_options`** · RF-11, RF-12, RF-13 · ~25 min
   Orden único de FAQ y procedimientos por similitud, empate alfabético, texto repetido una vez, máximo 3, numeradas desde 1.
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k build_options` pasa con 5 candidatos, un empate y un texto repetido.
-- [ ] **T-7 — Implementar `options_text` y `areas_question`** · RF-14, RF-15, RF-16 · ~20 min (depende de T-5) [P]
+- [x] **T-7 — Implementar `options_text` y `areas_question`** · RF-14, RF-15, RF-16 · ~20 min (depende de T-5) [P]
   Constantes `CLARIFY_OPTIONS` y `CLARIFY_AREAS`; las opciones van numeradas y sin respuesta ni pasos; la pregunta de áreas sin lista si no hay áreas.
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k "options_text or areas_question"` pasa, incluido el caso sin áreas.
-- [ ] **T-8 — Implementar `can_clarify`** · RF-17, RF-18 · ~15 min
+- [x] **T-8 — Implementar `can_clarify`** · RF-17, RF-18 · ~15 min
   Opciones pendientes bloquean cualquier aclaración; pregunta de áreas pendiente solo bloquea otra de áreas.
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k can_clarify` pasa con las 6 combinaciones (sin pendiente, opciones, áreas × tipo pedido).
-- [ ] **T-9 — Implementar `fixed_text`** · RF-6, RF-37 · ~15 min [P]
+- [x] **T-9 — Implementar `fixed_text`** · RF-6, RF-37 · ~15 min [P]
   Añade «Puedo ayudarte con temas de: A, B y C.» al texto fijo; sin áreas, el texto tal cual.
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k fixed_text` pasa con 0, 1 y 3 áreas.
-- [ ] **T-10 — Implementar `chosen` y `OTHER_PROCEDURES`** · RF-27, RF-28, RF-29 · ~20 min (depende de T-5)
+- [x] **T-10 — Implementar `chosen` y `OTHER_PROCEDURES`** · RF-27, RF-28, RF-29 · ~20 min (depende de T-5)
   Separa las FAQ elegidas y el primer procedimiento mencionado; el resto de procedimientos van al texto `OTHER_PROCEDURES`.
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k chosen` pasa con 2 FAQ, 1 FAQ + 2 procedimientos y un número fuera de rango.
-- [ ] **T-11 — Implementar `combine` y `PARTIAL_ANSWER`** · RF-59, (RF-6 y RF-7 de la spec 001) · ~20 min
+- [x] **T-11 — Implementar `combine` y `PARTIAL_ANSWER`** · RF-59, (RF-6 y RF-7 de la spec 001) · ~20 min
   Una respuesta tal cual; varias en párrafos con el nombre del área; las áreas sin respuesta, nombradas en `PARTIAL_ANSWER`.
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k combine` pasa con una, dos y una parcial.
 

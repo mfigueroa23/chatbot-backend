@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 14/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 19/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -57,19 +57,19 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
   Hecho cuando: `uv run pytest -q tests/scope_agent_test.py -k "catalogo or externo"` pasa.
 
 ## Fase 5 — Coordinador
-- [ ] **T-15 — Crear los mensajes del coordinador** · RF-6, RF-19 · ~15 min
+- [x] **T-15 — Crear los mensajes del coordinador** · RF-6, RF-19 · ~15 min
   Nuevo `build_coordinator_messages(prompt, persona, offer_pending, pending_name, history, question, history_messages)` sin áreas ni contenido.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k coordinador_mensajes` pasa y el mensaje no contiene temas ni respuestas.
-- [ ] **T-16 — Atar `consultar_areas` al agente de ámbito del canal** · RF-7, RF-8, RF-14 · ~25 min (depende de T-13)
+- [x] **T-16 — Atar `consultar_areas` al agente de ámbito del canal** · RF-7, RF-8, RF-14 · ~25 min (depende de T-13)
   `CoordinatorToolbox` en `src/agents/coordinator.py` con `consultar_areas`; guarda evidencia, respuestas de área y estado del procedimiento.
   Hecho cuando: `uv run pytest -q tests/coordinator_test.py -k consultar` pasa con el ámbito fijado por el código.
-- [ ] **T-17 — Añadir `avisar_area` al coordinador interno** · RF-45, RF-46, RF-47, RF-48 · ~25 min
+- [x] **T-17 — Añadir `avisar_area` al coordinador interno** · RF-45, RF-46, RF-47, RF-48 · ~25 min
   Solo en el interno; usa `format_unanswered`, el space del área o `get_fallback_space`, y registra si se entregó.
   Hecho cuando: `uv run pytest -q tests/coordinator_test.py -k avisar` pasa con entrega, fallo, área sin space y canal web sin la herramienta.
-- [ ] **T-18 — Añadir `ofrecer_ejecutivo` y `responder_oferta` al coordinador web** · RF-39, RF-40, RF-41, RF-42 · ~25 min [P]
+- [x] **T-18 — Añadir `ofrecer_ejecutivo` y `responder_oferta` al coordinador web** · RF-39, RF-40, RF-41, RF-42 · ~25 min [P]
   Solo en el web; `ofrecer_ejecutivo` consulta `is_open` y deja la oferta o los canales; `responder_oferta` solo con oferta pendiente.
   Hecho cuando: `uv run pytest -q tests/coordinator_test.py -k "ofrecer or oferta"` pasa dentro y fuera de horario y sin oferta pendiente.
-- [ ] **T-19 — Escribir el bucle del coordinador** · RF-1, RNF-1 · ~25 min (depende de T-16)
+- [x] **T-19 — Escribir el bucle del coordinador** · RF-1, RNF-1 · ~25 min (depende de T-16)
   `run_coordinator(llm, toolbox, messages, budget) -> CoordinatorTurn`, con el patrón de `run_sub_agent` y el presupuesto compartido.
   Hecho cuando: `uv run pytest -q tests/coordinator_test.py -k "bucle or presupuesto"` pasa, incluido el presupuesto agotado.
 

@@ -218,6 +218,25 @@ def build_scope_messages(
         parts.append(f"Procedimiento en curso: {pending_procedure.name} [A{pending_procedure.area_id}]")
     return [SystemMessage("\n\n".join(parts)), *history_window(history, history_messages), HumanMessage(question)]
 
+def build_coordinator_messages(
+    prompt: str,
+    persona: str | None,
+    offer_pending: bool,
+    pending_name: str | None,
+    history: list[BaseMessage],
+    question: str,
+    history_messages: int,
+) -> list[BaseMessage]:
+    # El coordinador conversa sin las áreas en su contexto: las conoce el agente de ámbito al que consulta.
+    parts = [prompt, *persona_part(persona)]
+    if offer_pending:
+        parts.append("Hay una oferta de hablar con un ejecutivo pendiente de respuesta del cliente.")
+    if pending_name:
+        parts.append(f"Hay un trámite en curso: «{pending_name}». Los datos que entregue el usuario son para ese trámite.")
+    parts.append(LANGUAGE_RULE)
+    return [SystemMessage("\n\n".join(part for part in parts if part)), *history_window(history, history_messages),
+            HumanMessage(question)]
+
 def build_area_messages(
     area: AreaInfo,
     rules: str,

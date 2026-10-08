@@ -14,7 +14,7 @@ from src.models.business_area import AreaScope
 from src.models.procedure_field import FieldKind
 from src.services.procedures import FieldSpec
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
-from src.agents.llm import CallBudget, ScopeDecision, ScopeOutput
+from src.agents.llm import CallBudget, ScopeDecision, ScopeOutput, build_coordinator_messages
 from src.services.business_data import AreaTopics
 from tests.fakes import FakeAgentLLM, property_session
 
@@ -381,3 +381,21 @@ def test_presupuesto_permite_hasta_el_tope(caplog: pytest.LogCaptureFixture):
     with pytest.raises(LlmUnavailableError):
         budget.spend()
     assert "presupuesto" in caplog.text and budget.used == 2
+
+
+
+def test_coordinador_mensajes_sin_areas_ni_contenido():
+    history = [HumanMessage("¿Cuándo pagan?"), AIMessage("El día 30.")]
+
+    messages = build_coordinator_messages("Prompt del coordinador", "Tono cercano.", False, None, history, "¿y el bono?", 20)
+    system = str(messages[0].content)
+
+    assert "Prompt del coordinador" in system and "Tono cercano." in system and "español" in system
+    assert "Áreas del canal" not in system and "[A" not in system
+    assert [str(m.content) for m in messages[1:]] == ["¿Cuándo pagan?", "El día 30.", "¿y el bono?"]
+
+
+def test_coordinador_mensajes_con_oferta_y_tramite_en_curso():
+    system = str(build_coordinator_messages("Prompt", None, True, "Copia del contrato", [], "sí", 20)[0].content)
+
+    assert "oferta" in system and "«Copia del contrato»" in system and "Persona" not in system

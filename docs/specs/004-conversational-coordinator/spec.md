@@ -115,7 +115,7 @@ Definiciones usadas en esta sección:
 
 ## Requisitos no funcionales
 - RNF-1: Por cada mensaje del usuario, EL SISTEMA hará como máximo 100 llamadas al modelo entre el coordinador, el agente de ámbito y los agentes de área. Sustituye RNF-1 de la spec 002; el número real se mide en la prueba de carga.
-- RNF-2: El p95 del tiempo hasta la respuesta completa se mide con la prueba de 50 sesiones de la spec 001 en el despliegue; el usuario fija el umbral con esa medición antes de fusionar (como RNF-2 de la spec 002).
+- RNF-2: Con 50 sesiones simultáneas en el despliegue, el p95 del tiempo hasta la respuesta completa es de como máximo 15 s en cada canal (umbral fijado por el usuario el 2026-10-08 con la medición de R3 del plan).
 - RNF-3: Las respuestas están en español: con trato de tú en el canal interno y de usted en el chat web.
 - RNF-4: Variedad: en cada canal, de 5 conversaciones nuevas con el mismo saludo, al menos 3 reciben textos distintos.
 - RNF-5: `jailbreak_check` termina con código 0 contra ambos canales.
@@ -167,5 +167,6 @@ Definiciones usadas en esta sección:
 - **Tope de 100 llamadas por mensaje (2026-10-08, decisión del usuario):** sin límite de iteraciones en la práctica, con un máximo de seguridad.
 - **Prompts en la base de datos (2026-10-08, decisión del usuario):** los prompts de coordinador, agentes de ámbito y áreas y la persona siguen editables sin desplegar.
 - **Aceptación del tono por demo manual (2026-10-08, decisión del usuario).**
+- **Latencia (2026-10-08, decisión del usuario):** RNF-2 queda en p95 ≤ 15 s con 50 sesiones; bajar a 10 s (precarga de las señales del ámbito en paralelo con el coordinador o menos pasos por área) queda como mejora futura.
 - **Respaldos del control posterior (2026-10-08, decisión del usuario):** si un texto rechazado por RF-53 a RF-55 vuelve a fallar tras un reintento, se envía la negativa genérica (RF-52); si se agota el tope de RNF-1, el mensaje de servicio no disponible.
 - **Sustituye en ambos canales:** de la spec 002, la clasificación por categorías del agente del canal, los mensajes fijos, la aclaración con opciones numeradas y la prioridad de RF-39; de la spec 003, el texto redactado como campo de la clasificación y sus respaldos fijos (RF-5, RF-6, RF-10). Se mantienen la persona, las respuestas libres del canal interno, el detector de datos personales y los avisos solo a pedido.

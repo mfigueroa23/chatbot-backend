@@ -241,7 +241,16 @@ y cuenta las llamadas.
 - **R3 — Latencia.** Una consulta son al menos 4 llamadas en serie (coordinador, ámbito, área, coordinador); con 2 la
   spec 002 midió 8,69 s. Google Chat tiene la respuesta diferida de 30 s (spec 001, RF-68); el web espera por el
   WebSocket. *Mitigación:* áreas en paralelo, embedding en paralelo con el ámbito, `thinking_budget=0` y medición con la
-  prueba de carga antes de fusionar (RNF-2).
+  prueba de carga antes de fusionar (RNF-2). **Medición en el despliegue (2026-10-08, 1.4.0, `gemini-3.1-flash-lite`,
+  50 sesiones simultáneas por ronda; web por WebSocket, interno en proceso):**
+  - Con 300m de CPU: web p50 22,5 s, p95 23,7 s, máx 25,0 s (50/50); interno con FAQ p95 22,0 s (44/50); interno sin
+    FAQ p95 18,6 s (48/50). Prometheus: 99,5 % de los periodos con throttling. Una sesión sola: ~3,2 s.
+  - Con 1 CPU (manifiestos del clúster actualizados): web con FAQ p50 10,6 s, p95 13,1 s, máx 14,1 s (50/50); interno
+    con FAQ p50 3,8 s, p95 6,6 s (49/50); interno sin FAQ p50 6,6 s, p95 8,0 s (50/50). Throttling máx 14,5 %.
+  - Perfil de una consulta web con FAQ en reposo (5,5–7,5 s): coordinador 0,9–1,9 s → ámbito 1,0 s (en paralelo con
+    el embedding, 0,4–1,1 s) → área 1,5–1,8 s (+1,4 s por cada búsqueda extra) → coordinador 1,4–1,8 s.
+  - **Decisión del usuario:** RNF-2 queda en p95 ≤ 15 s. Mejoras para bajar a 10 s: precargar las señales del ámbito
+    mientras el coordinador da su primer paso y limitar las búsquedas extra de las áreas (`agent_max_steps`).
 - **R4 — Requisitos que solo cumple el prompt** (RF-15 a RF-18, RF-20, RF-26, RF-27, RF-50): no son verificables en
   código; se aceptan en la demo manual, como decidiste.
 - **R5 — Prompts de la BD.** Si se despliega el código sin `{scope}_coordinator` cargado, el coordinador solo tendría la

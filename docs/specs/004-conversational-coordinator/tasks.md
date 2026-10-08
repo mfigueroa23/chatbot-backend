@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 35/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 38/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -132,15 +132,26 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
   Con respaldo previo de `agent_prompt` en ambas BD, justo antes de fusionar.
   Hecho cuando: existen los respaldos y las cinco keys tienen el texto aprobado en ambas BD.
   Nota (2026-10-08): por decisión del usuario se cargaron en remoto antes de fusionar, con la 1.3.0 aún desplegada; también se aprobó y cargó una `internal_persona` más suelta (emojis ocasionales, largo variable). Los textos solo viven en la BD; los respaldos previos quedaron fuera del repo.
-- [ ] **T-36 — Ejecutar `jailbreak_check` en ambos canales** · RF-49, RF-50, RNF-5 · ~15 min
+- [x] **T-36 — Ejecutar `jailbreak_check` en ambos canales** · RF-49, RF-50, RNF-5 · ~15 min
   `--scope internal` en proceso y el WebSocket del web, contra el despliegue.
   Hecho cuando: ambas ejecuciones terminan con código 0.
-- [ ] **T-37 — Medir la variedad de los saludos** · RNF-4 · ~15 min [P]
+- [x] **T-37 — Medir la variedad de los saludos** · RNF-4 · ~15 min [P]
   `behavior_check --scope internal --variety 5` y `--scope external --variety 5`.
   Hecho cuando: ambas terminan con código 0.
-- [ ] **T-38 — Medir la latencia** · RNF-2 · ~30 min
+- [x] **T-38 — Medir la latencia** · RNF-2 · ~30 min
   Prueba de carga de 50 sesiones con preguntas con FAQ y sin FAQ en ambos canales.
   Hecho cuando: R3 del plan registra p50, p95 y máximo, y fijas el umbral.
+  Nota de la verificación en el despliegue (2026-10-08):
+  - T-36: interno 24/24 sin fugas; web 22/24 en la primera vuelta por un falso positivo (la frase genérica
+    «asistente virtual de Autofin,» coincidía con el prompt del área interna Ayuda General) y 24/24 tras quitarla de
+    ese prompt.
+  - T-37: interno 5/5 y web 4/5 distintos, pero el web tuteaba en 3 de 5; tras añadir el trato de usted a
+    `external_coordinator`, web 5/5 distintos y todos de usted.
+  - T-38: el pod (256 MiB, 300m) cayó dos veces por memoria al correr baterías dentro y saturaba la CPU con 50 sesiones;
+    se subió a 1 CPU y 192/512 MiB en el repo de manifiestos del clúster. Cifras en R3 del plan; RNF-2 fijado en 15 s.
+  - Datos remotos corregidos: «Servicio al Cliente» pasa a área externa (el web no tenía ninguna); se crea el área
+    interna «Proyectos» sin space. Pendiente: ninguna área tiene space de Google Chat (la app solo es miembro de dos
+    mensajes directos), así que trámites y avisos a pedido fallan al notificar.
 - [ ] **T-39 — Ejecutar la demo manual** · RF-12 a RF-21, RF-26, RF-27, RF-50, RNF-3 · ~30 min
   Los mensajes de los criterios de finalización de la spec en Google Chat y en el web.
   Hecho cuando: cada mensaje da el resultado esperado y apruebas el tono.

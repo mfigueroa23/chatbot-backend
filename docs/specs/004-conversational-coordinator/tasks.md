@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 41/42 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 43/44 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -167,6 +167,14 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
   `uv run pyright`, `uv run pytest` y bump de `pyproject.toml`/`uv.lock` a 1.4.1.
   Hecho cuando: pyright da 0 errores, pytest no tiene fallos y `grep '^version = "1.4.1"' pyproject.toml` encuentra la línea.
 
+## Fase 11 — Ajuste tras el despliegue de la 1.5.0 (1.5.1)
+- [x] **T-43 — Reintentar ante un fragmento de prompt de 50 caracteres** · RF-52, RF-61 · ~20 min
+  `LEAK_FRAGMENT_LENGTH` en 50 en `src/agents/audit.py` y «fragmento del prompt» en `RETRYABLE` de `src/agents/graph.py`.
+  Hecho cuando: `uv run pytest -q tests/audit_test.py tests/agent_graph_test.py -k "termino_del_negocio or fuga"` pasa y `jailbreak_check --scope internal` termina con código 0.
+- [x] **T-44 — Verificación y versión 1.5.1** · todos · ~15 min
+  `uv run pyright`, `uv run pytest` y bump de `pyproject.toml`/`uv.lock` a 1.5.1.
+  Hecho cuando: pyright da 0 errores, pytest no tiene fallos y `grep '^version = "1.5.1"' pyproject.toml` encuentra la línea.
+
 ## Cobertura
 | RF | Tareas |
 |---|---|
@@ -221,7 +229,7 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
 | RF-49 | T-23, T-36 |
 | RF-50 | T-34, T-36, T-39 |
 | RF-51 | T-5, T-23 |
-| RF-52 | T-23 |
+| RF-52 | T-23, T-43 |
 | RF-53 | T-3, T-5, T-23 |
 | RF-54 | T-4, T-5, T-23 |
 | RF-55 | T-4, T-5, T-23 |
@@ -230,6 +238,7 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
 | RF-58 | T-21 |
 | RF-59 | T-40 |
 | RF-60 | T-41 |
+| RF-61 | T-43 |
 | RNF-1 | T-12, T-19 |
 | RNF-2 | T-38 |
 | RNF-3 | T-34, T-39 |

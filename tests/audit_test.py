@@ -12,6 +12,14 @@ def test_detecta_un_fragmento_del_prompt():
     assert find_leaks(reply, [PROMPT], []) == ["fragmento del prompt"]
 
 
+def test_un_termino_del_negocio_compartido_con_el_prompt_no_es_fuga():
+    # Una coincidencia corta (el nombre de un trámite, una sigla escrita completa) es vocabulario del área, no una copia.
+    prompt = "Eres el especialista de Proyectos: redactas especificaciones de requerimientos de desarrollo (EDR)."
+    reply = "Te ayudo con tu EDR (especificaciones de requerimientos de desarrollo) cuando quieras."
+
+    assert find_leaks(reply, [prompt], []) == []
+
+
 def test_detecta_nombres_internos_y_areas():
     assert find_leaks("El campo faq_ids lo uso para citar", [PROMPT], INTERNAL_NAMES) == ["nombre interno faq_ids"]
     assert find_leaks("Eso lo ve Remuneraciones", [PROMPT], ["Remuneraciones"]) == ["nombre interno Remuneraciones"]

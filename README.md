@@ -26,8 +26,8 @@ usuario ─► [coordinador] ──(texto final, tras el control posterior)─�
 
 **Holgura en la forma, rigidez en la seguridad**: antes de enviar, un control posterior rechaza fugas de prompts o
 nombres internos, datos personales que no vengan de una FAQ o un procedimiento, promesas de avisar más adelante y
-acciones afirmadas que no ocurrieron; los tres últimos se reintentan una vez y, si persisten, se envía la negativa
-genérica. Cada mensaje tiene un tope de `agent_max_model_calls` llamadas al modelo. Atiende dos canales:
+acciones afirmadas que no ocurrieron; todo eso se reintenta una vez y, si persiste, se envía la negativa genérica (el
+código va directo a la negativa). Una fuga de prompt es una copia de 50 caracteres seguidos. Cada mensaje tiene un tope de `agent_max_model_calls` llamadas al modelo. Atiende dos canales:
 
 - **Chat web** (clientes, áreas externas) por WebSocket, con trato de usted, memoria por sesión y derivación a un
   ejecutivo en vivo. Nunca da respuestas libres: si ninguna área aporta información, ofrece un ejecutivo en horario o

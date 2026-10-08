@@ -5,7 +5,7 @@ GENERIC_REFUSAL = "Solo puedo ayudarte con consultas de las áreas de este canal
 INTERNAL_NAMES = [
     "faq_ids", "procedure_id", "wants_human", "no_answer", "manipulation", "area_ids", "chosen_options", "accept_offer",
     "decline_offer", "off_topic", "buscar_faq", "buscar_procedimiento", "iniciar_procedimiento", "procedimiento_id",
-    "about_assistant",
+    "about_assistant", "consultar_areas", "avisar_area", "ofrecer_ejecutivo", "responder_oferta",
 ]
 # Un fragmento de este largo copiado de un prompt ya revela su contenido.
 LEAK_FRAGMENT_LENGTH = 30
@@ -43,5 +43,45 @@ def find_leaks(text: str, prompts: list[str], names: list[str]) -> list[str]:
         leaks.append("código")
     return leaks
 
+# Frases con las que el modelo promete un seguimiento o afirma una acción: el asistente es reactivo y solo puede
+# afirmarlas si una notificación al área se entregó en ese mismo mensaje.
+FUTURE_PROMISES = [
+    re.compile(r"\b(?:te|le|les)\s+(?:avisar|contactar|notificar|escribir|llamar|informar)(?:é|emos|á|án)\b", re.IGNORECASE),
+    re.compile(r"\b(?:nos|se)\s+(?:pondremos|pondrá|pondrán)\s+en\s+contacto\b", re.IGNORECASE),
+    re.compile(r"\b(?:te|le)\s+(?:mantendré|mantendremos)\s+informad[oa]\b", re.IGNORECASE),
+]
+CLAIMED_ACTIONS = [
+    re.compile(r"\b(?:envié|enviamos|he enviado|hemos enviado|registré|registramos|derivé|derivamos)\b.{0,40}?"
+               r"\b(?:solicitud|consulta|caso)\b", re.IGNORECASE),
+    re.compile(r"\b(?:avisé|notifiqué|he avisado|hemos avisado|he notificado|hemos notificado)\b", re.IGNORECASE),
+    re.compile(r"\b(?:quedaste|quedó|queda)\s+en\s+(?:la\s+)?cola\b", re.IGNORECASE),
+]
+
+def personal_data_values(text: str) -> list[tuple[str, str]]:
+    return [(kind, match.group(0)) for kind, pattern in PERSONAL_DATA for match in pattern.finditer(text)]
+
 def personal_data_leaks(text: str) -> list[str]:
-    return [kind for kind, pattern in PERSONAL_DATA if pattern.search(text)]
+    return list(dict.fromkeys(kind for kind, _ in personal_data_values(text)))
+
+def future_promises(text: str) -> list[str]:
+    return [match.group(0) for pattern in FUTURE_PROMISES for match in pattern.finditer(text)]
+
+def claimed_actions(text: str) -> list[str]:
+    return [match.group(0) for pattern in CLAIMED_ACTIONS for match in pattern.finditer(text)]
+
+def compact(value: str) -> str:
+    return re.sub(r"[\s.\-]", "", value).lower()
+
+def review(text: str, prompts: list[str], names: list[str], evidence: list[str], delivered: bool) -> list[str]:
+    """Motivos para no enviar un texto del coordinador; vacío si puede enviarse."""
+    problems = find_leaks(text, prompts, names)
+    # Un dato que viene de una FAQ o un procedimiento es información oficial (p. ej. el correo de un área).
+    sources = [compact(item) for item in evidence]
+    problems += [f"dato personal {kind}" for kind, value in personal_data_values(text)
+                 if not any(compact(value) in source for source in sources)]
+    if not delivered:
+        if future_promises(text):
+            problems.append("promesa de seguimiento")
+        if claimed_actions(text):
+            problems.append("acción no realizada")
+    return problems

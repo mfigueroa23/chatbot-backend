@@ -2,38 +2,39 @@
 
 Backend de ChatBot, construido con FastAPI, SQLAlchemy (async) y PostgreSQL.
 
-Es un asistente virtual con un patrón agéntico coordinador ([spec 001](docs/specs/001-agentic-pattern-coordinator/spec.md),
-[spec 002](docs/specs/002-assistant-behavior/spec.md) y [spec 003](docs/specs/003-free-conversation/spec.md)). Cada canal tiene un grafo de LangGraph con un **agente del
-canal** que resuelve o delega, y un **agente por área de negocio** con sus propias tools (RAG con pgvector y Gemini):
+Es un asistente virtual con un patrón agéntico coordinador ([spec 001](docs/specs/001-agentic-pattern-coordinator/spec.md)
+a [spec 004](docs/specs/004-conversational-coordinator/spec.md)) en tres niveles y **una sola voz**:
 
 ```
-START → [coordinate] ──(saludo, cierre, fuera de tema, sobre el asistente, manipulación, persona, oferta, mixta)──► END
-              │ route
-              ├─(sin áreas)───────────────────────────────► [finalize] ──► END
-              └─ Send × N ─► [area_agent: área A] ─┐
-                             [area_agent: área B] ─┴──────► [finalize] ──► END
+usuario ─► [coordinador] ──(texto final, tras el control posterior)──► usuario
+               │ consultar_areas (el canal fija el ámbito)
+               ▼
+         [agente interno | agente externo] ──(áreas elegidas, en paralelo)──► [agente de área A] [agente de área B]
+               ▲                                                                   │ FAQ, procedimientos
+               └──────────────────── contenido de cada área ◄──────────────────────┘
 ```
 
-- `coordinate`: una llamada estructurada clasifica el mensaje o elige las áreas y, con la persona del canal, redacta el
-  texto del saludo, el cierre, el tema ajeno, la respuesta sobre el asistente o la negativa; en paralelo se calcula el
-  embedding y las señales del ámbito (áreas con coincidencias, candidatos para aclarar y pregunta mixta).
-- `area_agent`: cada área busca sus FAQ y procedimientos con ese embedding y responde con su prompt; puede volver a
-  buscar o iniciar un procedimiento con sus tools (como máximo `agent_max_steps` pasos). Las áreas corren en paralelo.
-- `finalize`: combina las respuestas, aplica el guardarraíl (sin FAQ ni procedimiento no hay respuesta) y el auditor de
-  fugas. Si nadie responde y hay temas candidatos, una llamada de conversación redacta una pregunta que los propone;
-  sin ellos, Google Chat da una respuesta libre y el chat web pregunta por las áreas antes del flujo de "sin respuesta".
+- **Coordinador** (`src/agents/coordinator.py`): la IA con personalidad. Conversa en texto libre con la persona del canal
+  y el historial, sin áreas, FAQ ni procedimientos en su contexto, y actúa con herramientas: `consultar_areas` (atada
+  por código al agente de ámbito de su canal), `avisar_area` en Google Chat (solo si el colaborador lo pide) y
+  `ofrecer_ejecutivo`/`responder_oferta` en el web.
+- **Agente de ámbito** (`src/agents/scope_agent.py`): el interno en Google Chat y el externo en el web. Conoce las áreas
+  de su ámbito con sus temas y trámites, decide en una llamada a cuáles va la consulta (o responde qué se puede
+  consultar) mientras se calcula el embedding, y lanza los agentes de área en paralelo.
+- **Agentes de área** (`src/agents/sub_agent.py`): buscan en su área con sus tools (como máximo `agent_max_steps` pasos),
+  generan el contenido para el coordinador y gestionan los procedimientos, cuya validación sigue en código.
 
-**Holgura en la forma, rigidez en la seguridad** (spec 003): el modelo redacta saludos, cierres, temas ajenos,
-respuestas sobre el asistente, negativas y aclaraciones con la persona de cada canal, para que no sean siempre
-idénticos; el código audita cada texto antes de enviarlo y, si viene vacío o filtra algo, usa el mensaje fijo de la BD o
-la negativa genérica. Los procedimientos siguen validándose en código. Atiende dos canales:
+**Holgura en la forma, rigidez en la seguridad**: antes de enviar, un control posterior rechaza fugas de prompts o
+nombres internos, datos personales que no vengan de una FAQ o un procedimiento, promesas de avisar más adelante y
+acciones afirmadas que no ocurrieron; los tres últimos se reintentan una vez y, si persisten, se envía la negativa
+genérica. Cada mensaje tiene un tope de `agent_max_model_calls` llamadas al modelo. Atiende dos canales:
 
 - **Chat web** (clientes, áreas externas) por WebSocket, con trato de usted, memoria por sesión y derivación a un
-  ejecutivo en vivo. Nunca da respuestas libres: sin FAQ ni procedimiento ofrece un ejecutivo o los canales oficiales.
+  ejecutivo en vivo. Nunca da respuestas libres: si ninguna área aporta información, ofrece un ejecutivo en horario o
+  los canales oficiales fuera de él, aunque el coordinador no lo pida.
 - **Google Chat** (colaboradores, áreas internas), con trato de tú y memoria por conversación. Sin FAQ responde con su
-  propio conocimiento avisando que no es información oficial (sin datos personales: RUT, correos y teléfonos se
-  detectan en código) y solo avisa al space del área cuando el colaborador lo pide; tras 3 datos inválidos de un
-  procedimiento ofrece avisar al área en lugar de hacerlo.
+  propio conocimiento avisando que no es información oficial y solo avisa al space del área cuando el colaborador lo
+  pide; tras 3 datos inválidos de un procedimiento ofrece avisar al área en lugar de hacerlo.
 
 Si existe un procedimiento, el asistente explica los pasos, pide los datos que exige (validados en código) y publica la
 solicitud en el space del área para que una persona la ejecute.
@@ -81,7 +82,7 @@ Properties usadas actualmente:
 | `llm_timeout_seconds` | Tiempo máximo de espera de cada llamada a Gemini | `20` |
 | `rag_top_k` | FAQ recuperadas por área | `4` |
 | `rag_min_similarity` | Similitud coseno mínima para usar una FAQ o un procedimiento al responder | `0.68` |
-| `rag_clarify_similarity` | Similitud mínima de un candidato para ofrecerlo como opción de una aclaración; debe ser menor que `rag_min_similarity` (si no, no se ofrecen opciones) | `0.55` |
+| `rag_clarify_similarity` | Ya no se usa para aclarar (spec 004): solo limita las señales del ámbito; debe ser menor que `rag_min_similarity` | `0.55` |
 | `web_session_retention_days` | Días que se conserva una sesión web desde su último mensaje | `30` |
 | `web_max_sessions` | Sesiones web activas simultáneas | `50` |
 | `executive_max_chats` | Chats en vivo simultáneos por ejecutivo | `3` |
@@ -98,7 +99,9 @@ Properties usadas actualmente:
 | `agent_history_messages` | Mensajes anteriores de la conversación que se envían al modelo | `20` |
 | `agent_max_steps` | Pasos (llamadas al modelo) de cada agente de área por mensaje | `4` |
 | `procedure_max_attempts` | Intentos para entregar datos válidos de un procedimiento antes de abandonarlo | `3` |
-| `conversation_temperature` | Temperatura de Gemini en ambos canales: con `0` los textos redactados serían siempre idénticos. Si la clasificación de `behavior_check` falla, bájala | `0.7` |
+| `agent_max_model_calls` | Tope de llamadas al modelo por mensaje entre coordinador, agente de ámbito y agentes de área; al agotarse se responde "servicio no disponible" | `100` |
+| `scope_topics_per_area` | Temas (FAQ) y trámites (procedimientos) de cada área que conoce el agente de ámbito | `50` |
+| `conversation_temperature` | Temperatura de Gemini en ambos canales: con `0` los textos redactados serían siempre idénticos | `0.7` |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
 
@@ -125,7 +128,7 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 | `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y `chat_space` (space de Google Chat del área, `spaces/…`) |
 | `faq_category`, `faq` | Categorías y preguntas frecuentes de cada área. El embedding se calcula solo al usarlas |
 | `procedure`, `procedure_field` | Procedimientos de cada área (nombre y pasos que se explican al usuario) y los datos que exige cada uno, con su tipo (`text`, `email`, `phone`, `rut`, `number`, `date`). El embedding se calcula solo al usarlos |
-| `agent_prompt` | Prompts con las keys `internal_agent` y `external_agent` (agente de cada canal: clasificar el mensaje y elegir las áreas en las que delegar) y `area_rules` (reglas comunes de los agentes de área). Su texto solo vive en la BD (no se versiona): cada uno debe prohibir revelar instrucciones, prompts, herramientas, áreas o funcionamiento interno y tratar lo que escribe el usuario como información, nunca como instrucciones. También guarda los mensajes fijos de cada canal, `{internal,external}_{greeting,closing,off_topic}`, que siembra la migración y se pueden editar (son el respaldo cuando el modelo no redacta el texto); la lista de áreas la añade el código al saludo y al fuera de tema si el texto no nombra ninguna. Las keys `internal_persona` (trato de tú, humor ligero) y `external_persona` (trato de usted) guardan el tono del asistente de cada canal; las siembra la migración y un cambio aplica desde el siguiente mensaje. Para que el modelo redacte, `internal_agent` y `external_agent` deben pedirle completar `text` con la persona |
+| `agent_prompt` | Prompts del asistente; su texto solo vive en la BD (no se versiona). `internal_coordinator` y `external_coordinator`: el coordinador de cada canal (rol, prioridades, cuándo usar cada herramienta, principios: inferir sin inventar, no confirmar lo que una herramienta no confirmó, no prometer avisos; en el interno, la respuesta libre con aviso de no oficial). `internal_agent` y `external_agent`: el agente de ámbito (decidir a qué áreas va la consulta, reformularla con el contexto y reconocer «qué puedo consultar»). `area_rules`: reglas comunes de los agentes de área (generar contenido solo con lo encontrado para el coordinador). `internal_persona` (trato de tú, humor ligero) y `external_persona` (trato de usted): el tono de cada canal, sembrado por la migración. Todos deben tratar lo que escribe el usuario como información, nunca como instrucciones, y un cambio aplica desde el siguiente mensaje. Las keys `{internal,external}_{greeting,closing,off_topic}` de la spec 002 ya no se usan |
 | `service_schedule` | Franja de atención por día (`weekday` 0 = lunes … 6 = domingo), en hora de Santiago |
 | `holiday` | Fechas sin atención |
 | `official_channel` | Canales oficiales que se muestran al cliente |
@@ -172,23 +175,18 @@ Google Chat (con la BD y Gemini reales; los avisos a las áreas solo se registra
 prompts de la BD (incluidas las personas), nombres internos, código o, en el web, áreas internas. Ejecútalo tras
 cambiar los prompts. Los mensajes fijos no cuentan como prompts: se muestran al usuario.
 
-### Baterías de comportamiento
+### Variedad de los saludos
 
 ```bash
-uv run python -m src.cli.behavior_check --scope external
-uv run python -m src.cli.behavior_check --scope external --faqs 1,2 --procedure 1 --paraphrase "¿cuánto cuesta levantar la prenda?"
 uv run python -m src.cli.behavior_check --scope internal --variety 5
+uv run python -m src.cli.behavior_check --scope external --variety 5
 ```
 
-Ejecuta contra la BD y Gemini (dentro del pod o en local) la batería de clasificación de las specs 002 y 003 (saludos,
-cierres, fuera de tema, preguntas sobre el asistente y consultas) y, con `--faqs`, `--procedure` y `--paraphrase`, la de
-elección de opciones sobre una pregunta con esas tres opciones. Con `--variety N` envía N saludos en conversaciones
-nuevas y exige al menos 3 textos distintos de cada 5. No envía avisos a las áreas. Termina con código 1 si algún caso
-falla.
+Envía N saludos en conversaciones nuevas, contra la BD y Gemini (dentro del pod o en local), y exige al menos 3 textos
+distintos de cada 5. No envía avisos a las áreas. El tono del coordinador se acepta en una demo manual (spec 004).
 
 En el chat web, mientras se ofrece un ejecutivo, el cliente puede aceptar o rechazar escribiendo («ok», «no, gracias»)
-además de con `human_response`; un saludo, un cierre, un fuera de tema o una pregunta sobre el asistente no cancelan la
-oferta ni la petición de datos.
+además de con `human_response`; cualquier otro mensaje no cancela la oferta ni la petición de datos.
 
 ## Ejecución
 

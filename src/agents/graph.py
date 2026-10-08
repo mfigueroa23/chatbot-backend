@@ -189,9 +189,10 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if pending is not None:
             # Un procedimiento en curso sigue en su área aunque el agente del canal elija otra.
             return turn | {"area_tasks": [task(areas[pending.area_id], pending.id)]}
-        if decision.kind == "delegate":
+        if decision.kind in ("delegate", "no_answer"):
             chosen = [areas[area_id] for area_id in dict.fromkeys(decision.area_ids) if area_id in areas]
-            # Si el agente del canal no elige áreas válidas, se delega en las que tienen coincidencias.
+            # Si el agente del canal no elige áreas válidas, o no delega pese a haber FAQ o procedimientos sobre el
+            # umbral de respuesta, se delega en las áreas con coincidencias: el agente del área decide si responde.
             return turn | {"area_tasks": [task(area) for area in chosen or own]}
         return turn
 

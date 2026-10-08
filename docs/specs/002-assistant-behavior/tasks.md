@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 31/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 32/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -102,7 +102,7 @@ El grafo nuevo se construye como `build_coordinator_graph` en `src/agents/graph.
   Catálogo; `asyncio.gather` de `llm.coordinate` y `refresh_stale_embeddings` + `scope_signals`; niveles 2, 3 y 5 de RF-39 (manipulación, persona, mixta); reinicio de los campos por turno.
   Hecho cuando: `uv run pytest -q tests/coordinator_graph_test.py -k coordinate` pasa, con un doble que demuestra que las dos tareas se lanzan antes de que termine la primera.
 - [x] **T-28 — Implementar `route` y `area_agent` con `Send`** · RF-52, RF-55, RF-57, RF-58 · ~30 min
-  Nivel 9: `area_ids` ∩ áreas activas con prompt, respaldo con `own_area_ids`; `area_agent` hace `search_area` y `run_sub_agent`.
+  Nivel 9: `area_ids` ∩ áreas activas con prompt, respaldo con `own_area_ids` (también si el agente del canal responde `no_answer`, decisión tras T-33); `area_agent` hace `search_area` y `run_sub_agent`.
   Hecho cuando: `uv run pytest -q tests/coordinator_graph_test.py -k route` pasa con dos áreas atendidas en el mismo superpaso y el respaldo.
 - [x] **T-29 — Implementar `finalize` para respuestas y procedimientos** · RF-46, RF-47, RF-48, RF-59, RF-60 · ~30 min
   Prioridad de `notification_failed`; procedimiento `ask` guarda `pending_*`; `sent`, `failed`, `gave_up` como hoy; `combine` y auditor por texto; sin respuestas ⇒ `no_answer`; memoria.
@@ -116,7 +116,7 @@ El grafo nuevo se construye como `build_coordinator_graph` en `src/agents/graph.
 - [x] **T-32 — Portar los casos de la spec 001 a `agent_graph_test.py`** · RF-47, RF-48, RNF-1, RNF-4 · ~30 min
   Mover `tests/coordinator_graph_test.py` a `tests/agent_graph_test.py` y añadir memoria e hilos aislados, seguimiento con contexto, guardarraíl, auditor, web sin contenido interno y recuento de llamadas (FAQ = 2; dos áreas = 3; nunca más de 1 + 4 por área).
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py` pasa y `tests/coordinator_graph_test.py` ya no existe.
-- [ ] **T-33 — Medir la latencia local con 50 sesiones** · RNF-2 · ~30 min
+- [x] **T-33 — Medir la latencia local con 50 sesiones** · RNF-2 · ~30 min
   Mismas condiciones que la medición de T-100 de la spec 001 (local, `gemini-3.1-flash-lite`, 50 WebSocket con preguntas respondibles por FAQ). Registrar p50, p95 y máximo en R3 del plan y avisar al usuario antes de seguir.
   Hecho cuando: R3 del plan contiene la medición con fecha y el usuario respondió si se sigue.
 

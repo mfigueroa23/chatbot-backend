@@ -200,6 +200,15 @@ async def test_route_respaldo_con_las_areas_que_tienen_coincidencias():
 
 
 @pytest.mark.anyio
+async def test_route_respaldo_tambien_si_el_agente_del_canal_no_delega():
+    llm = FakeAgentLLM(coordinator=[CoordinatorReply("no_answer")], steps={"Créditos": [FinalText("Hasta 48 meses")]})
+
+    result = await run(llm)
+
+    assert result.outcome == "answered" and llm.step_calls == 1
+
+
+@pytest.mark.anyio
 async def test_route_sin_areas_va_a_finalize_sin_llamar_a_agentes_de_area():
     llm = FakeAgentLLM(coordinator=[CoordinatorReply("no_answer")])
 

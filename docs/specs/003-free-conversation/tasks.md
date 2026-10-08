@@ -1,6 +1,6 @@
 # Tareas 003 — Conversación libre en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 6/31 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 11/31 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. "Grafo interno" es `build_graph(AreaScope.internal)`
@@ -32,19 +32,19 @@ y "grafo web" es `build_graph(AreaScope.external)`. T-30 y T-31 se añadieron al
   Hecho cuando: `uv run pytest -q tests/audit_test.py -k personal_data` pasa con cada tipo y con un texto limpio que menciona montos y fechas.
 
 ## Fase 3 — Modelo (`src/agents/llm.py`)
-- [ ] **T-6 — Añadir `text` y `about_assistant` a la decisión del agente del canal** · RF-11, RF-12, RF-21 · ~20 min
+- [x] **T-6 — Añadir `text` y `about_assistant` a la decisión del agente del canal** · RF-11, RF-12, RF-21 · ~20 min
   `CoordinatorKind` con `about_assistant`; `text` en `CoordinatorOutput` y `CoordinatorReply`; la descripción de `kind` distingue identidad de manipulación y trata «avisa al área / que lo vea una persona» como `wants_human`.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k coordinate` pasa con `about_assistant` y con `text`, y la descripción contiene «IA» y «avisar al área».
-- [ ] **T-7 — Añadir la persona a los mensajes del agente del canal y de los agentes de área** · RF-4, RF-33, RNF-3 · ~20 min
+- [x] **T-7 — Añadir la persona a los mensajes del agente del canal y de los agentes de área** · RF-4, RF-33, RNF-3 · ~20 min
   Parámetro `persona: str | None` en `build_coordinator_messages` (con la instrucción de redactar `text`) y en `build_area_messages`; sin persona, los mensajes no cambian.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k persona` pasa con y sin persona en ambos constructores.
-- [ ] **T-8 — Crear `converse` y `build_converse_messages`** · RF-7, RF-8, RF-15, RF-25 · ~30 min
+- [x] **T-8 — Crear `converse` y `build_converse_messages`** · RF-7, RF-8, RF-15, RF-25 · ~30 min
   `AgentLLM.converse(messages) -> str` con `ConverseOutput(text)`; con temas: pregunta natural que los propone en ese orden, sin numeración impuesta; sin temas: respuesta libre breve, aviso de no oficial si el tema es de Autofin, sin datos personales y con la cláusula de seguridad.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k converse` pasa con y sin temas, comprueba el orden de los temas y la conversión de la salida.
-- [ ] **T-9 — Pasar la temperatura a `gemini_chat`** · RNF-4 · ~15 min
+- [x] **T-9 — Pasar la temperatura a `gemini_chat`** · RNF-4 · ~15 min
   `build_gemini_llm(session, temperature=0.0)` y `gemini_chat(model, api_key, timeout, temperature)`; la temperatura forma parte de la clave de `lru_cache`.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k temperature` pasa y dos temperaturas distintas dan clientes distintos.
-- [ ] **T-10 — Ampliar los dobles del modelo** · (habilita RF-5 a RF-30) · ~15 min
+- [x] **T-10 — Ampliar los dobles del modelo** · (habilita RF-5 a RF-30) · ~15 min
   En `tests/fakes.py`: `FakeAgentLLM.converse` guionizado con contador `converse_calls`, incluido en `calls`.
   Hecho cuando: la suite sigue en verde y `uv run pytest -q tests/gemini_llm_test.py` no cambia de resultado.
 

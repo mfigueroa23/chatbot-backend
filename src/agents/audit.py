@@ -5,6 +5,7 @@ GENERIC_REFUSAL = "Solo puedo ayudarte con consultas de las áreas de este canal
 INTERNAL_NAMES = [
     "faq_ids", "procedure_id", "wants_human", "no_answer", "manipulation", "area_ids", "chosen_options", "accept_offer",
     "decline_offer", "off_topic", "buscar_faq", "buscar_procedimiento", "iniciar_procedimiento", "procedimiento_id",
+    "about_assistant",
 ]
 # Un fragmento de este largo copiado de un prompt ya revela su contenido.
 LEAK_FRAGMENT_LENGTH = 30

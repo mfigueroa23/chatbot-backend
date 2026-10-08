@@ -1,6 +1,6 @@
 # Tareas 003 — Conversación libre en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 15/31 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 19/31 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. "Grafo interno" es `build_graph(AreaScope.internal)`
@@ -63,16 +63,16 @@ y "grafo web" es `build_graph(AreaScope.external)`. T-30 y T-31 se añadieron al
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k web_conversacional` pasa.
 
 ## Fase 5 — Grafo: `finalize` conversacional
-- [ ] **T-15 — Redactar la aclaración con los temas candidatos** · RF-7, RF-9, RF-10, RF-33 · ~30 min
+- [x] **T-15 — Redactar la aclaración con los temas candidatos** · RF-7, RF-9, RF-10, RF-33 · ~30 min
   En ambos canales, sin respuestas, con candidatos y `can_clarify`: `converse` con las etiquetas de `build_options` en su orden; guarda la `Clarification`; texto vacío ⇒ plantilla de la spec 002; la elección se reconoce por texto.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k aclaracion_redactada` pasa con texto redactado, texto vacío y elección «la del seguro» en el turno siguiente.
-- [ ] **T-16 — Dar la respuesta libre en lugar de "sin respuesta"** · RF-13, RF-14, RF-16, RF-18, RF-29, RF-34 · ~30 min
+- [x] **T-16 — Dar la respuesta libre en lugar de "sin respuesta"** · RF-13, RF-14, RF-16, RF-18, RF-29, RF-34 · ~30 min
   Solo en el grafo interno, sin candidatos o con opciones pendientes sin elección: `converse` sin temas y outcome `free_answer`; nunca la pregunta de áreas; con FAQ sobre el umbral responde la FAQ. En el grafo web sigue la pregunta de áreas y `no_answer`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k respuesta_libre` pasa con los cuatro casos y el del web.
-- [ ] **T-17 — Auditar la respuesta libre y guardarla** · RF-24, RF-25, RF-30, RNF-1 · ~25 min
+- [x] **T-17 — Auditar la respuesta libre y guardarla** · RF-24, RF-25, RF-30, RNF-1 · ~25 min
   Auditor y `personal_data_leaks` sobre la respuesta libre (fuga o dato personal ⇒ respaldo sin datos); el texto queda en la memoria; `converse` solo cuando ninguna área responde.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "libre_auditada or libre_memoria or llamadas_converse"` pasa.
-- [ ] **T-18 — Ofrecer avisar al área cuando un procedimiento se agota** · RF-27, RF-31 · ~20 min (depende de T-1)
+- [x] **T-18 — Ofrecer avisar al área cuando un procedimiento se agota** · RF-27, RF-31 · ~20 min (depende de T-1)
   En el grafo interno, `gave_up` llama a `converse` con la instrucción de procedimiento agotado (sin los datos entregados), responde ese texto auditado y no deja el resultado como `no_answer`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k procedimiento_agotado_interno` pasa y el orquestador no avisa al área en ese caso.
 

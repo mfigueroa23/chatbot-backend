@@ -16,6 +16,9 @@ CLARIFY_AREAS = "¿Con qué necesitas ayuda?"
 AREAS_LINE = "Puedo ayudarte con temas de: {names}."
 OTHER_PROCEDURES = "También elegiste: {names}. Pídemelo cuando terminemos este trámite."
 PARTIAL_ANSWER = "No encontré información sobre: {names}."
+# Respaldos del canal interno cuando la respuesta redactada no llega o no puede enviarse: no avisan al área, lo ofrecen.
+FREE_ANSWER_FALLBACK = "No tengo información oficial sobre eso. Si quieres, puedo avisar al área para que lo revise una persona."
+PROCEDURE_EXHAUSTED = "No pude validar los datos de «{name}». Si quieres, puedo avisar al área para que lo revise una persona."
 
 @dataclass(frozen=True)
 class Candidate:

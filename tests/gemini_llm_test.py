@@ -254,6 +254,15 @@ def test_converse_messages_sin_persona_no_la_incluyen():
     assert "Persona" not in str(messages[0].content)
 
 
+
+def test_converse_messages_procedimiento_agotado_ofrecen_avisar_al_area():
+    messages = build_converse_messages("Tono cercano.", "Prompt del canal", [], [], [], "Mi RUT es 123", 20,
+                                       exhausted_procedure="Copia de liquidación")
+    system = str(messages[0].content)
+
+    assert "«Copia de liquidación»" in system and "avisar al área" in system
+    assert "No hay información oficial" not in system
+
 @pytest.mark.anyio
 async def test_converse_devuelve_el_texto_de_la_salida():
     llm = GeminiAgentLLM(cast(BaseChatModel, StructuredChat(ConverseOutput(text="Te cuento lo que sé."))))

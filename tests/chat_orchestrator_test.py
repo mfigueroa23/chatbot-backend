@@ -7,7 +7,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents import strategies
-from src.agents.behavior import Candidate
+from src.agents.behavior import FREE_ANSWER_FALLBACK, Candidate
 from src.agents.audit import GENERIC_REFUSAL
 from src.agents.graph import AgentContext, Catalog, build_graph
 from src.agents.llm import AreaInfo, CoordinatorReply, FaqHit
@@ -117,17 +117,27 @@ async def test_internal_mixta_pide_reformular(monkeypatch: pytest.MonkeyPatch, n
 
 
 @pytest.mark.anyio
-async def test_internal_sin_respuesta_avisa_al_area(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
+async def test_internal_sin_respuesta_responde_libre_sin_avisar_al_area(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
+    # Spec 003: en Google Chat no hay pregunta de áreas ni aviso automático; se responde libre (RF-16, RF-28).
     use_llm(monkeypatch, FakeAgentLLM(AgentReply("no_answer", "")), FakeRetriever([SALARY]))
     graph = build_graph(AreaScope.internal, InMemorySaver())
 
     first = await ask("Necesito ayuda", graph)
-    assert first.startswith("¿Con qué necesitas ayuda?") and notifier.sent == []
-
     reply = await ask(graph=graph)
 
-    assert "te contactará a la brevedad" in reply
-    assert notifier.sent[0][0] == "spaces/RRHH"
+    assert first == reply == FREE_ANSWER_FALLBACK
+    assert notifier.sent == []
+
+
+@pytest.mark.anyio
+async def test_internal_procedimiento_agotado_no_avisa_al_area(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
+    use_llm(monkeypatch, FakeAgentLLM(procedure(9, documento="abc")), FakeRetriever(procedures=[LOAD]))
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    replies = [await ask("Cargar el documento abc", graph) for _ in range(3)]
+
+    assert "«Cargar documento»" in replies[-1] and "avisar al área" in replies[-1]
+    assert notifier.sent == []
 
 
 @pytest.mark.anyio

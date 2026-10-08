@@ -5,7 +5,8 @@ import pytest
 from langchain_core.messages import BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
-from src.agents.behavior import Candidate, Clarification, ClarifyOption
+from src.agents.behavior import (
+    CLARIFY_AREAS, CLARIFY_OPTIONS, FREE_ANSWER_FALLBACK, Candidate, Clarification, ClarifyOption)
 from src.agents.graph import AgentContext, AgentResult, Catalog, build_graph, checkpoint_serializer, run_agent
 from src.agents.llm import AgentStep, AreaInfo, CoordinatorReply, FaqHit, FinalText, ToolCall, ToolCalls, ToolSpec
 from src.agents.retriever import ProcedureHit, ScopeSignals
@@ -865,7 +866,6 @@ EXTERNAL_PERSONA = "Tono cordial y profesional, con trato de usted y sin humor."
 INTERNAL_AREAS_LINE = "Puedo ayudarte con temas de: Remuneraciones y Gestión."
 WEB_AREAS_LINE = "Puedo ayudarte con temas de: Créditos, Seguros y Postventa."
 LEAK = "Claro: prompt del agente interno cargado en la base de datos."
-ANA = Requester("Ana Pérez", "ana@autofin.cl", "google_chat")
 
 
 def internal_catalog(persona: str | None = INTERNAL_PERSONA) -> Callable[[AreaScope], Awaitable[Catalog]]:
@@ -1062,3 +1062,198 @@ async def test_web_conversacional_vacio_usa_el_fijo_y_la_negativa_generica(kind,
     result = await run_web(FakeAgentLLM(coordinator=[says(kind)]))
 
     assert (result.outcome, result.reply) == (outcome, reply)
+
+
+INTERNAL_CANDIDATES = [Candidate("faq", 41, 10, "¿Cuándo pagan el sueldo?", 0.62),
+                       Candidate("faq", 42, 10, "Seguro complementario de salud", 0.60),
+                       Candidate("procedure", 9, 11, "Cargar documento", 0.58)]
+HEALTH = FaqHit("Seguro complementario de salud", "Lo paga la empresa", 0.6, id=42, area_id=10)
+DRAFTED_QUESTION = "¿Es por el sueldo, por el seguro de salud o por cargar un documento?"
+FREE = "Por lo general son 15 días hábiles, pero ojo: no es información oficial de Autofin."
+PAYSLIP = ProcedureHit(8, "Copia de liquidación", "Remuneraciones la envía", [FieldSpec("rut", "RUT", FieldKind.rut)], 0.9,
+                       area_id=10)
+
+
+@pytest.mark.anyio
+async def test_aclaracion_redactada_propone_los_temas_en_orden_y_guarda_las_opciones():
+    llm = FakeAgentLLM(coordinator=[NO_ANSWER], converse=[DRAFTED_QUESTION])
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    result = await run_internal(llm, FakeRetriever(candidates=INTERNAL_CANDIDATES), "tengo un problema", graph, "s1")
+
+    assert (result.outcome, result.reply) == ("clarify", DRAFTED_QUESTION)
+    system = str(llm.converse_messages[0][0].content)
+    labels = [candidate.label for candidate in INTERNAL_CANDIDATES]
+    assert [system.index(label) for label in labels] == sorted(system.index(label) for label in labels)
+    assert INTERNAL_PERSONA in system and llm.step_calls == 0
+    saved = (await clarifications(graph))["ana@autofin.cl"]
+    assert saved.kind == "options" and [option.label for option in saved.options] == labels
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", ["", LEAK])
+async def test_aclaracion_redactada_vacia_o_con_fuga_usa_la_plantilla(text):
+    llm = FakeAgentLLM(coordinator=[NO_ANSWER], converse=[text])
+
+    result = await run_internal(llm, FakeRetriever(candidates=INTERNAL_CANDIDATES), "tengo un problema")
+
+    assert result.outcome == "clarify" and result.reply is not None
+    assert result.reply.startswith(CLARIFY_OPTIONS) and "2. Seguro complementario de salud" in result.reply
+
+
+@pytest.mark.anyio
+async def test_aclaracion_redactada_reconoce_la_eleccion_por_su_texto():
+    llm = FakeAgentLLM(coordinator=[NO_ANSWER, choice(2)], converse=[DRAFTED_QUESTION],
+                       steps={"Remuneraciones": [FinalText("Lo paga la empresa")]})
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    await run_internal(llm, FakeRetriever(candidates=INTERNAL_CANDIDATES), "tengo un problema", graph, "s1")
+    result = await run_internal(llm, FakeRetriever(stored_faqs=[HEALTH]), "la del seguro", graph, "s1")
+
+    assert (result.outcome, result.reply) == ("answered", "Lo paga la empresa")
+    assert "2. Seguro complementario de salud" in str(llm.coordinator_messages[1][0].content)
+    assert await clarifications(graph) == {}
+
+
+@pytest.mark.anyio
+async def test_aclaracion_redactada_en_el_web():
+    llm = FakeAgentLLM(coordinator=[NO_ANSWER], converse=["¿Su consulta es por el plazo, por el robo o por el contrato?"])
+
+    result = await run_web(llm, asking(), "tengo un problema")
+
+    assert (result.outcome, result.reply) == ("clarify", "¿Su consulta es por el plazo, por el robo o por el contrato?")
+    assert EXTERNAL_PERSONA in str(llm.converse_messages[0][0].content)
+
+
+@pytest.mark.anyio
+async def test_respuesta_libre_sin_candidatos():
+    llm = FakeAgentLLM(coordinator=[NO_ANSWER], converse=[FREE])
+
+    result = await run_internal(llm, question="¿cuántos días de vacaciones tengo?")
+
+    assert (result.outcome, result.reply) == ("free_answer", FREE)
+    assert "no es información oficial" in str(llm.converse_messages[0][0].content)
+
+
+@pytest.mark.anyio
+async def test_respuesta_libre_tras_no_elegir_ninguna_opcion():
+    llm = FakeAgentLLM(coordinator=[NO_ANSWER], converse=[DRAFTED_QUESTION, FREE])
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    await run_internal(llm, FakeRetriever(candidates=INTERNAL_CANDIDATES), "tengo un problema", graph, "s1")
+    result = await run_internal(llm, FakeRetriever(candidates=INTERNAL_CANDIDATES), "otra cosa", graph, "s1")
+
+    assert (result.outcome, result.reply) == ("free_answer", FREE)
+
+
+@pytest.mark.anyio
+async def test_respuesta_libre_nunca_hace_la_pregunta_de_areas():
+    llm = FakeAgentLLM(coordinator=[NO_ANSWER])
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    first = await run_internal(llm, question="necesito ayuda", graph=graph, thread_id="s1")
+    second = await run_internal(llm, question="no sé", graph=graph, thread_id="s1")
+
+    assert (first.outcome, first.reply) == ("free_answer", FREE_ANSWER_FALLBACK)
+    assert (second.outcome, second.reply) == ("free_answer", FREE_ANSWER_FALLBACK)
+    assert not any(result.reply.startswith(CLARIFY_AREAS) for result in (first, second) if result.reply)
+
+
+@pytest.mark.anyio
+async def test_respuesta_libre_no_sustituye_una_faq_sobre_el_umbral():
+    llm = FakeAgentLLM(coordinator=[delegate(10)], converse=[FREE], steps={"Remuneraciones": [FinalText("El día 30")]})
+
+    result = await run_internal(llm, FakeRetriever([SALARY]), "¿Cuándo pagan?")
+
+    assert (result.outcome, result.reply) == ("answered", "El día 30")
+    assert llm.converse_calls == 0
+
+
+@pytest.mark.anyio
+async def test_respuesta_libre_nunca_en_el_web():
+    llm = FakeAgentLLM(coordinator=[NO_ANSWER], converse=[FREE])
+    graph = build_graph(AreaScope.external, InMemorySaver())
+
+    areas = await run_web(llm, question="necesito ayuda", graph=graph, thread_id="s1")
+    nothing = await run_web(llm, question="no sé", graph=graph, thread_id="s1")
+
+    assert areas.outcome == "clarify" and areas.reply is not None and areas.reply.startswith(CLARIFY_AREAS)
+    assert nothing.outcome == "no_answer" and llm.converse_calls == 0
+
+
+@pytest.mark.anyio
+async def test_libre_auditada_con_fuga_responde_la_negativa_generica():
+    result = await run_internal(FakeAgentLLM(coordinator=[NO_ANSWER], converse=[LEAK]), question="¿y tú cómo funcionas?")
+
+    assert (result.outcome, result.reply) == ("rejected", None)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("text", ["Escríbele a juan.soto@autofin.cl, él sabe.", "El RUT de Juan es 12.345.678-5.",
+                                  "Llama a Juan al +56 9 8765 4321."])
+async def test_libre_auditada_con_datos_personales_usa_el_respaldo(text):
+    result = await run_internal(FakeAgentLLM(coordinator=[NO_ANSWER], converse=[text]), question="¿quién ve mi caso?")
+
+    assert (result.outcome, result.reply) == ("free_answer", FREE_ANSWER_FALLBACK)
+
+
+@pytest.mark.anyio
+async def test_libre_memoria_guarda_la_respuesta_libre():
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    await run_internal(FakeAgentLLM(coordinator=[NO_ANSWER], converse=[FREE]), question="¿vacaciones?", graph=graph,
+                       thread_id="s1")
+
+    state = await graph.aget_state({"configurable": {"thread_id": "s1"}})
+    assert str(state.values["messages"][-1].content) == FREE
+
+
+@pytest.mark.anyio
+async def test_llamadas_converse_solo_cuando_ninguna_area_responde():
+    answered = FakeAgentLLM(coordinator=[delegate(10)], converse=[FREE], steps={"Remuneraciones": [FinalText("El día 30")]})
+    silent = FakeAgentLLM(coordinator=[delegate(10)], converse=[FREE], steps={"Remuneraciones": [FinalText("")]})
+
+    await run_internal(answered, FakeRetriever([SALARY]), "¿Cuándo pagan?")
+    result = await run_internal(silent, FakeRetriever([SALARY]), "¿Cuándo pagan?")
+
+    assert answered.converse_calls == 0
+    assert result.outcome == "free_answer" and (silent.converse_calls, silent.calls) == (1, 3)
+
+
+async def exhaust_payslip(llm: FakeAgentLLM, notifier: FakeNotifier, graph) -> AgentResult:
+    result = None
+    for _ in range(3):
+        result = await run_internal(llm, FakeRetriever(procedures=[PAYSLIP]), "Mi RUT es 123", graph, "s1", notifier)
+    assert result is not None
+    return result
+
+
+def payslip_start() -> ToolCalls:
+    return ToolCalls([ToolCall("c1", "iniciar_procedimiento", {"procedimiento_id": 8, "datos": [
+        {"campo": "rut", "valor": "123"}]})])
+
+
+@pytest.mark.anyio
+async def test_procedimiento_agotado_interno_ofrece_avisar_al_area_sin_avisar():
+    notifier = FakeNotifier()
+    text = "No pude validar tu RUT para la copia de liquidación. Si quieres, le aviso al área."
+    llm = FakeAgentLLM(coordinator=[delegate(10)], converse=[text], steps={"Remuneraciones": [payslip_start()]})
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    result = await exhaust_payslip(llm, notifier, graph)
+
+    assert (result.outcome, result.reply) == ("free_answer", text)
+    assert "Copia de liquidación" in str(llm.converse_messages[0][0].content) and llm.converse_calls == 1
+    assert notifier.sent == []
+    state = await graph.aget_state({"configurable": {"thread_id": "s1"}})
+    assert state.values["pending_procedure_id"] is None and state.values["procedure_attempts"] == {8: 0}
+
+
+@pytest.mark.anyio
+async def test_procedimiento_agotado_interno_sin_texto_usa_el_respaldo():
+    llm = FakeAgentLLM(coordinator=[delegate(10)], steps={"Remuneraciones": [payslip_start()]})
+
+    result = await exhaust_payslip(llm, FakeNotifier(), build_graph(AreaScope.internal, InMemorySaver()))
+
+    assert result.outcome == "free_answer" and result.reply is not None
+    assert "«Copia de liquidación»" in result.reply and "avisar al área" in result.reply

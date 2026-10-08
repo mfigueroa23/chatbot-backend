@@ -1,19 +1,19 @@
 # Tareas 005 — Archivos adjuntos, consulta de Jira y EDR en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 0/22 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 3/22 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a Google
 ni a Jira: los clientes HTTP reciben un `httpx.MockTransport`. Cada pieza nueva entra con parámetros por defecto que no
 cambian el comportamiento vigente hasta que se conecta.
 
 ## Fase 1 — Datos y dependencias
-- [ ] **T-1 — Añadir las librerías de Office** · (habilita RF-1) · ~10 min
+- [x] **T-1 — Añadir las librerías de Office** · (habilita RF-1) · ~10 min
   `uv add python-docx openpyxl python-pptx` (aprobadas en R2 del plan).
   Hecho cuando: `uv run python -c "import docx, openpyxl, pptx"` termina con 0 y la suite sigue verde.
-- [ ] **T-2 — Crear los modelos de acceso y de EDR** · RF-23, RF-27 · ~20 min
+- [x] **T-2 — Crear los modelos de acceso y de EDR** · RF-23, RF-27 · ~20 min
   `JiraBoard`, `ProjectCollaborator` y `EdrDocumentRecord` en `src/models/`; `BusinessArea.tools` (`text[]`, por defecto vacío).
   Hecho cuando: `uv run pyright` da 0 errores y `uv run python -c "import src.models.jira_board, src.models.project_collaborator, src.models.edr_document"` termina con 0.
-- [ ] **T-3 — Crear la migración del esquema** · RF-23, RF-27 · ~20 min
+- [x] **T-3 — Crear la migración del esquema** · RF-23, RF-27 · ~20 min
   `uv run alembic revision --autogenerate -m "add jira access and edr documents"`, revisada a mano (índice de `conversation_id`, `server_default` de `tools`).
   Hecho cuando: en local `uv run alembic upgrade head`, `downgrade -1` y otra vez `upgrade head` terminan sin error.
 

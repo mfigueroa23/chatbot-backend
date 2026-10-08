@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 15/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 20/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -63,19 +63,19 @@ referencia de los agentes de área está en `git show 60a517e^:src/agents/{sub_a
   Hecho cuando: `uv run pytest -q tests/retriever_test.py -k "area_faqs or area_procedures or get_faq"` pasa, incluida una FAQ inactiva que devuelve `None`.
 
 ## Fase 4 — Modelo (`src/agents/llm.py`)
-- [ ] **T-17 — Crear `CoordinatorOutput` y `GeminiAgentLLM.coordinate`** · RF-5, RF-7, RF-8, RF-23, RF-30, RF-31, RF-35, RF-49, RF-51 · ~25 min
+- [x] **T-17 — Crear `CoordinatorOutput` y `GeminiAgentLLM.coordinate`** · RF-5, RF-7, RF-8, RF-23, RF-30, RF-31, RF-35, RF-49, RF-51 · ~25 min
   Kinds de la sección 2 del plan, `area_ids`, `chosen_options` y descripciones con las reglas de la spec; conversión a `CoordinatorReply`; `temperature=0`, `thinking_budget=0`.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k coordinate` pasa con un modelo doble que devuelve cada kind.
-- [ ] **T-18 — Crear `build_coordinator_messages`** · RF-34, RF-41, RF-42, RF-50 · ~25 min
+- [x] **T-18 — Crear `build_coordinator_messages`** · RF-34, RF-41, RF-42, RF-50 · ~25 min
   Áreas con nombre y descripción, sin FAQ ni procedimientos; etiquetas de las opciones pendientes del usuario; líneas de oferta y de procedimiento en curso solo si aplican.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k coordinator_messages` pasa y ningún texto de respuesta de FAQ aparece en los mensajes.
-- [ ] **T-19 — Recuperar `ToolSpec`, `AgentStep` y `GeminiAgentLLM.step`** · (habilita RF-55) · ~25 min [P]
+- [x] **T-19 — Recuperar `ToolSpec`, `AgentStep` y `GeminiAgentLLM.step`** · (habilita RF-55) · ~25 min [P]
   Desde `60a517e^:src/agents/llm.py`: `bind_tools`, `ToolCalls`/`FinalText` y conversión de `tool_calls`.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k step` pasa con una respuesta con tool calls y otra final.
-- [ ] **T-20 — Crear `build_area_messages`** · RF-49, RF-57 · ~20 min
+- [x] **T-20 — Crear `build_area_messages`** · RF-49, RF-57 · ~20 min
   Prompt del área, `area_rules`, lo encontrado, lo elegido, el procedimiento en curso y la regla de responder en español.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k area_messages` pasa y el prompt de otra área no aparece en los mensajes.
-- [ ] **T-21 — Ampliar los dobles del modelo y del recuperador** · (habilita todos los tests de grafo) · ~25 min
+- [x] **T-21 — Ampliar los dobles del modelo y del recuperador** · (habilita todos los tests de grafo) · ~25 min
   En `tests/fakes.py`: `FakeAgentLLM` guioniza `coordinate` y `step` por área y cuenta llamadas por tipo; traduce los `AgentReply` antiguos (`answer`, `procedure`, `manipulation`…) a guiones nuevos; `FakeRetriever` con señales y búsquedas por área.
   Hecho cuando: la suite sigue en verde y `uv run pytest -q tests/gemini_llm_test.py` no cambia de resultado.
 

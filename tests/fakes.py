@@ -3,8 +3,10 @@ from datetime import UTC, datetime, timedelta
 from typing import cast
 from langchain_core.messages import BaseMessage
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agents.llm import AgentReply, FaqHit
-from src.agents.retriever import Knowledge, ProcedureHit
+import re
+from src.agents.behavior import Candidate
+from src.agents.llm import AgentReply, AgentStep, CoordinatorReply, FaqHit, FinalText, ToolCall, ToolCalls, ToolSpec
+from src.agents.retriever import AreaKnowledge, Knowledge, ProcedureHit, ScopeSignals
 from src.models.business_area import AreaScope
 from src.models.executive import Executive
 from src.models.executive_session import ExecutiveSession
@@ -54,17 +56,61 @@ def property_session(values: dict[str, str]) -> AsyncSession:
     return cast(AsyncSession, PropertySession(values))
 
 
-class FakeAgentLLM:
-    """Devuelve respuestas estructuradas guionizadas (una por mensaje) y cuenta las llamadas al modelo."""
+AREA_HEADER = re.compile(r"### Área: (.+)")
 
-    def __init__(self, *replies: AgentReply):
+
+class FakeAgentLLM:
+    """Guioniza el modelo y cuenta sus llamadas.
+
+    Las respuestas de la llamada única (AgentReply) también sirven para el grafo de agentes de área: el agente del
+    canal delega (o marca manipulación o persona) y cada agente de área responde con el texto o inicia el procedimiento.
+    `coordinator` y `steps` (por nombre de área) guionizan el grafo nuevo de forma explícita.
+    """
+
+    def __init__(self, *replies: AgentReply, coordinator: list[CoordinatorReply] | None = None,
+                 steps: dict[str, list[AgentStep]] | None = None):
         self.replies = list(replies) or [AgentReply("no_answer", "")]
+        self.coordinator = list(coordinator or [])
+        self.steps = {area: list(script) for area, script in (steps or {}).items()}
         self.calls = 0
+        self.coordinator_calls = 0
+        self.step_calls = 0
         self.messages: list[list[BaseMessage]] = []
+        self.coordinator_messages: list[list[BaseMessage]] = []
+        self.step_messages: list[list[BaseMessage]] = []
+        self.current: AgentReply | None = None
 
     async def respond(self, messages: list[BaseMessage]) -> AgentReply:
         self.calls += 1
         self.messages.append(list(messages))
+        return self.next_reply()
+
+    async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
+        self.coordinator_calls += 1
+        self.coordinator_messages.append(list(messages))
+        if self.coordinator:
+            return self.coordinator.pop(0) if len(self.coordinator) > 1 else self.coordinator[0]
+        self.current = self.next_reply()
+        if self.current.kind in ("manipulation", "wants_human"):
+            return CoordinatorReply(self.current.kind)
+        # Sin áreas: el grafo delega en las áreas con coincidencias, como hacía la búsqueda de la llamada única.
+        return CoordinatorReply("delegate")
+
+    async def step(self, messages: list[BaseMessage], tools: list[ToolSpec]) -> AgentStep:
+        self.step_calls += 1
+        self.step_messages.append(list(messages))
+        match = AREA_HEADER.search(str(messages[0].content)) if messages else None
+        script = self.steps.get(match.group(1)) if match else None
+        if script:
+            return script.pop(0) if len(script) > 1 else script[0]
+        reply = self.current or self.replies[0]
+        if reply.kind == "procedure" and reply.procedure_id is not None:
+            data = [{"campo": name, "valor": value} for name, value in reply.data.items()]
+            call = ToolCall("call-1", "iniciar_procedimiento", {"procedimiento_id": reply.procedure_id, "datos": data})
+            return ToolCalls([call], reply.text)
+        return FinalText(reply.text if reply.kind == "answer" else "")
+
+    def next_reply(self) -> AgentReply:
         return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]
 
 
@@ -92,14 +138,40 @@ class FakeEmbedder:
 
 class FakeRetriever:
     def __init__(self, faqs: list[FaqHit] | None = None, procedures: list[ProcedureHit] | None = None,
-                 other_scope_match: bool = False, stored: list[ProcedureHit] | None = None):
+                 other_scope_match: bool = False, stored: list[ProcedureHit] | None = None,
+                 candidates: list[Candidate] | None = None, stored_faqs: list[FaqHit] | None = None):
         self.faqs = faqs or []
         self.procedures = procedures or []
-        # Procedimientos que existen en la BD aunque la búsqueda de este mensaje no los devuelva.
+        # Procedimientos y FAQ que existen en la BD aunque la búsqueda de este mensaje no los devuelva.
         self.stored = (stored or []) + self.procedures
+        self.stored_faqs = (stored_faqs or []) + self.faqs
         self.other_scope_match = other_scope_match
+        self.candidates = candidates or []
         self.searches: list[tuple[AreaScope, str]] = []
+        self.area_searches: list[int] = []
+        self.tool_searches: list[tuple[int, str]] = []
         self.refreshed_area_ids: list[int] = []
+
+    async def scope_signals(self, scope: AreaScope, query: str) -> ScopeSignals:
+        self.searches.append((scope, query))
+        own = [item.area_id for item in [*self.faqs, *self.procedures]]
+        return ScopeSignals([0.1] * 768, list(dict.fromkeys(own)), list(self.candidates), self.other_scope_match)
+
+    async def search_area(self, area_id: int, embedding: list[float]) -> AreaKnowledge:
+        self.area_searches.append(area_id)
+        return AreaKnowledge([f for f in self.faqs if f.area_id == area_id],
+                             [p for p in self.procedures if p.area_id == area_id])
+
+    async def search_area_faqs(self, area_id: int, query: str) -> list[FaqHit]:
+        self.tool_searches.append((area_id, query))
+        return [f for f in self.faqs if f.area_id == area_id]
+
+    async def search_area_procedures(self, area_id: int, query: str) -> list[ProcedureHit]:
+        self.tool_searches.append((area_id, query))
+        return [p for p in self.procedures if p.area_id == area_id]
+
+    async def get_faq(self, area_id: int, faq_id: int) -> FaqHit | None:
+        return next((f for f in self.stored_faqs if f.id == faq_id and f.area_id == area_id), None)
 
     async def search_scope(self, scope: AreaScope, query: str) -> Knowledge:
         self.searches.append((scope, query))

@@ -14,7 +14,7 @@ from langgraph.runtime import Runtime
 from langgraph.types import Send
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.audit import GENERIC_REFUSAL, INTERNAL_NAMES, find_leaks, strip_citations
-from src.agents.behavior import Candidate, Clarification, combine, requester_key
+from src.agents.behavior import Candidate, Clarification, combine, fixed_text, requester_key
 from src.agents.llm import AgentLLM, AreaInfo, ProcedureHit, build_area_messages, build_coordinator_messages
 from src.agents.retriever import Retriever, ScopeSignals
 from src.agents.sub_agent import AreaAnswer, run_sub_agent
@@ -27,7 +27,8 @@ from src.services.procedures import web_contact_fields
 
 logger = logging.getLogger(__name__)
 
-Outcome = Literal["answered", "no_answer", "mixed_scope", "wants_human", "notification_failed", "rejected"]
+Outcome = Literal["answered", "no_answer", "mixed_scope", "wants_human", "notification_failed", "rejected", "greeting",
+                  "closing", "off_topic", "offer_accepted", "offer_declined"]
 # Mensajes fijos de cada canal: viven en agent_prompt con la key "<ámbito>_<tipo>".
 FIXED_KINDS = ("greeting", "closing", "off_topic")
 
@@ -178,8 +179,25 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
             return turn | finish("rejected", memory=GENERIC_REFUSAL)
         if decision.kind == "wants_human":
             return turn | finish("wants_human", areas=own)
+        # La respuesta a la oferta de ejecutivo solo cuenta si hay una oferta pendiente.
+        if context.offer_pending and decision.kind == "accept_offer":
+            return turn | finish("offer_accepted")
+        if context.offer_pending and decision.kind == "decline_offer":
+            return turn | finish("offer_declined")
         if own and signals.other_scope_match:
             return turn | finish("mixed_scope")
+        # Una FAQ o un procedimiento propio sobre el umbral demuestran que el mensaje no es ajeno al canal.
+        fixed_kind = None
+        if decision.kind in ("greeting", "closing") or (decision.kind == "off_topic" and not own):
+            fixed_kind = decision.kind
+        if fixed_kind is None and signals.other_scope_match and not own:
+            fixed_kind = "off_topic"
+        if fixed_kind is not None:
+            template = catalog.fixed.get(fixed_kind)
+            if template:
+                return turn | finish(fixed_kind, fixed_text(template, catalog.area_names))
+            # Sin texto en la BD el mensaje sigue el flujo normal: procedimiento, FAQ, aclaración o sin respuesta.
+            logger.error("Falta el texto fijo %s_%s en agent_prompt", scope, fixed_kind)
 
         def task(area: AreaInfo, pending_id: int | None = None) -> AreaTask:
             return AreaTask(area=area, rules=catalog.area_rules, question=question, history=history,
@@ -189,12 +207,12 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if pending is not None:
             # Un procedimiento en curso sigue en su área aunque el agente del canal elija otra.
             return turn | {"area_tasks": [task(areas[pending.area_id], pending.id)]}
-        if decision.kind in ("delegate", "no_answer"):
+        chosen = []
+        if decision.kind == "delegate":
             chosen = [areas[area_id] for area_id in dict.fromkeys(decision.area_ids) if area_id in areas]
-            # Si el agente del canal no elige áreas válidas, o no delega pese a haber FAQ o procedimientos sobre el
-            # umbral de respuesta, se delega en las áreas con coincidencias: el agente del área decide si responde.
-            return turn | {"area_tasks": [task(area) for area in chosen or own]}
-        return turn
+        # Si el agente del canal no elige áreas válidas, o no delega pese a haber FAQ o procedimientos sobre el umbral
+        # de respuesta, se delega en las áreas con coincidencias: el agente del área decide si responde.
+        return turn | {"area_tasks": [task(area) for area in chosen or own]}
 
     def route(state: AgentState) -> list[Send] | str:
         if state.get("outcome") is not None:

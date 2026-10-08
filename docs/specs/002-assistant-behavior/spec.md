@@ -33,7 +33,7 @@ Definiciones usadas en esta sección:
 - **Candidato:** FAQ o procedimiento activo, de un área activa del ámbito del canal, cuya similitud con el mensaje es menor que el umbral de respuesta y mayor o igual que el umbral de aclaración.
 - **Saludo:** mensaje formado solo por un saludo («hola», «buenas tardes», «hola, ¿cómo estás?», «👋»).
 - **Cierre:** mensaje formado solo por un agradecimiento, una despedida o una confirmación sin contenido («gracias», «chao», «ok», «👍»), solos o acompañados de un saludo.
-- **Ajeno:** mensaje que no corresponde a ninguna de las áreas del canal.
+- **Ajeno:** mensaje que no corresponde a ninguna de las áreas del canal. Un mensaje para el que una FAQ o un procedimiento del canal supera el umbral de respuesta corresponde a un área y no es ajeno.
 - **Mensaje sin respuesta:** mensaje que no es un saludo, un cierre ni ajeno, y para el que ninguna FAQ ni procedimiento supera el umbral de respuesta.
 - **Mensaje fijo:** el mensaje de saludo, de cierre o de fuera de tema de un canal.
 - **Aclaración:** pregunta con opciones (RF-10) o pregunta de áreas (RF-16).
@@ -232,4 +232,5 @@ Definiciones usadas en esta sección:
 - **Latencia: medir y decidir (2026-10-07, decisión del usuario):** RNF-2 se fija con la prueba de carga en el despliegue de prueba (RNF-2 de esta spec).
 - **Mensaje fijo con la oferta pendiente (2026-10-07, decisión del usuario):** la oferta se mantiene (RF-61), igual que la petición de datos (RF-43).
 - **Otro canal con candidatos propios (2026-10-07, decisión del usuario):** gana la coincidencia con el otro canal y se responde fuera de tema (RF-36).
+- **Una FAQ propia descarta el fuera de tema (2026-10-08, decisión del usuario):** si la búsqueda encuentra una FAQ o un procedimiento del canal sobre el umbral de respuesta, el mensaje no es ajeno aunque el agente del canal lo clasifique así (R10 del plan).
 - **Prioridad como lista ordenada (2026-10-07):** RF-39 agrupa en un solo requisito el orden de prioridad para que se lea y se pruebe de una vez; es una excepción consciente a «un requisito, una frase».

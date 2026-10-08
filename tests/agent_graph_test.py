@@ -1,8 +1,11 @@
 import asyncio
+import logging
+from collections.abc import Awaitable, Callable
 import pytest
 from langchain_core.messages import BaseMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
-from src.agents.behavior import Clarification, ClarifyOption
+from src.agents.behavior import Candidate, Clarification, ClarifyOption
 from src.agents.graph import AgentContext, AgentResult, Catalog, build_graph, checkpoint_serializer, run_agent
 from src.agents.llm import AgentStep, AreaInfo, CoordinatorReply, FaqHit, FinalText, ToolCall, ToolCalls, ToolSpec
 from src.agents.retriever import ProcedureHit, ScopeSignals
@@ -23,11 +26,17 @@ CONTRACT = ProcedureHit(7, "Copia del contrato", "El área envía la copia al co
 CONTACT = {"rut": "12.345.678-5", "nombre": "Ana Pérez", "contacto": "ana@correo.cl"}
 
 
-async def load_catalog(scope: AreaScope) -> Catalog:
-    areas = [CREDITS, INSURANCE, NO_PROMPT]
-    return Catalog(areas, AGENT_PROMPT, "Reglas comunes de las áreas",
-                   {"greeting": "¡Hola!", "closing": "¡Con gusto!", "off_topic": "No puedo ayudarte con eso."},
-                   [area.name for area in areas])
+FIXED: dict[str, str | None] = {"greeting": "¡Hola!", "closing": "¡Con gusto!", "off_topic": "No puedo ayudarte con eso."}
+
+
+def catalog_with(fixed: dict[str, str | None]) -> Callable[[AreaScope], Awaitable[Catalog]]:
+    async def load(scope: AreaScope) -> Catalog:
+        areas = [CREDITS, INSURANCE, NO_PROMPT]
+        return Catalog(areas, AGENT_PROMPT, "Reglas comunes de las áreas", dict(fixed), [area.name for area in areas])
+    return load
+
+
+load_catalog = catalog_with(FIXED)
 
 
 async def run(
@@ -38,9 +47,12 @@ async def run(
     thread_id: str | None = None,
     notifier: FakeNotifier | None = None,
     requester: Requester | None = None,
+    catalog: Callable[[AreaScope], Awaitable[Catalog]] = load_catalog,
+    offer_pending: bool = False,
 ) -> AgentResult:
     graph = graph or build_graph(AreaScope.external)
-    context = AgentContext(llm, retriever or FakeRetriever([TERM]), load_catalog, notifier or FakeNotifier(), requester)
+    context = AgentContext(llm, retriever or FakeRetriever([TERM]), catalog, notifier or FakeNotifier(), requester,
+                           offer_pending=offer_pending)
     return await run_agent(graph, question, context, thread_id)
 
 
@@ -393,3 +405,128 @@ async def test_llamadas_nunca_mas_de_una_mas_cuatro_por_area():
 
     assert result.outcome == "no_answer"
     assert (llm.coordinator_calls, llm.step_calls) == (1, 8)
+
+
+# --- Mensajes fijos y oferta -------------------------------------------------------------------------------------
+
+AREAS_LINE = "Puedo ayudarte con temas de: Créditos, Seguros y Postventa."
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("kind", "text"), [("greeting", "¡Hola!"), ("closing", "¡Con gusto!"), ("off_topic", "No puedo ayudarte con eso.")])
+async def test_greeting_closing_off_topic_responden_su_texto_fijo_con_una_llamada(kind, text):
+    llm = FakeAgentLLM(coordinator=[CoordinatorReply(kind)])
+
+    result = await run(llm, FakeRetriever())
+
+    assert result.outcome == kind and result.reply is not None and result.reply.startswith(text)
+    assert llm.calls == 1
+
+
+@pytest.mark.anyio
+async def test_greeting_nombra_todas_las_areas_activas_del_canal_web_sin_las_internas():
+    result = await run(FakeAgentLLM(coordinator=[CoordinatorReply("greeting")]), FakeRetriever())
+
+    assert result.reply is not None and result.reply.endswith(AREAS_LINE)
+    assert "Remuneraciones" not in result.reply
+
+
+@pytest.mark.anyio
+async def test_greeting_queda_en_la_memoria_del_hilo():
+    graph = build_graph(AreaScope.external, InMemorySaver())
+
+    await run(FakeAgentLLM(coordinator=[CoordinatorReply("greeting")]), FakeRetriever(), "hola", graph, "s1")
+
+    state = await graph.aget_state({"configurable": {"thread_id": "s1"}})
+    assert str(state.values["messages"][-1].content).startswith("¡Hola!")
+
+
+@pytest.mark.anyio
+async def test_greeting_con_consulta_delega_en_el_area():
+    llm = FakeAgentLLM(coordinator=[delegate(1)], steps={"Créditos": [FinalText("Hasta 48 meses")]})
+
+    result = await run(llm, question="Hola, ¿cuál es el plazo del crédito?")
+
+    assert (result.outcome, result.reply) == ("answered", "Hasta 48 meses")
+
+
+@pytest.mark.anyio
+async def test_off_topic_con_una_faq_propia_sobre_el_umbral_delega_en_su_area():
+    llm = FakeAgentLLM(coordinator=[CoordinatorReply("off_topic")], steps={"Créditos": [FinalText("Hasta 48 meses")]})
+
+    result = await run(llm, question="Derechos ARCO")
+
+    assert result.outcome == "answered" and llm.step_calls == 1
+
+
+@pytest.mark.anyio
+async def test_texto_fijo_ausente_registra_el_error_y_sigue_con_el_flujo(caplog):
+    caplog.set_level(logging.ERROR, logger="src")
+    llm = FakeAgentLLM(coordinator=[CoordinatorReply("greeting")], steps={"Créditos": [FinalText("Hasta 48 meses")]})
+
+    result = await run(llm, catalog=catalog_with({**FIXED, "greeting": None}))
+
+    assert "external_greeting" in caplog.text
+    assert (result.outcome, result.reply) == ("answered", "Hasta 48 meses")
+
+
+@pytest.mark.anyio
+async def test_texto_fijo_cambia_entre_mensajes_sin_reiniciar():
+    texts = iter(["¡Hola!", "¡Buenas!"])
+
+    async def changing(scope: AreaScope) -> Catalog:
+        return await catalog_with({**FIXED, "greeting": next(texts)})(scope)
+
+    llm = FakeAgentLLM(coordinator=[CoordinatorReply("greeting")])
+    first = await run(llm, FakeRetriever(), catalog=changing)
+    second = await run(llm, FakeRetriever(), catalog=changing)
+
+    assert first.reply is not None and first.reply.startswith("¡Hola!")
+    assert second.reply is not None and second.reply.startswith("¡Buenas!")
+
+
+@pytest.mark.anyio
+async def test_otro_ambito_sin_coincidencias_propias_es_fuera_de_tema_aunque_haya_candidatos():
+    candidate = Candidate("faq", 11, 1, "¿Plazo máximo?", 0.6)
+    llm = FakeAgentLLM(coordinator=[delegate()])
+
+    result = await run(llm, FakeRetriever(other_scope_match=True, candidates=[candidate]))
+
+    assert result.outcome == "off_topic" and result.reply is not None and result.reply.startswith("No puedo ayudarte")
+    assert llm.step_calls == 0
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("kind", "outcome"), [("accept_offer", "offer_accepted"), ("decline_offer", "offer_declined")])
+async def test_oferta_pendiente_se_responde_por_texto(kind, outcome):
+    result = await run(FakeAgentLLM(coordinator=[CoordinatorReply(kind)]), FakeRetriever(), "ok", offer_pending=True)
+
+    assert (result.outcome, result.reply) == (outcome, None)
+
+
+@pytest.mark.anyio
+async def test_oferta_sin_oferta_pendiente_sigue_el_flujo_normal():
+    llm = FakeAgentLLM(coordinator=[CoordinatorReply("accept_offer")], steps={"Créditos": [FinalText("Hasta 48 meses")]})
+
+    result = await run(llm, offer_pending=False)
+
+    assert result.outcome == "answered"
+
+
+@pytest.mark.anyio
+async def test_fijo_en_procedimiento_no_toca_el_procedimiento_ni_los_intentos():
+    llm = FakeAgentLLM(coordinator=[delegate(1), CoordinatorReply("greeting"), delegate(1)],
+                       steps={"Créditos": [start(rut="123"), start(**CONTACT)]})
+    notifier = FakeNotifier()
+    graph = build_graph(AreaScope.external, InMemorySaver())
+    config: RunnableConfig = {"configurable": {"thread_id": "s1"}}
+
+    await run(llm, FakeRetriever(procedures=[CONTRACT]), "Mi RUT es 123", graph, "s1", notifier)
+    before = (await graph.aget_state(config)).values
+    greeting = await run(llm, FakeRetriever(stored=[CONTRACT]), "hola", graph, "s1", notifier)
+    after = (await graph.aget_state(config)).values
+    done = await run(llm, FakeRetriever(stored=[CONTRACT]), "12.345.678-5, Ana Pérez, ana@correo.cl", graph, "s1", notifier)
+
+    assert greeting.outcome == "greeting"
+    assert (after["pending_procedure_id"], after["procedure_attempts"]) == (7, before["procedure_attempts"]) == (7, {7: 1})
+    assert done.outcome == "answered" and notifier.sent

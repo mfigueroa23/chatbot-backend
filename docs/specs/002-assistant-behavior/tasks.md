@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 32/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 37/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -121,19 +121,19 @@ El grafo nuevo se construye como `build_coordinator_graph` en `src/agents/graph.
   Hecho cuando: R3 del plan contiene la medición con fecha y el usuario respondió si se sigue.
 
 ## Fase 7 — Mensajes fijos y oferta en el grafo
-- [ ] **T-34 — Resolver saludo, cierre y fuera de tema en `coordinate`** · RF-3, RF-4, RF-5, RF-7, RF-8, RF-35, RF-37, RF-39, RNF-4 · ~25 min
-  Nivel 6 de RF-39 con `fixed_text` y `area_names`; sin texto fijo, error en el log y sigue al nivel 7; saludo con consulta ⇒ delega.
+- [x] **T-34 — Resolver saludo, cierre y fuera de tema en `coordinate`** · RF-3, RF-4, RF-5, RF-7, RF-8, RF-35, RF-37, RF-39, RNF-4 · ~25 min
+  Nivel 6 de RF-39 con `fixed_text` y `area_names`; sin texto fijo, error en el log y sigue al nivel 7; saludo con consulta ⇒ delega; `off_topic` con `own_area_ids` ⇒ delega (R10).
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "greeting or closing or off_topic or texto_fijo"` pasa con 1 llamada al modelo por caso y el saludo web sin áreas internas.
-- [ ] **T-35 — Responder fuera de tema cuando solo coincide el otro ámbito** · RF-36 · ~15 min
+- [x] **T-35 — Responder fuera de tema cuando solo coincide el otro ámbito** · RF-36 · ~15 min
   En `coordinate`: `other_scope_match` sin `own_area_ids` ⇒ `off_topic` tras los niveles 1 a 5.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k otro_ambito` pasa.
-- [ ] **T-36 — Resolver la respuesta a la oferta** · RF-41, RF-42 · ~15 min
+- [x] **T-36 — Resolver la respuesta a la oferta** · RF-41, RF-42 · ~15 min
   Nivel 4: `accept_offer`/`decline_offer` solo con `offer_pending`; sin oferta se tratan como mensaje normal.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k oferta` pasa con y sin `offer_pending`.
-- [ ] **T-37 — Mantener el procedimiento ante un mensaje fijo** · RF-43 · ~15 min
+- [x] **T-37 — Mantener el procedimiento ante un mensaje fijo** · RF-43 · ~15 min
   Un saludo con procedimiento en curso no toca `pending_*` ni `procedure_attempts`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k fijo_en_procedimiento` pasa en tres turnos (inicia, saluda, completa).
-- [ ] **T-38 — Comprobar que los textos fijos cambian sin reiniciar** · RF-2 · ~10 min [P]
+- [x] **T-38 — Comprobar que los textos fijos cambian sin reiniciar** · RF-2 · ~10 min [P]
   Dos mensajes con un `load_catalog` doble que cambia el texto entre ambos.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k texto_fijo_cambia` pasa.
 

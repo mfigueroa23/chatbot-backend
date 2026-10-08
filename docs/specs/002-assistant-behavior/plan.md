@@ -277,7 +277,8 @@ llamadas de cada tipo; `FakeRetriever` con candidatos y búsquedas por área.
   escritura. Riesgo existente desde la spec 001; se acepta.
 - **R10 — El agente del canal declara ajeno algo que sí tiene FAQ (T-33).** Decide con el nombre y la descripción de
   cada área; si la descripción no cubre un tema (p. ej. «Derechos ARCO» en Servicio al Cliente), lo clasifica
-  `off_topic` aunque la búsqueda encuentre la FAQ sobre el umbral de respuesta. *Pregunta pendiente:* ¿gana la FAQ o el
-  fuera de tema?
+  `off_topic` aunque la búsqueda encuentre la FAQ sobre el umbral de respuesta. **Decisión del usuario (2026-10-08):**
+  gana la FAQ: con `own_area_ids`, `off_topic` se trata como `no_answer` y se delega en esas áreas (definición de
+  «Ajeno» en la spec). Las descripciones de las áreas siguen siendo clave para enrutar.
 - **R9 — Más escrituras al checkpointer y más llamadas a Gemini.** 4 superpasos por mensaje y hasta 1 + 4 llamadas por
   área. *Mitigación:* la prueba de carga mide el pool de la BD y los errores de cuota de Gemini (`429`).

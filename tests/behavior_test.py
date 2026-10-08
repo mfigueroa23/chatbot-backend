@@ -1,7 +1,7 @@
 import pytest
 from src.agents.behavior import (
-    Candidate, ClarifyOption, Clarification, areas_question, build_options, can_clarify, chosen, combine, fixed_text,
-    options_text, other_procedures_text, requester_key)
+    Candidate, ClarifyOption, Clarification, areas_question, build_options, can_clarify, chosen, combine, ensure_areas,
+    fixed_text, mentions_area, options_text, other_procedures_text, requester_key)
 from src.services.area_notifier import Requester
 
 
@@ -134,3 +134,30 @@ def test_combine_parcial_indica_las_areas_sin_respuesta():
 
 def test_combine_sin_respuestas_devuelve_none():
     assert combine([("Pagos", None)]) is None
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("Te ayudo con temas de remuneraciones y beneficios.", True),
+    ("¡Hola! Cuéntame qué necesitas.", False),
+])
+def test_mentions_area_sin_distinguir_mayusculas(text, expected):
+    assert mentions_area(text, ["Remuneraciones", "Gestión"]) is expected
+
+
+def test_mentions_area_sin_areas_es_falso():
+    assert mentions_area("Puedo ayudarte con Remuneraciones.", []) is False
+
+
+def test_ensure_areas_no_repite_las_areas_si_el_texto_ya_nombra_una():
+    text = "¡Hola! Te ayudo con lo de Remuneraciones."
+
+    assert ensure_areas(text, ["Remuneraciones", "Gestión"]) == text
+
+
+def test_ensure_areas_añade_la_linea_si_el_texto_no_nombra_ninguna():
+    assert ensure_areas("¡Hola!", ["Remuneraciones", "Gestión"]) == (
+        "¡Hola!\n\nPuedo ayudarte con temas de: Remuneraciones y Gestión.")
+
+
+def test_ensure_areas_sin_areas_deja_el_texto():
+    assert ensure_areas("¡Hola!", []) == "¡Hola!"

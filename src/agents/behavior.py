@@ -80,6 +80,15 @@ def areas_question(area_names: list[str]) -> str:
     line = areas_line(area_names)
     return f"{CLARIFY_AREAS} {line}" if line else CLARIFY_AREAS
 
+def mentions_area(text: str, area_names: list[str]) -> bool:
+    plain = text.casefold()
+    return any(name.casefold() in plain for name in area_names)
+
+def ensure_areas(text: str, area_names: list[str]) -> str:
+    # Un texto redactado que ya nombra un área no se completa: repetir la lista suena a plantilla.
+    line = areas_line(area_names)
+    return f"{text}\n\n{line}" if line and not mentions_area(text, area_names) else text
+
 def fixed_text(template: str, area_names: list[str]) -> str:
     # La lista la añade el código: si se editara como parte del texto, un cambio en la BD podría borrarla.
     line = areas_line(area_names)

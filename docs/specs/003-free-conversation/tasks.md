@@ -1,6 +1,6 @@
 # Tareas 003 — Conversación libre en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 4/31 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 6/31 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. "Grafo interno" es `build_graph(AreaScope.internal)`
@@ -24,10 +24,10 @@ y "grafo web" es `build_graph(AreaScope.external)`. T-30 y T-31 se añadieron al
   Hecho cuando: `uv run pytest -q tests/business_data_test.py -k persona` pasa con la persona presente y ausente.
 
 ## Fase 2 — Reglas deterministas
-- [ ] **T-4 — Implementar `mentions_area` y `ensure_areas`** · RF-5, RF-20 · ~15 min
+- [x] **T-4 — Implementar `mentions_area` y `ensure_areas`** · RF-5, RF-20 · ~15 min
   En `src/agents/behavior.py`: detectar si un texto nombra alguna área (sin distinguir mayúsculas) y añadir la línea de áreas solo si no nombra ninguna.
   Hecho cuando: `uv run pytest -q tests/behavior_test.py -k "mentions_area or ensure_areas"` pasa con texto que nombra un área, que no nombra ninguna y sin áreas.
-- [ ] **T-5 — Implementar `personal_data_leaks`** · RF-25 · ~25 min [P]
+- [x] **T-5 — Implementar `personal_data_leaks`** · RF-25 · ~25 min [P]
   En `src/agents/audit.py`: RUT con y sin puntos, correo y teléfono chileno (`+56` o 9 dígitos); devuelve la lista de tipos encontrados.
   Hecho cuando: `uv run pytest -q tests/audit_test.py -k personal_data` pasa con cada tipo y con un texto limpio que menciona montos y fechas.
 

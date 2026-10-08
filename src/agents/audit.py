@@ -14,6 +14,12 @@ CODE_PATTERNS = [
     re.compile(r"\bselect\b[\s\S]+\bfrom\b", re.IGNORECASE),
 ]
 CITATION = re.compile(r"\s*\[[FP]\d+\]")
+# Datos personales que una respuesta libre nunca debe incluir: RUT, correo y teléfono chileno.
+PERSONAL_DATA = [
+    ("RUT", re.compile(r"\b\d{1,2}(?:\.?\d{3}){2}-[\dkK]\b")),
+    ("correo", re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")),
+    ("teléfono", re.compile(r"\+56[\s-]*\d(?:[\s-]*\d){7,8}\b|\b9\d{8}\b")),
+]
 
 def normalize(text: str) -> str:
     return re.sub(r"\s+", " ", text).strip().lower()
@@ -35,3 +41,6 @@ def find_leaks(text: str, prompts: list[str], names: list[str]) -> list[str]:
     if any(pattern.search(text) for pattern in CODE_PATTERNS):
         leaks.append("código")
     return leaks
+
+def personal_data_leaks(text: str) -> list[str]:
+    return [kind for kind, pattern in PERSONAL_DATA if pattern.search(text)]

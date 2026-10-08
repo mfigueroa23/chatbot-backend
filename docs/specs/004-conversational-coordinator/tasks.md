@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 33/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 35/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -125,12 +125,13 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
   Hecho cuando: pyright da 0 errores, pytest no tiene fallos y `uv run pytest --collect-only -q tests/scope_agent_test.py tests/coordinator_test.py` recoge tests.
 
 ## Fase 9 — Despliegue de prueba
-- [ ] **T-34 — Redactar los prompts de la BD para tu aprobación** · RF-15 a RF-18, RF-20, RF-26 a RF-28, RF-50, RNF-3 · ~30 min
+- [x] **T-34 — Redactar los prompts de la BD para tu aprobación** · RF-15 a RF-18, RF-20, RF-26 a RF-28, RF-50, RNF-3 · ~30 min
   Textos de `internal_coordinator`, `external_coordinator`, `internal_agent`, `external_agent` y `area_rules` según D9, en un archivo fuera del repo.
   Hecho cuando: apruebas los cinco textos.
-- [ ] **T-35 — Cargar los prompts en local y en remoto** · RF-56 · ~20 min (depende de T-34)
+- [x] **T-35 — Cargar los prompts en local y en remoto** · RF-56 · ~20 min (depende de T-34)
   Con respaldo previo de `agent_prompt` en ambas BD, justo antes de fusionar.
   Hecho cuando: existen los respaldos y las cinco keys tienen el texto aprobado en ambas BD.
+  Nota (2026-10-08): por decisión del usuario se cargaron en remoto antes de fusionar, con la 1.3.0 aún desplegada; también se aprobó y cargó una `internal_persona` más suelta (emojis ocasionales, largo variable). Los textos solo viven en la BD; los respaldos previos quedaron fuera del repo.
 - [ ] **T-36 — Ejecutar `jailbreak_check` en ambos canales** · RF-49, RF-50, RNF-5 · ~15 min
   `--scope internal` en proceso y el WebSocket del web, contra el despliegue.
   Hecho cuando: ambas ejecuciones terminan con código 0.

@@ -6,7 +6,7 @@ INTERNAL_NAMES = [
     "faq_ids", "procedure_id", "wants_human", "no_answer", "manipulation", "area_ids", "chosen_options", "accept_offer",
     "decline_offer", "off_topic", "buscar_faq", "buscar_procedimiento", "iniciar_procedimiento", "procedimiento_id",
     "about_assistant", "consultar_areas", "avisar_area", "ofrecer_ejecutivo", "responder_oferta", "buscar_tickets",
-    "leer_ticket",
+    "leer_ticket", "leer_edr", "guardar_edr", "edr_json",
 ]
 # Un fragmento de este largo copiado de un prompt ya revela su contenido.
 LEAK_FRAGMENT_LENGTH = 30

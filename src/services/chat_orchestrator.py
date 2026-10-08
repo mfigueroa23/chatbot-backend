@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import re
 from datetime import datetime
@@ -156,7 +157,7 @@ async def handle_internal_message(
         return TOO_LONG_MESSAGE
     try:
         await touch_chat_thread(session, conversation_id, clock.now())
-        context = await build_agent_context(session, requester)
+        context = dataclasses.replace(await build_agent_context(session, requester), conversation_id=conversation_id)
         await release_connection(session)
         if attachments:
             question = with_attachments(question, await read_message_attachments(session, list(attachments), context.llm))

@@ -6,6 +6,8 @@ from src.models.business_area import AreaScope
 from src.models.procedure_field import FieldKind
 from src.services.area_notifier import Requester
 from src.services.procedures import FieldSpec
+import json
+from src.services.edr import EdrDocument
 from src.services.jira_client import JiraIssue, JiraIssueRef
 from tests.fakes import FakeAgentLLM, FakeNotifier, FakeProjects, FakeRetriever
 
@@ -225,7 +227,7 @@ EPIC = JiraIssue("DAIA-52", "Curse automatizado", "En curso", "Epic", "Automatiz
 
 def project_toolbox(projects: FakeProjects, area: AreaInfo = PROJECTS_AREA) -> AreaToolbox:
     return AreaToolbox(area, FakeRetriever(), FakeNotifier(), REQUESTER, "¿En qué está DAIA-52?", [], [], None, {}, 3,
-                       projects=projects)
+                       projects=projects, conversation_id="spaces/AAA")
 
 
 def test_jira_sin_herramienta_en_el_area_no_se_ofrece():
@@ -282,3 +284,85 @@ async def test_jira_caido_responde_sin_detalles():
     result = await box.execute(ToolCall("c1", "leer_ticket", {"clave": "DAIA-52"}), "")
 
     assert result == "No se pudo consultar Jira en este momento."
+
+
+
+# --- EDR en el área habilitada (spec 005) ---------------------------------------------------------------------------
+
+EDR_JSON = json.dumps({"titulo": "EDR DAIA-52 Curse automatizado", "objetivo_general": "Automatizar el curse",
+                       "product_owner": {"nombre": "Luis Ramos", "cargo": "Gerente de Operaciones"}})
+JIRA_ONLY = AreaInfo(3, "Proyectos", "Jefes de Proyecto de TI", AreaScope.internal, "Eres Proyectos", None, ("jira",))
+
+
+def save_call(edr_json: str = EDR_JSON, new: bool = False) -> ToolCall:
+    return ToolCall("c1", "guardar_edr", {"edr_json": edr_json, "nuevo": new})
+
+
+def test_edr_sin_herramienta_en_el_area_no_se_ofrece():
+    names = [spec.name for spec in project_toolbox(FakeProjects(), JIRA_ONLY).specs()]
+
+    assert "guardar_edr" not in names and "leer_edr" not in names
+
+
+@pytest.mark.anyio
+async def test_edr_colaborador_no_habilitado_no_guarda():
+    projects = FakeProjects(enabled=False)
+
+    result = await project_toolbox(projects).execute(save_call(), "")
+
+    assert "no está habilitada" in result and projects.saved == []
+
+
+@pytest.mark.anyio
+async def test_edr_guardar_devuelve_el_enlace_y_cuenta_como_evidencia():
+    projects = FakeProjects()
+    box = project_toolbox(projects)
+
+    result = await box.execute(save_call(), "")
+
+    assert "https://docs.google.com/document/d/DOC1/edit" in result
+    assert box.links == ["https://docs.google.com/document/d/DOC1/edit"] and box.evidence
+    assert any("Luis Ramos" in document for document in box.documents)
+    conversation, saved, new = projects.saved[0]
+    assert conversation == "spaces/AAA" and isinstance(saved, EdrDocument) and new is False
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("edr_json", ["no es json", json.dumps({"objetivo_general": "sin título"})])
+async def test_edr_invalido_pide_corregirlo(edr_json):
+    projects = FakeProjects()
+
+    result = await project_toolbox(projects).execute(save_call(edr_json), "")
+
+    assert result.startswith("El EDR no es válido") and projects.saved == []
+
+
+@pytest.mark.anyio
+async def test_edr_drive_caido_no_queda_guardado():
+    box = project_toolbox(FakeProjects(drive_down=True))
+
+    result = await box.execute(save_call(), "")
+
+    assert "No se pudo guardar el EDR" in result and box.links == []
+
+
+@pytest.mark.anyio
+async def test_edr_leer_el_actual_o_ninguno():
+    existing = EdrDocument(titulo="EDR DAIA-52", objetivo_general="Automatizar el curse")
+    with_edr = project_toolbox(FakeProjects(edrs={"spaces/AAA": existing}))
+    without = project_toolbox(FakeProjects())
+
+    found = await with_edr.execute(ToolCall("c1", "leer_edr", {}), "")
+    missing = await without.execute(ToolCall("c1", "leer_edr", {}), "")
+
+    assert "Automatizar el curse" in found and missing == "Todavía no hay un EDR en esta conversación."
+
+
+@pytest.mark.anyio
+async def test_edr_el_enlace_llega_en_la_respuesta_del_area():
+    llm = FakeAgentLLM(steps={"Proyectos": [ToolCalls([save_call()]), FinalText("Dejé el borrador del EDR.")]})
+    box = project_toolbox(FakeProjects())
+
+    answer = await run_sub_agent(llm, box, messages_for(box), max_steps=4)
+
+    assert answer.kind == "answered" and answer.links == ["https://docs.google.com/document/d/DOC1/edit"]

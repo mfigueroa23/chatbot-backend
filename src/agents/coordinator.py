@@ -123,7 +123,9 @@ class CoordinatorToolbox:
         name = next((p.name for p in answer.procedures if p.id == answer.procedure_id), "el trámite")
         match answer.kind:
             case "answered":
-                return strip_citations(answer.text or "") or NO_INFO
+                text = strip_citations(answer.text or "") or NO_INFO
+                # El enlace real del EDR lo pone el código: el modelo no debe inventarlo ni olvidarlo.
+                return "\n".join([text, *(f"Enlace del EDR: {link}" for link in answer.links)])
             case "procedure_ask" | "procedure_sent":
                 if answer.kind == "procedure_sent":
                     self.delivered = True

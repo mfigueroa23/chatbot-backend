@@ -7,13 +7,16 @@ from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.jira_board import JiraBoard
 from src.models.project_collaborator import ProjectCollaborator
+from src.services.drive_client import build_drive_client
+from src.services.edr import EdrDocument, EdrSaved, get_edr, save_edr
 from src.services.jira_client import JiraIssue, JiraIssueRef, build_jira_client
-from src.services.property import get_int_property
+from src.services.property import get_int_property, get_str_property
 from src.utils.exceptions.database import DatabaseUnavailableError
 
 ISSUE_KEY = re.compile(r"^([A-Z][A-Z0-9_]+)-\d+$")
 ORDER_BY = re.compile(r"\s+order\s+by\s+.*$", re.IGNORECASE | re.DOTALL)
 JIRA_HTTP_TIMEOUT_SECONDS = 15
+DRIVE_HTTP_TIMEOUT_SECONDS = 30
 
 async def is_enabled(session: AsyncSession, email: str | None) -> bool:
     if not email:
@@ -82,3 +85,13 @@ class ProjectGateway:
         async with self._session_factory() as session, httpx.AsyncClient(timeout=JIRA_HTTP_TIMEOUT_SECONDS) as http:
             client = await build_jira_client(session, http)
             return await client.children(key, await get_int_property(session, "jira_max_results", 20))
+
+    async def get_edr(self, conversation_id: str) -> EdrDocument | None:
+        async with self._session_factory() as session:
+            return await get_edr(session, conversation_id)
+
+    async def save_edr(self, conversation_id: str, edr: EdrDocument, new: bool) -> EdrSaved:
+        async with self._session_factory() as session, httpx.AsyncClient(timeout=DRIVE_HTTP_TIMEOUT_SECONDS) as http:
+            drive = await build_drive_client(session, http)
+            folder_id = await get_str_property(session, "edr_drive_folder_id")
+            return await save_edr(session, conversation_id, edr, drive, folder_id, new)

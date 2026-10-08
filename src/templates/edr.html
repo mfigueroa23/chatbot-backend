@@ -1,0 +1,88 @@
+<html><head><meta charset="utf-8"><title>{{ edr.titulo }}</title></head>
+<body>
+{#- Drive convierte este HTML en un Google Doc: tablas simples con borde y texto plano, sin estilos externos. -#}
+{% macro table(headers, rows) -%}
+<table border="1" cellpadding="4" style="border-collapse: collapse">
+<tr>{% for header in headers %}<th>{{ header }}</th>{% endfor %}</tr>
+{% for row in rows %}<tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+{% else %}<tr><td colspan="{{ headers | length }}">{{ pending }}</td></tr>
+{% endfor %}</table>
+{%- endmacro %}
+{% macro bullets(items) -%}
+{% if items %}<ul>{% for item in items %}<li>{{ item }}</li>{% endfor %}</ul>{% else %}<p>{{ pending }}</p>{% endif %}
+{%- endmacro %}
+<h1>{{ edr.titulo }}</h1>
+{{ table(["Versión", "Código de documento", "Tarea Trinidad", "Fecha", "Sistema"],
+         [[edr.metadata.version, edr.metadata.codigo_documento, edr.metadata.tarea_trinidad, edr.metadata.fecha,
+           edr.metadata.nombre_sistema]]) }}
+
+<h2>Historial</h2>
+{% set rows = [] %}{% for item in edr.historial %}{% set _ = rows.append([item.fecha, item.responsable, item.cargo, item.descripcion_cambio, item.version]) %}{% endfor %}
+{{ table(["Fecha", "Responsable", "Cargo", "Cambio", "Versión"], rows) }}
+
+<h2>Objetivo general</h2>
+<p>{{ edr.objetivo_general }}</p>
+
+<h2>Visión general</h2>
+<p>{{ edr.vision_general }}</p>
+
+<h2>Product Owner</h2>
+{% if edr.product_owner %}<p>{{ edr.product_owner.nombre }} — {{ edr.product_owner.cargo }}</p>{% else %}<p>{{ pending }}</p>{% endif %}
+
+<h2>Equipo de desarrollo</h2>
+{% set rows = [] %}{% for item in edr.equipo_desarrollo %}{% set _ = rows.append([item.tipo, item.nombre]) %}{% endfor %}
+{{ table(["Tipo", "Nombre"], rows) }}
+
+<h2>Aplicaciones afectadas</h2>
+{% set rows = [] %}{% for item in edr.aplicaciones_afectadas %}{% set _ = rows.append([item.nombre, item.nivel_impacto]) %}{% endfor %}
+{{ table(["Aplicación", "Nivel de impacto"], rows) }}
+
+<h2>Usuarios afectados</h2>
+{{ bullets(edr.usuarios_afectados) }}
+
+<h2>Requerimientos</h2>
+{% set rows = [] %}{% for item in edr.requerimientos %}{% set _ = rows.append([item.codigo_rf, item.nombre, item.tipo]) %}{% endfor %}
+{{ table(["Código", "Requerimiento", "Tipo"], rows) }}
+
+<h2>Especificaciones de los requerimientos</h2>
+{% for rf in edr.especificaciones_rf %}
+<h3>{{ rf.codigo_rf }}</h3>
+{% if rf.descripcion %}<p>{{ rf.descripcion }}</p>{% endif %}
+{% for bloque in rf.bloques %}
+<h4>{{ bloque.titulo }}</h4>
+{% if bloque.parrafo %}<p>{{ bloque.parrafo }}</p>{% endif %}
+{% if bloque.items %}<ul>{% for item in bloque.items %}<li>{{ item.texto }}{% if item.sub_items %}<ul>{% for sub in item.sub_items %}<li>{{ sub }}</li>{% endfor %}</ul>{% endif %}</li>{% endfor %}</ul>{% endif %}
+{% endfor %}
+{% if rf.reglas_negocio %}<p>Reglas de negocio:</p>{{ bullets(rf.reglas_negocio) }}{% endif %}
+{% if rf.flujos_positivos %}<p>Flujos positivos:</p>{{ bullets(rf.flujos_positivos) }}{% endif %}
+{% if rf.flujos_negativos %}<p>Flujos negativos:</p>{{ bullets(rf.flujos_negativos) }}{% endif %}
+{% if rf.notas %}<p>Notas: {{ rf.notas }}</p>{% endif %}
+{% else %}<p>{{ pending }}</p>
+{% endfor %}
+
+<h2>Roles y permisos</h2>
+{% set rows = [] %}{% for item in edr.roles_permisos %}{% set _ = rows.append([item.gerencia, item.perfil, item.permiso, item.accion]) %}{% endfor %}
+{{ table(["Gerencia", "Perfil", "Permiso", "Acción"], rows) }}
+
+<h2>Impacto</h2>
+{% set rows = [] %}{% for item in edr.impacto %}{% set _ = rows.append([item.area, item.proceso_afectado, item.responsable, item.rf_afectado]) %}{% endfor %}
+{{ table(["Área", "Proceso afectado", "Responsable", "RF"], rows) }}
+
+<h2>Infraestructura</h2>
+<p>{{ edr.infraestructura }}</p>
+
+<h2>Seguridad</h2>
+{% set rows = [] %}{% for item in edr.seguridad %}{% set _ = rows.append([item.referencia, item.nombre, item.descripcion, item.nivel_riesgo]) %}{% endfor %}
+{{ table(["Referencia", "Control", "Descripción", "Nivel de riesgo"], rows) }}
+
+<h2>Criterios de aceptación</h2>
+{% set rows = [] %}{% for item in edr.criterios_aceptacion %}{% set _ = rows.append([item.codigo, item.descripcion, item.resultado_esperado, item.referencia_rf, "Sí" if item.es_critico else "No"]) %}{% endfor %}
+{{ table(["Código", "Descripción", "Resultado esperado", "RF", "Crítico"], rows) }}
+
+<h2>Validaciones de cartera</h2>
+<p>{{ edr.validaciones_cartera }}</p>
+
+<h2>Glosario</h2>
+{% set rows = [] %}{% for item in edr.glosario %}{% set _ = rows.append([item.termino, item.definicion]) %}{% endfor %}
+{{ table(["Término", "Definición"], rows) }}
+</body></html>

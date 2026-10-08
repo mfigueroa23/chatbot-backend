@@ -62,6 +62,7 @@ class AgentContext:
     fallback_space: Callable[[], Awaitable[str | None]] | None = None  # space general del canal interno
     is_open: Callable[[], Awaitable[bool]] | None = None  # horario de atención del chat web
     projects: ProjectServices | None = None  # Jira y EDR de las áreas que los tengan habilitados (solo Google Chat)
+    conversation_id: str = ""  # el EDR de una conversación se sigue editando en ella
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -144,7 +145,8 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
                 rules=catalog.area_rules, question=query, history=history, pending=pending,
                 attempts=state.get("procedure_attempts") or {}, requester=context.requester, notifier=context.notifier,
                 history_messages=context.history_messages, max_attempts=context.max_attempts,
-                max_steps=context.max_steps, original=question, projects=context.projects), budget)
+                max_steps=context.max_steps, original=question, projects=context.projects,
+                conversation_id=context.conversation_id), budget)
 
         toolbox = CoordinatorToolbox(scope, consult, context.notifier, context.requester, question,
                                      context.fallback_space, context.is_open, context.offer_pending)

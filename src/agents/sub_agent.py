@@ -19,12 +19,13 @@ class AreaAnswer:
     # Contenido del área en que se apoyó la respuesta: el control posterior acepta los datos que vienen de aquí.
     faqs: list[FaqHit] = field(default_factory=list, compare=False)
     procedures: list[ProcedureHit] = field(default_factory=list, compare=False)
+    links: list[str] = field(default_factory=list, compare=False)  # enlaces de los EDR guardados
 
 def with_evidence(answer: AreaAnswer, toolbox: AreaToolbox) -> AreaAnswer:
     procedures = toolbox.procedures + ([toolbox.pending] if toolbox.pending and toolbox.pending not in toolbox.procedures else [])
     found = answer.kind != "no_answer"
     return AreaAnswer(answer.area, answer.kind, answer.text, answer.attempts, answer.procedure_id,
-                      list(toolbox.faqs) if found else [], procedures if found else [])
+                      list(toolbox.faqs) if found else [], procedures if found else [], list(toolbox.links))
 
 async def run_sub_agent(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMessage], max_steps: int,
                         budget: CallBudget | None = None) -> AreaAnswer:

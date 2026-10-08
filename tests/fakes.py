@@ -15,6 +15,8 @@ from src.models.executive_session import ExecutiveSession
 from src.models.live_chat import LiveChat, LiveChatStatus
 from src.models.web_session import WebPhase, WebSession
 from src.services.realtime import ConnectionHub, Event
+import httpx
+from src.services.edr import EdrSaved
 from src.utils.exceptions.jira import JiraUnavailableError
 from src.utils.exceptions.notification import NotificationDeliveryError
 
@@ -221,7 +223,8 @@ class FakeProjects:
     """Jira y el acceso de Proyectos en memoria: cuenta las llamadas a Jira para comprobar que el acceso va antes."""
 
     def __init__(self, enabled: bool = True, boards: list[str] | None = None, issues: dict | None = None,
-                 children: dict | None = None, found: list | None = None, down: bool = False):
+                 children: dict | None = None, found: list | None = None, down: bool = False,
+                 edrs: dict | None = None, drive_down: bool = False):
         self.enabled = enabled
         self.boards = boards if boards is not None else ["DAIA"]
         self.issues = issues or {}
@@ -230,6 +233,9 @@ class FakeProjects:
         self.down = down
         self.jira_calls = 0
         self.searches: list[str] = []
+        self.edrs = dict(edrs or {})
+        self.drive_down = drive_down
+        self.saved: list[tuple[str, object, bool]] = []
 
     async def is_enabled(self, email: str | None) -> bool:
         return self.enabled
@@ -254,6 +260,16 @@ class FakeProjects:
     async def children(self, key: str):
         self._call()
         return list(self.children_of.get(key, []))
+
+    async def get_edr(self, conversation_id: str):
+        return self.edrs.get(conversation_id)
+
+    async def save_edr(self, conversation_id: str, edr, new: bool):
+        if self.drive_down:
+            raise httpx.ConnectError("drive caído")
+        self.saved.append((conversation_id, edr, new))
+        self.edrs[conversation_id] = edr
+        return EdrSaved("https://docs.google.com/document/d/DOC1/edit", created=new or len(self.saved) == 1)
 
 
 class FakeNotifier:

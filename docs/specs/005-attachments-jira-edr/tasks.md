@@ -1,6 +1,6 @@
 # Tareas 005 — Archivos adjuntos, consulta de Jira y EDR en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 13/22 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 17/22 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a Google
 ni a Jira: los clientes HTTP reciben un `httpx.MockTransport`. Cada pieza nueva entra con parámetros por defecto que no
@@ -56,16 +56,16 @@ cambian el comportamiento vigente hasta que se conecta.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k jira` pasa con área sin herramienta, colaborador no habilitado (sin llamada a Jira), tablero no permitido y épica con subtareas.
 
 ## Fase 6 — EDR
-- [ ] **T-14 — Definir el EDR y su HTML** · RF-18, RF-20 · ~30 min
+- [x] **T-14 — Definir el EDR y su HTML** · RF-18, RF-20 · ~30 min
   `EdrDocument` en `src/services/edr.py` (esquema de `agente-ti`, `[PENDIENTE DEFINIR]` por defecto) y `render_edr_html` con `src/templates/edr.html`.
   Hecho cuando: `uv run pytest -q tests/edr_test.py -k "pendiente or html"` pasa con todas las secciones en el HTML y los pendientes marcados.
-- [ ] **T-15 — Escribir Google Docs en Drive** · RF-21, RF-23 · ~20 min (depende de T-7)
+- [x] **T-15 — Escribir Google Docs en Drive** · RF-21, RF-23 · ~20 min (depende de T-7)
   `DriveClient.create_document_from_html` y `replace_document_html` (subida multiparte que convierte a Google Doc).
   Hecho cuando: `uv run pytest -q tests/drive_client_test.py -k escritura` pasa con creación (id y enlace) y reemplazo.
-- [ ] **T-16 — Guardar y recuperar el EDR de la conversación** · RF-21, RF-23, RF-24 · ~25 min
+- [x] **T-16 — Guardar y recuperar el EDR de la conversación** · RF-21, RF-23, RF-24 · ~25 min
   `save_edr` y `get_edr` en `src/services/edr.py` sobre `edr_document`: crea el primero, actualiza el mismo después.
   Hecho cuando: `uv run pytest -q tests/edr_test.py -k guardar` pasa con creación, actualización del mismo documento y fallo de Drive sin fila nueva.
-- [ ] **T-17 — Dar las herramientas de EDR al área habilitada** · RF-18, RF-19, RF-22, RF-25, RF-26 · ~30 min
+- [x] **T-17 — Dar las herramientas de EDR al área habilitada** · RF-18, RF-19, RF-22, RF-25, RF-26 · ~30 min
   `leer_edr` y `guardar_edr` en `AreaToolbox` si el área tiene `edr`; el enlace vuelve en el resultado de `consultar_areas`.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k edr` y `uv run pytest -q tests/coordinator_test.py -k edr` pasan con guardado, enlace, colaborador no habilitado y fallo de Drive.
 

@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 31/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 33/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -117,10 +117,10 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
 - [x] **T-31 — Ajustar el informe de `jailbreak_check`** · RNF-5 · ~15 min [P]
   El resumen deja de contar la negativa genérica como única negativa válida; sin cambios en la detección de fugas.
   Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py` pasa.
-- [ ] **T-32 — Actualizar el README** · RF-56 · ~20 min
+- [x] **T-32 — Actualizar el README** · RF-56 · ~20 min
   Diagrama de tres niveles, keys `{scope}_coordinator`/`{scope}_agent`/`area_rules` y su contenido esperado, `agent_max_model_calls`, `scope_topics_per_area` y `rag_clarify_similarity` retirada.
   Hecho cuando: `grep -c "internal_coordinator\|agent_max_model_calls\|scope_topics_per_area" README.md` da al menos 3.
-- [ ] **T-33 — Verificación completa** · todos · ~15 min
+- [x] **T-33 — Verificación completa** · todos · ~15 min
   `uv run pyright` y `uv run pytest` (AGENTS.md); cada archivo de tests de la matriz del plan existe y recoge tests.
   Hecho cuando: pyright da 0 errores, pytest no tiene fallos y `uv run pytest --collect-only -q tests/scope_agent_test.py tests/coordinator_test.py` recoge tests.
 

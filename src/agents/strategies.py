@@ -4,11 +4,9 @@ from typing import Protocol
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import AreaInfo
 from src.models.business_area import AreaScope
-from src.services.area_notifier import Requester, format_unanswered
-from src.services.business_data import get_fallback_space, get_official_channels
+from src.services.business_data import get_official_channels
 from src.services.schedule import is_open, load_schedule
 from src.utils.clock import Clock
-from src.utils.exceptions.notification import NotificationDeliveryError
 
 logger = logging.getLogger(__name__)
 
@@ -52,27 +50,3 @@ async def official_channels_reply(session: AsyncSession) -> ChannelReply:
         "No encontré una respuesta a tu consulta. Por favor, reformula tu pregunta o contáctanos por nuestros canales oficiales.",
         channels=[(channel.label, channel.value) for channel in channels],
     )
-
-class InternalStrategy:
-    scope = AreaScope.internal
-
-    def __init__(self, session: AsyncSession, notifier: Notifier):
-        self._session = session
-        self._notifier = notifier
-
-    async def on_no_answer(self, context: NoAnswerContext) -> ChannelReply:
-        requester = Requester(context.user_name, context.user_email, "google_chat")
-        try:
-            if context.areas:
-                targets = [(area.chat_space, area.name) for area in context.areas]
-            else:
-                targets = [(await get_fallback_space(self._session, AreaScope.internal), None)]
-            for space, area_name in targets:
-                # Un área sin space configurado cuenta como aviso fallido: el colaborador debe saber a quién acudir.
-                if not space:
-                    raise NotificationDeliveryError(f"El área {area_name or 'general'} no tiene space configurado")
-                await self._notifier.notify(space, format_unanswered(context.question, area_name, requester))
-        except NotificationDeliveryError as exc:
-            logger.error("No se pudo avisar al área de la consulta sin respuesta: %s", exc)
-            return ChannelReply("No encontré la respuesta y no pude avisar al área. Por favor, contacta directamente con el área.")
-        return ChannelReply("No encontré la respuesta a tu consulta. El área te contactará a la brevedad.")

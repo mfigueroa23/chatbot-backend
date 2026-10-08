@@ -5,15 +5,15 @@ from google.auth import exceptions, jwt
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.graph import AgentGraph
 from src.interfaces.google_chat import AddonEvent
-from src.models.business_area import AreaScope
 from src.services.area_notifier import Requester
-from src.services.business_data import get_areas
 from src.services.chat_orchestrator import handle_internal_message
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 
 # Los complementos de Google Workspace firman sus peticiones con un ID token de Google.
 GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v1/certs"
 GOOGLE_ISSUERS = {"accounts.google.com", "https://accounts.google.com"}
+# Al añadir el bot a un space no hay mensaje del usuario: el coordinador saluda a partir de esta nota.
+ADDED_TO_SPACE_NOTE = "[Nota del sistema: te acaban de añadir a este espacio de Google Chat. Saluda y cuenta en qué puedes ayudar.]"
 
 _certs: dict[str, str] = {}
 _certs_expire_at = 0.0
@@ -56,16 +56,15 @@ async def handle_event(event: AddonEvent, session: AsyncSession, graph: AgentGra
     chat = event.chat
     if chat is None:
         return None
+    user = chat.user
+    requester = Requester(user.display_name if user else None, user.email if user else None, "google_chat")
     if chat.added_to_space_payload is not None:
-        areas = await get_areas(session, AreaScope.internal)
-        names = ", ".join(area.name for area in areas)
-        return f"¡Hola! Soy el asistente virtual. Puedo ayudarte con dudas de: {names}."
+        space = chat.added_to_space_payload.space
+        return await handle_internal_message(session, graph, ADDED_TO_SPACE_NOTE, requester, space.name if space else "")
     payload = chat.message_payload
     if payload is None or payload.message is None:
         return None
     is_dm = payload.space is not None and payload.space.space_type == "DIRECT_MESSAGE"
     # En un space solo cuenta el texto que acompaña a la mención; en un mensaje directo, el texto completo.
     text = payload.message.text if is_dm else payload.message.argument_text
-    user = chat.user
-    requester = Requester(user.display_name if user else None, user.email if user else None, "google_chat")
     return await handle_internal_message(session, graph, text or "", requester, conversation_id(event))

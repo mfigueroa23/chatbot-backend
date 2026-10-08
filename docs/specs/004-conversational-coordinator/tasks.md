@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 19/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 31/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -74,44 +74,47 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
   Hecho cuando: `uv run pytest -q tests/coordinator_test.py -k "bucle or presupuesto"` pasa, incluido el presupuesto agotado.
 
 ## Fase 6 — Grafo
-- [ ] **T-20 — Retirar los tests de requisitos sustituidos** · (habilita RF-1 a RF-58) · ~25 min
+> Nota de implementación (2026-10-08): sustituir el grafo rompe también los tests del orquestador y de las CLIs, que
+> dependían de los outcomes y dobles de la spec 002/003. Para no dejar un commit en rojo, T-20 a T-31 (fases 6, 7 y las
+> CLIs de la 8) se entregaron en un único commit en verde; T-20 no fue un commit aparte que solo tocara `tests/`.
+- [x] **T-20 — Retirar los tests de requisitos sustituidos** · (habilita RF-1 a RF-58) · ~25 min
   Quitar los tests de clasificación, mensajes fijos, aclaración y elección, prioridad de RF-39, `converse` y aviso automático en `agent_graph_test`, `behavior_test`, `gemini_llm_test`, `chat_orchestrator_test`, `behavior_check_test` y `channel_strategy_test`, listándolos en el commit.
   Hecho cuando: la suite sigue verde y `git diff --stat` solo toca archivos de `tests/`.
-- [ ] **T-21 — Sustituir el grafo por el nodo `respond`** · RF-1, RF-2, RF-5, RF-6, RF-14, RF-19, RF-21, RF-24, RF-58 · ~30 min (depende de T-19)
+- [x] **T-21 — Sustituir el grafo por el nodo `respond`** · RF-1, RF-2, RF-5, RF-6, RF-14, RF-19, RF-21, RF-24, RF-58 · ~30 min (depende de T-19)
   `build_graph` en `src/agents/graph.py` con un solo nodo que ejecuta el coordinador, guarda la pregunta y el texto enviado y devuelve los outcomes nuevos.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "una_voz or seguimiento or dos_areas or otro_ambito or memoria"` pasa y la suite sigue verde.
-- [ ] **T-22 — Llevar los procedimientos por el grafo nuevo** · RF-28 a RF-38 · ~25 min
+- [x] **T-22 — Llevar los procedimientos por el grafo nuevo** · RF-28 a RF-38 · ~25 min
   Estado `pending_*` y `procedure_attempts` desde el toolbox; tercer intento: en el interno el coordinador ofrece avisar, en el web oferta de ejecutivo; notificación fallida → `notification_failed`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k procedimiento` pasa con dato inválido, tercer intento en cada canal y fallo de notificación.
-- [ ] **T-23 — Aplicar el control posterior con reintento** · RF-33, RF-49, RF-51 a RF-55 · ~25 min
+- [x] **T-23 — Aplicar el control posterior con reintento** · RF-33, RF-49, RF-51 a RF-55 · ~25 min
   `review` sobre el texto final; un reintento con nota de corrección; si persiste o hay fuga, `GENERIC_REFUSAL`; en el web, nombres de áreas internas prohibidos.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k control` pasa con fuga, dato personal, promesa y acción corregidos y no corregidos.
-- [ ] **T-24 — Forzar la oferta en el web sin evidencia** · RF-25, RF-39 · ~20 min
+- [x] **T-24 — Forzar la oferta en el web sin evidencia** · RF-25, RF-39 · ~20 min
   Si se consultaron áreas, ninguna aportó evidencia y no se llamó `ofrecer_ejecutivo`, el resultado lleva la oferta; nunca en el interno.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k oferta_forzada` pasa en ambos canales.
-- [ ] **T-25 — Eliminar el código sustituido** · RF-2, RF-20, RF-21 · ~25 min
+- [x] **T-25 — Eliminar el código sustituido** · RF-2, RF-20, RF-21 · ~25 min
   Fuera `CoordinatorKind`/`CoordinatorOutput`/`coordinate`, `converse`, `FIXED_KINDS`, aclaraciones y `combine` de `behavior.py`; `CHECKPOINT_TYPES` mantiene los tipos viejos.
   Hecho cuando: `grep -rn "CoordinatorOutput\|converse\|options_text" src` no devuelve nada y la suite sigue verde.
 
 ## Fase 7 — Orquestador y Google Chat
-- [ ] **T-26 — Responder el canal interno con el resultado del coordinador** · RF-3, RF-4, RF-45 · ~20 min
+- [x] **T-26 — Responder el canal interno con el resultado del coordinador** · RF-3, RF-4, RF-45 · ~20 min
   `build_agent_context` lee `agent_max_model_calls` (100); `handle_internal_message` devuelve `result.reply` o `GENERIC_REFUSAL` sin `InternalStrategy`.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k interno` pasa, incluidos proveedor caído y mensajes vacío y largo.
-- [ ] **T-27 — Responder el chat web con oferta, canales y fases** · RF-34, RF-39 a RF-44 · ~30 min
+- [x] **T-27 — Responder el chat web con oferta, canales y fases** · RF-34, RF-39 a RF-44 · ~30 min
   `offer_human` dentro y fuera de horario, `offer_accepted`/`offer_declined`, `notification_failed` con canales; un mensaje normal no cambia la fase; fuera `FIXED_OUTCOMES` y `MIXED_SCOPE`.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k web` y `uv run pytest -q tests/web_chat_ws_test.py` pasan.
-- [ ] **T-28 — Retirar el aviso automático del canal interno** · RF-45 · ~15 min
+- [x] **T-28 — Retirar el aviso automático del canal interno** · RF-45 · ~15 min
   Eliminar `InternalStrategy.on_no_answer` y reducir `ExternalStrategy` a horario y canales en `src/agents/strategies.py`.
   Hecho cuando: `grep -n "InternalStrategy" -r src` no devuelve nada y `uv run pytest -q tests/channel_strategy_test.py` pasa.
-- [ ] **T-29 — Redactar el saludo al añadir el bot** · RF-2, RF-15 · ~20 min
+- [x] **T-29 — Redactar el saludo al añadir el bot** · RF-2, RF-15 · ~20 min
   `handle_event` en `src/services/google_chat.py` ejecuta el coordinador con una nota de sistema en lugar del texto fijo.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k added_to_space` pasa y la respuesta es el texto del coordinador.
 
 ## Fase 8 — Baterías y cierre
-- [ ] **T-30 — Dejar `behavior_check` con la batería de variedad** · RNF-4 · ~20 min
+- [x] **T-30 — Dejar `behavior_check` con la batería de variedad** · RNF-4 · ~20 min
   Retirar clasificación y elección de `src/cli/behavior_check.py`; `--variety N` en ambos ámbitos.
   Hecho cuando: `uv run pytest -q tests/behavior_check_test.py` pasa y `uv run python -m src.cli.behavior_check --help` termina con 0.
-- [ ] **T-31 — Ajustar el informe de `jailbreak_check`** · RNF-5 · ~15 min [P]
+- [x] **T-31 — Ajustar el informe de `jailbreak_check`** · RNF-5 · ~15 min [P]
   El resumen deja de contar la negativa genérica como única negativa válida; sin cambios en la detección de fugas.
   Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py` pasa.
 - [ ] **T-32 — Actualizar el README** · RF-56 · ~20 min

@@ -80,6 +80,7 @@ class CoordinatorToolbox:
         self.notified = False
         self.offer: Offer | None = None
         self.offer_answer: bool | None = None
+        self.catalog_given = False
 
     def specs(self) -> list[ToolSpec]:
         if self.scope == AreaScope.internal:
@@ -106,6 +107,7 @@ class CoordinatorToolbox:
         self.consulted = True
         self.attempts.update(report.attempts)
         if report.catalog is not None:
+            self.catalog_given = True
             return f"{CATALOG_HEADER}\n{report.catalog}"
         if not report.answers:
             return NO_AREA
@@ -158,6 +160,9 @@ class CoordinatorToolbox:
         self.delivered = True
         names = ", ".join(area.name for area in areas) or "general"
         return f"Aviso entregado al área {names}; una persona revisará la consulta."
+
+    async def offer_executive(self) -> str:
+        return await self._offer()
 
     async def _offer(self) -> str:
         if self._is_open is not None and await self._is_open():

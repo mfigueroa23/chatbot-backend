@@ -7,7 +7,7 @@ import re
 from src.agents.behavior import Candidate
 from dataclasses import dataclass, field
 from typing import Literal
-from src.agents.llm import AgentStep, CoordinatorReply, FaqHit, FinalText, ScopeDecision, ToolCall, ToolCalls, ToolSpec
+from src.agents.llm import AgentStep, FaqHit, FinalText, ScopeDecision, ToolCall, ToolCalls, ToolSpec
 from src.agents.retriever import AreaKnowledge, ProcedureHit, ScopeSignals
 from src.models.business_area import AreaScope
 from src.models.executive import Executive
@@ -65,9 +65,8 @@ RESULT_HEADER = re.compile(r"^\[[^\]]+\]$", re.MULTILINE)
 
 @dataclass(frozen=True)
 class AgentReply:
-    """Guion breve de un mensaje: el agente del canal delega (o marca manipulación o persona) y el agente de área
-    responde con el texto o inicia el procedimiento con sus datos."""
-    kind: Literal["answer", "no_answer", "wants_human", "manipulation", "procedure"]
+    """Guion breve de un mensaje: el agente de área responde con el texto o inicia el procedimiento con sus datos."""
+    kind: Literal["answer", "no_answer", "procedure"]
     text: str
     faq_ids: list[int] = field(default_factory=list)
     procedure_id: int | None = None
@@ -77,47 +76,30 @@ class AgentReply:
 class FakeAgentLLM:
     """Guioniza el modelo y cuenta sus llamadas.
 
-    Cada AgentReply guioniza un mensaje completo; `coordinator` y `steps` (por nombre de área) guionizan por separado
-    al agente del canal y a cada agente de área, y `converse` los textos de la conversación (vacío si no se guioniza).
-    Spec 004: `scope` guioniza las decisiones del agente de ámbito y `coordinator_steps` los pasos del coordinador; sin
-    guion, el coordinador consulta las áreas con la pregunta y responde con el contenido recibido.
+    Cada AgentReply guioniza lo que responde el agente de área en un mensaje; `steps` (por nombre de área) guioniza
+    cada agente de área paso a paso, `scope` las decisiones del agente de ámbito y `coordinator_steps` los pasos del
+    coordinador. Sin guion, el ámbito deja elegir al respaldo por coincidencias y el coordinador consulta las áreas con
+    la pregunta y responde con el contenido recibido.
     """
 
-    def __init__(self, *replies: AgentReply, coordinator: list[CoordinatorReply] | None = None,
-                 steps: dict[str, list[AgentStep]] | None = None, converse: list[str] | None = None,
+    def __init__(self, *replies: AgentReply, steps: dict[str, list[AgentStep]] | None = None,
                  scope: list[ScopeDecision] | None = None, coordinator_steps: list[AgentStep] | None = None):
         self.replies = list(replies) or [AgentReply("no_answer", "")]
-        self.coordinator = list(coordinator or [])
         self.steps = {area: list(script) for area, script in (steps or {}).items()}
-        self.conversations = list(converse or [])
         self.scope = list(scope or [])
         self.coordinator_steps = list(coordinator_steps or [])
         self.scope_calls = 0
         self.coordinator_step_calls = 0
         self.scope_messages: list[list[BaseMessage]] = []
         self.coordinator_step_messages: list[list[BaseMessage]] = []
-        self.coordinator_calls = 0
         self.step_calls = 0
-        self.converse_calls = 0
-        self.converse_messages: list[list[BaseMessage]] = []
-        self.coordinator_messages: list[list[BaseMessage]] = []
         self.step_messages: list[list[BaseMessage]] = []
         self.current: AgentReply | None = None
 
     @property
     def calls(self) -> int:
-        return self.coordinator_calls + self.step_calls + self.converse_calls + self.scope_calls
-
-    async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
-        self.coordinator_calls += 1
-        self.coordinator_messages.append(list(messages))
-        if self.coordinator:
-            return self.coordinator.pop(0) if len(self.coordinator) > 1 else self.coordinator[0]
-        self.current = self.next_reply()
-        if self.current.kind in ("manipulation", "wants_human"):
-            return CoordinatorReply(self.current.kind)
-        # Sin áreas: el grafo delega en las áreas con coincidencias, como hacía la búsqueda de la llamada única.
-        return CoordinatorReply("delegate")
+        # El coordinador no cuenta aquí: sus pasos van en coordinator_step_calls.
+        return self.step_calls + self.scope_calls
 
     async def decide_scope(self, messages: list[BaseMessage]) -> ScopeDecision:
         self.scope_calls += 1
@@ -143,13 +125,6 @@ class FakeAgentLLM:
             call = ToolCall("call-1", "iniciar_procedimiento", {"procedimiento_id": reply.procedure_id, "datos": data})
             return ToolCalls([call], reply.text)
         return FinalText(reply.text if reply.kind == "answer" else "")
-
-    async def converse(self, messages: list[BaseMessage]) -> str:
-        self.converse_calls += 1
-        self.converse_messages.append(list(messages))
-        if not self.conversations:
-            return ""
-        return self.conversations.pop(0) if len(self.conversations) > 1 else self.conversations[0]
 
     def coordinator_step(self, messages: list[BaseMessage]) -> AgentStep:
         self.coordinator_step_calls += 1

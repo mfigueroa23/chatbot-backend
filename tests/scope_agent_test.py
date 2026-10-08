@@ -150,3 +150,46 @@ async def test_presupuesto_cuenta_el_ambito_y_las_areas():
 
     with pytest.raises(LlmUnavailableError):
         await run_scope_agent(llm, FakeRetriever([SALARY]), request(), budget)
+
+
+class SignalsFirstRetriever(FakeRetriever):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.started = asyncio.Event()
+
+    async def scope_signals(self, scope: AreaScope, query: str):
+        self.started.set()
+        return await super().scope_signals(scope, query)
+
+
+class WaitsForSignalsLLM(FakeAgentLLM):
+    def __init__(self, retriever: SignalsFirstRetriever, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.retriever = retriever
+
+    async def decide_scope(self, messages: list[BaseMessage]) -> ScopeDecision:
+        # Si las señales esperaran a la decisión, este await no terminaría nunca.
+        await asyncio.wait_for(self.retriever.started.wait(), timeout=1)
+        return await super().decide_scope(messages)
+
+
+@pytest.mark.anyio
+async def test_elige_con_la_decision_y_las_senales_a_la_vez():
+    retriever = SignalsFirstRetriever([SALARY])
+    llm = WaitsForSignalsLLM(retriever, scope=[ScopeDecision([10], "x", False)], steps={"Remuneraciones": [FinalText("ok")]})
+
+    report = await run_scope_agent(llm, retriever, request(), CallBudget(100))
+
+    assert [answer.area for answer in report.answers] == [PAYROLL]
+    assert retriever.refreshed_area_ids == [10, 11, 12]
+
+
+@pytest.mark.anyio
+async def test_en_curso_y_seguimientos_las_senales_incluyen_el_mensaje_anterior():
+    retriever = FakeRetriever([SALARY])
+    llm = FakeAgentLLM(scope=[ScopeDecision([10], "x", False)], steps={"Remuneraciones": [FinalText("ok")]})
+    history: list[BaseMessage] = [HumanMessage("¿Dónde veo mi liquidación?"), AIMessage("En el portal.")]
+
+    await run_scope_agent(llm, retriever, request("¿Y la de octubre?", history=history), CallBudget(100))
+
+    assert retriever.searches[0][1] == "¿Dónde veo mi liquidación?\n¿Y la de octubre?"

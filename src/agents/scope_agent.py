@@ -32,6 +32,7 @@ class ScopeRequest:
     history_messages: int = 20
     max_attempts: int = 3
     max_steps: int = 4
+    original: str = ""  # el mensaje del usuario, que acompaña a la solicitud de un procedimiento
 
 @dataclass(frozen=True)
 class ScopeReport:
@@ -59,8 +60,8 @@ async def run_scope_agent(llm: AgentLLM, retriever: Retriever, request: ScopeReq
     # La decisión y el embedding con las señales del ámbito corren a la vez.
     decision, signals = await asyncio.gather(
         llm.decide_scope(build_scope_messages(
-            request.prompt, request.areas, [], False, request.pending, request.history, request.question,
-            request.history_messages, topics=request.topics)),
+            request.prompt, request.areas, request.pending, request.history, request.question, request.history_messages,
+            request.topics)),
         scope_signals(),
     )
     if request.pending is not None and request.pending.area_id in areas:
@@ -77,7 +78,7 @@ async def run_scope_agent(llm: AgentLLM, retriever: Retriever, request: ScopeReq
     async def ask_area(area: AreaInfo) -> AreaAnswer:
         pending = request.pending if request.pending is not None and request.pending.area_id == area.id else None
         knowledge = await retriever.search_area(area.id, signals.embedding)
-        toolbox = AreaToolbox(area, retriever, request.notifier, request.requester, request.question,
+        toolbox = AreaToolbox(area, retriever, request.notifier, request.requester, request.original or request.question,
                               list(knowledge.faqs), list(knowledge.procedures), pending, request.attempts,
                               request.max_attempts)
         extra_fields = web_contact_fields() if area.scope == AreaScope.external else []

@@ -145,20 +145,13 @@ async def test_conversation_en_un_space_es_el_hilo(echo_agent: list[tuple]):
 
 
 @pytest.mark.anyio
-async def test_added_to_space_saluda_con_las_areas_internas(monkeypatch: pytest.MonkeyPatch):
-    class Area:
-        def __init__(self, name: str):
-            self.name = name
-
-    async def get_areas(session, scope):
-        return [Area("Remuneraciones"), Area("Beneficios")]
-
-    monkeypatch.setattr(google_chat, "get_areas", get_areas)
+async def test_added_to_space_lo_saluda_el_coordinador(echo_agent: list[tuple]):
     event = AddonEvent.model_validate({"chat": {"addedToSpacePayload": {"space": {"name": "spaces/AAA"}}}})
 
     text = await handle_event(event, SESSION, GRAPH)
 
-    assert text is not None and "Remuneraciones" in text and "Beneficios" in text
+    assert text is not None and text.startswith("eco: [Nota del sistema") and "Saluda" in text
+    assert echo_agent[0][1] == "spaces/AAA"
 
 
 @pytest.mark.anyio

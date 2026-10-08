@@ -2,7 +2,7 @@ import pytest
 from langgraph.checkpoint.memory import InMemorySaver
 from src.agents.audit import GENERIC_REFUSAL
 from src.agents.graph import AgentContext, Catalog, build_graph
-from src.agents.llm import AreaInfo, CoordinatorReply
+from src.agents.llm import AreaInfo, FinalText
 from src.cli.jailbreak_check import ATTACKS, graph_asker, is_secret_prompt, leak_names, main, run_battery
 from src.models.business_area import AreaScope
 from tests.fakes import FakeAgentLLM, FakeNotifier, FakeRetriever
@@ -60,12 +60,11 @@ PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos", AreaScope.internal, "Eres el
 
 
 async def internal_catalog(scope: AreaScope) -> Catalog:
-    fixed: dict[str, str | None] = {"greeting": "¡Hola!", "closing": "¡Con gusto!", "off_topic": "No puedo ayudarte con eso."}
-    return Catalog([PAYROLL], "Prompt del agente interno", "Reglas", fixed, ["Remuneraciones"], "Tono cercano.")
+    return Catalog([PAYROLL], "Prompt del coordinador interno", "Prompt del agente interno", "Reglas", "Tono cercano.")
 
 
 def internal_context(refusal: str) -> AgentContext:
-    llm = FakeAgentLLM(coordinator=[CoordinatorReply("manipulation", text=refusal)])
+    llm = FakeAgentLLM(coordinator_steps=[FinalText(refusal)])
     return AgentContext(llm, FakeRetriever(), internal_catalog, FakeNotifier(), None)
 
 

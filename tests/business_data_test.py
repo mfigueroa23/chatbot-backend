@@ -97,20 +97,6 @@ class CatalogSession:
 
 
 @pytest.mark.anyio
-async def test_load_catalog_lee_textos_fijos_y_nombres_de_areas():
-    session = CatalogSession(
-        [Area(1, "Pagos", "Prompt de Pagos"), Area(2, "Seguros", None)],
-        {"external_agent": "Agente", "area_rules": "Reglas", "external_greeting": "¡Hola!", "external_off_topic": "No puedo."},
-    )
-
-    catalog = await load_catalog(cast(AsyncSession, session), AreaScope.external)
-
-    assert catalog.fixed == {"greeting": "¡Hola!", "closing": None, "off_topic": "No puedo."}
-    # Un área sin prompt no responde, pero sigue siendo un área activa del canal: se nombra en los mensajes fijos.
-    assert catalog.area_names == ["Pagos", "Seguros"]
-
-
-@pytest.mark.anyio
 @pytest.mark.parametrize("scope", [AreaScope.internal, AreaScope.external])
 async def test_load_catalog_lee_la_persona_de_cada_canal(scope: AreaScope):
     session = CatalogSession([Area(1, "Pagos", "Prompt de Pagos")], {f"{scope}_persona": f"Persona {scope}"})
@@ -176,3 +162,15 @@ async def test_load_catalog_sin_prompt_del_coordinador_lo_deja_vacio():
     catalog = await load_catalog(cast(AsyncSession, session), AreaScope.internal)
 
     assert (catalog.coordinator_prompt, catalog.scope_prompt) == ("", "")
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("scope", "expected"), [(AreaScope.external, ["Pagos"]), (AreaScope.internal, [])])
+async def test_load_catalog_el_web_conoce_los_nombres_internos_para_prohibirlos(scope: AreaScope, expected: list[str]):
+    session = CatalogSession([Area(1, "Pagos", "Prompt de Pagos")], {})
+
+    catalog = await load_catalog(cast(AsyncSession, session), scope)
+
+    assert catalog.other_area_names == expected
+    if scope == AreaScope.external:
+        assert "business_area.scope = 'internal'" in compiled(session.statements[-1])

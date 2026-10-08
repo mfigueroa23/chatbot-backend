@@ -7,19 +7,20 @@ from src.agents.audit import GENERIC_REFUSAL
 from src.agents.graph import AgentContext, AgentGraph, Catalog, build_graph, load_catalog, run_agent
 from src.agents.llm import build_gemini_llm
 from src.agents.retriever import build_faq_retriever
-from src.agents.strategies import ExternalStrategy, InternalStrategy, NoAnswerContext
+from src.agents.strategies import ExternalStrategy, NoAnswerContext
 from src.database.session import SessionLocal, commit
 from src.interfaces.web_chat import (
     Channel, ErrorMessage, OfferHuman, OfficialChannels, Queued, RequestContact, ServerMessage, TextMessage)
 from src.models.business_area import AreaScope
 from src.models.chat_thread import ChatThread
 from src.models.web_session import WebPhase, WebSession
-from src.services.business_data import get_official_channels
+from src.services.business_data import get_fallback_space, get_official_channels
 from src.services.live_chat import enqueue
 from src.services.area_notifier import AreaNotifier, Requester
 from src.services.message_validation import MAX_MESSAGE_LENGTH, validate_user_message
 from src.services.property import get_float_property, get_int_property
-from src.services.web_session import answer_offer, reset_to_bot, start_offer, submit_contact, touch_last_message
+from src.services.schedule import is_open, load_schedule
+from src.services.web_session import answer_offer, start_offer, submit_contact, touch_last_message
 from src.utils.clock import Clock, SystemClock
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -30,7 +31,6 @@ logger = logging.getLogger(__name__)
 EMPTY_MESSAGE = "Por favor, escribe tu consulta."
 TOO_LONG_MESSAGE = f"Tu mensaje supera el máximo de {MAX_MESSAGE_LENGTH} caracteres. Por favor, acórtalo."
 UNAVAILABLE = "El servicio no está disponible en este momento. Por favor, intenta más tarde."
-MIXED_SCOPE = "Tu pregunta mezcla temas de distintas áreas. Por favor, reformúlala para poder ayudarte."
 WAITING_EXECUTIVE = "Tu chat está en espera. Un ejecutivo te atenderá en cuanto esté disponible."
 OFFER_REJECTED = "De acuerdo. Puedes reformular tu consulta o contactarnos por nuestros canales oficiales."
 CONTACT_EXHAUSTED = "No pudimos validar tus datos de contacto. Puedes contactarnos por nuestros canales oficiales."
@@ -39,12 +39,22 @@ INTERNAL_NOTIFICATION_FAILED = "No pude avisar al área de tu solicitud. Por fav
 WEB_NOTIFICATION_FAILED = "No pude enviar tu solicitud al área. Puedes contactarnos por nuestros canales oficiales."
 
 
-# Mensajes que el asistente responde sin cambiar la fase del chat web: no cancelan la oferta ni la petición de datos.
-FIXED_OUTCOMES = ("greeting", "closing", "off_topic", "about_assistant")
-
-async def build_agent_context(session: AsyncSession, requester: Requester | None, offer_pending: bool = False) -> AgentContext:
-    # Con temperatura 0 los textos redactados serían siempre idénticos; la clasificación se valida con behavior_check.
+async def build_agent_context(
+    session: AsyncSession, requester: Requester | None, offer_pending: bool = False, clock: Clock = SystemClock()
+) -> AgentContext:
+    # Con temperatura 0 los textos redactados serían siempre idénticos.
     temperature = await get_float_property(session, "conversation_temperature", 0.7)
+
+    async def fallback_space() -> str | None:
+        # Sesión propia: la de la petición ya liberó su conexión mientras el modelo trabaja.
+        async with SessionLocal() as own:
+            return await get_fallback_space(own, AreaScope.internal)
+
+    async def open_now() -> bool:
+        async with SessionLocal() as own:
+            slots, holidays = await load_schedule(own)
+        return is_open(clock.now(), slots, holidays)
+
     return AgentContext(
         llm=await build_gemini_llm(session, temperature),
         retriever=await build_faq_retriever(session, SessionLocal),
@@ -55,6 +65,9 @@ async def build_agent_context(session: AsyncSession, requester: Requester | None
         max_attempts=await get_int_property(session, "procedure_max_attempts", 3),
         offer_pending=offer_pending,
         max_steps=await get_int_property(session, "agent_max_steps", 4),
+        max_model_calls=await get_int_property(session, "agent_max_model_calls", 100),
+        fallback_space=fallback_space,
+        is_open=open_now,
     )
 
 async def load_catalog_in_own_session(scope: AreaScope) -> Catalog:
@@ -91,18 +104,10 @@ async def handle_internal_message(
         context = await build_agent_context(session, requester)
         await release_connection(session)
         result = await run_agent(graph, question, context, conversation_id)
-        # La negativa redactada ya pasó el auditor; sin ella, la genérica.
-        if result.outcome == "rejected":
-            return result.reply or GENERIC_REFUSAL
-        if result.outcome == "mixed_scope":
-            return MIXED_SCOPE
+        # El coordinador es la única voz: sin texto solo queda la negativa genérica o el aviso fijo de fallo.
         if result.outcome == "notification_failed":
-            return INTERNAL_NOTIFICATION_FAILED
-        if result.reply is not None:
-            return result.reply
-        strategy = InternalStrategy(session, AreaNotifier(SessionLocal))
-        reply = await strategy.on_no_answer(NoAnswerContext(question, result.areas, requester.name, requester.contact))
-        return reply.text
+            return result.reply or INTERNAL_NOTIFICATION_FAILED
+        return result.reply or GENERIC_REFUSAL
     except LlmNotConfiguredError:
         return UNAVAILABLE
     except LlmUnavailableError as exc:
@@ -124,35 +129,32 @@ async def handle_web_message(
     if web_session.phase == WebPhase.queued:
         return [bot(WAITING_EXECUTIVE)]
     try:
-        context = await build_agent_context(session, None, offer_pending=web_session.phase == WebPhase.offering_human)
+        context = await build_agent_context(
+            session, None, offer_pending=web_session.phase == WebPhase.offering_human, clock=clock)
         await release_connection(session)
         result = await run_agent(graph, question, context, str(web_session.id))
         touch_last_message(web_session, clock)
-        if result.outcome == "offer_accepted":
-            answer_offer(web_session, True)
-            await commit(session)
-            return [RequestContact(attempt=1)]
-        if result.outcome == "offer_declined":
-            answer_offer(web_session, False)
-            replies = [bot(OFFER_REJECTED), await official_channels(session)]
-            await commit(session)
-            return replies
-        # Escribir texto libre cancela una oferta o una petición de datos pendientes y se atiende como pregunta nueva,
-        # salvo un saludo, un cierre o un fuera de tema, que se responden y dejan el flujo como estaba.
-        if result.outcome not in FIXED_OUTCOMES:
-            reset_to_bot(web_session)
-        if result.outcome == "rejected":
-            replies: list[ServerMessage] = [bot(result.reply or GENERIC_REFUSAL)]
-        elif result.outcome == "mixed_scope":
-            replies = [bot(MIXED_SCOPE)]
-        elif result.outcome == "notification_failed":
-            replies = [bot(WEB_NOTIFICATION_FAILED), await official_channels(session)]
-        elif result.reply is not None:
-            replies = [bot(result.reply)]
-        else:
-            replies = await offer_human_or_channels(session, web_session, question, clock)
+        # La fase solo cambia cuando el cliente acepta o rechaza la oferta, o cuando el coordinador la abre: un mensaje
+        # normal no cancela una oferta ni una petición de datos pendientes.
+        replies: list[ServerMessage] = [bot(result.reply)] if result.reply else []
+        match result.outcome:
+            case "offer_accepted":
+                answer_offer(web_session, True)
+                replies.append(RequestContact(attempt=1))
+            case "offer_declined":
+                answer_offer(web_session, False)
+                replies = (replies or [bot(OFFER_REJECTED)]) + [await official_channels(session)]
+            case "offer_human":
+                start_offer(web_session, question)
+                replies.append(OfferHuman())
+            case "official_channels":
+                replies.append(await official_channels(session))
+            case "notification_failed":
+                replies = (replies or [bot(WEB_NOTIFICATION_FAILED)]) + [await official_channels(session)]
+            case "rejected":
+                replies = replies or [bot(GENERIC_REFUSAL)]
         await commit(session)
-        return replies
+        return replies or [bot(GENERIC_REFUSAL)]
     except LlmNotConfiguredError:
         return [unavailable()]
     except LlmUnavailableError as exc:

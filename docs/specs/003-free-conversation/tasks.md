@@ -1,6 +1,6 @@
 # Tareas 003 — Conversación libre en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 19/31 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 22/31 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. "Grafo interno" es `build_graph(AreaScope.internal)`
@@ -77,13 +77,13 @@ y "grafo web" es `build_graph(AreaScope.external)`. T-30 y T-31 se añadieron al
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k procedimiento_agotado_interno` pasa y el orquestador no avisa al área en ese caso.
 
 ## Fase 6 — Orquestador
-- [ ] **T-19 — Contexto con la temperatura de conversación** · RNF-4 · ~15 min
+- [x] **T-19 — Contexto con la temperatura de conversación** · RNF-4 · ~15 min
   `build_agent_context` lee `conversation_temperature` (0.7) y la pasa a `build_gemini_llm` en ambos canales.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k temperatura` pasa para el canal interno y el web.
-- [ ] **T-20 — Responder los nuevos resultados en Google Chat y avisar solo a pedido** · RF-17, RF-21, RF-22, RF-23, RF-27, RF-28 · ~25 min
+- [x] **T-20 — Responder los nuevos resultados en Google Chat y avisar solo a pedido** · RF-17, RF-21, RF-22, RF-23, RF-27, RF-28 · ~25 min
   `rejected` con `reply` lo usa y sin él `GENERIC_REFUSAL`; `free_answer`, `about_assistant` y `clarify` devuelven su texto sin `InternalStrategy`; `wants_human` avisa al área; el proveedor caído sigue respondiendo no disponible.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "interno_negativa or interno_libre or interno_aviso"` pasa y el `FakeNotifier` solo recibe el aviso de `wants_human`.
-- [ ] **T-31 — Responder los nuevos resultados en el chat web** · RF-22, RF-23, RF-34, RF-35 · ~20 min
+- [x] **T-31 — Responder los nuevos resultados en el chat web** · RF-22, RF-23, RF-34, RF-35 · ~20 min
   `rejected` con `reply` lo usa y sin él `GENERIC_REFUSAL`; `about_assistant` mantiene la fase como un mensaje fijo; sin respuesta sigue la oferta de ejecutivo o los canales.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "web_negativa or web_about_assistant"` pasa.
 

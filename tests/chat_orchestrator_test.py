@@ -7,9 +7,10 @@ from langgraph.checkpoint.memory import InMemorySaver
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents import strategies
+from src.agents.behavior import Candidate
 from src.agents.audit import GENERIC_REFUSAL
 from src.agents.graph import AgentContext, Catalog, build_graph
-from src.agents.llm import AgentReply, AreaInfo, FaqHit
+from src.agents.llm import AreaInfo, CoordinatorReply, FaqHit
 from src.agents.retriever import ProcedureHit
 from src.models.business_area import AreaScope
 from src.models.official_channel import OfficialChannel
@@ -22,7 +23,7 @@ from src.services.chat_orchestrator import (
 from src.services.procedures import FieldSpec
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
 from src.utils.exceptions.database import DatabaseUnavailableError
-from tests.fakes import FakeAgentLLM, FakeClock, FakeNotifier, FakeRetriever, answer, procedure, property_session, web_session
+from tests.fakes import AgentReply, FakeAgentLLM, FakeClock, FakeNotifier, FakeRetriever, answer, procedure, property_session, web_session
 
 SESSION = property_session({})
 PAYROLL = AreaInfo(10, "Remuneraciones", "Sueldos", AreaScope.internal, "Eres Remuneraciones", "spaces/RRHH")
@@ -39,18 +40,21 @@ CONTACT = {"rut": "12.345.678-5", "nombre": "Ana", "contacto": "ana@correo.cl"}
 
 
 class DownLLM(FakeAgentLLM):
-    async def respond(self, messages: list[BaseMessage]) -> AgentReply:
+    async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
         raise LlmUnavailableError("timeout")
 
 
 async def load_catalog(scope: AreaScope) -> Catalog:
-    return Catalog([PAYROLL] if scope == AreaScope.internal else [CREDITS], "Eres el agente", "Reglas")
+    areas = [PAYROLL] if scope == AreaScope.internal else [CREDITS]
+    fixed: dict[str, str | None] = {"greeting": "¡Hola!", "closing": "¡Con gusto!", "off_topic": "No puedo ayudarte con eso."}
+    return Catalog(areas, "Eres el agente", "Reglas", fixed, [area.name for area in areas])
 
 
 def use_llm(monkeypatch: pytest.MonkeyPatch, llm: FakeAgentLLM, retriever: FakeRetriever | None = None,
             notifier: FakeNotifier | None = None):
-    async def build_agent_context(session, requester):
-        return AgentContext(llm, retriever or FakeRetriever([SALARY, TERM]), load_catalog, notifier or FakeNotifier(), requester)
+    async def build_agent_context(session, requester, offer_pending: bool = False):
+        return AgentContext(llm, retriever or FakeRetriever([SALARY, TERM]), load_catalog, notifier or FakeNotifier(), requester,
+                            offer_pending=offer_pending)
 
     monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
 
@@ -79,9 +83,16 @@ async def ask(text: str = "¿Cuándo pagan el sueldo?", graph=INTERNAL_GRAPH, co
     return await handle_internal_message(SESSION, graph, text, ANA, conversation_id)
 
 
-async def ask_web(session: WebSession, text: str = "¿Cuál es el plazo?", now: datetime = IN_HOURS) -> list:
-    graph = build_graph(AreaScope.external, InMemorySaver())
+async def ask_web(session: WebSession, text: str = "¿Cuál es el plazo?", now: datetime = IN_HOURS, graph=None) -> list:
+    graph = graph or build_graph(AreaScope.external, InMemorySaver())
     return await handle_web_message(property_session({}), graph, session, text, FakeClock(now))
+
+
+async def after_areas_question(session: WebSession, text: str, now: datetime = IN_HOURS) -> list:
+    # El primer mensaje sin respuesta recibe la pregunta de áreas; el flujo de sin respuesta llega con el segundo.
+    graph = build_graph(AreaScope.external, InMemorySaver())
+    await ask_web(session, "Necesito ayuda", now, graph)
+    return await ask_web(session, text, now, graph)
 
 
 def dumps(messages: list) -> list[dict]:
@@ -108,8 +119,12 @@ async def test_internal_mixta_pide_reformular(monkeypatch: pytest.MonkeyPatch, n
 @pytest.mark.anyio
 async def test_internal_sin_respuesta_avisa_al_area(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
     use_llm(monkeypatch, FakeAgentLLM(AgentReply("no_answer", "")), FakeRetriever([SALARY]))
+    graph = build_graph(AreaScope.internal, InMemorySaver())
 
-    reply = await ask()
+    first = await ask("Necesito ayuda", graph)
+    assert first.startswith("¿Con qué necesitas ayuda?") and notifier.sent == []
+
+    reply = await ask(graph=graph)
 
     assert "te contactará a la brevedad" in reply
     assert notifier.sent[0][0] == "spaces/RRHH"
@@ -117,7 +132,7 @@ async def test_internal_sin_respuesta_avisa_al_area(monkeypatch: pytest.MonkeyPa
 
 @pytest.mark.anyio
 async def test_internal_llm_no_configurado_responde_no_disponible(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
-    async def build_agent_context(session, requester):
+    async def build_agent_context(session, requester, offer_pending: bool = False):
         raise LlmNotConfiguredError("gemini_api_key")
 
     monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
@@ -150,8 +165,8 @@ async def test_internal_thread_recuerda_la_conversacion_y_aisla_otros_hilos(monk
     await ask("¿Y el bono?", graph, "spaces/AAA/threads/T1")
     await ask("Hola", graph, "spaces/AAA/threads/T2")
 
-    assert [str(m.content) for m in llm.messages[1][1:-1]] == ["¿Cuándo pagan?", "El día 30"]
-    assert len(llm.messages[2]) == 2
+    assert [str(m.content) for m in llm.coordinator_messages[1][1:-1]] == ["¿Cuándo pagan?", "El día 30"]
+    assert len(llm.coordinator_messages[2]) == 2
 
 
 @pytest.mark.anyio
@@ -183,9 +198,9 @@ class CommitAwareLLM(FakeAgentLLM):
         self.session = session
         self.commits_at_call = -1
 
-    async def respond(self, messages: list[BaseMessage]) -> AgentReply:
+    async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
         self.commits_at_call = self.session.commits
-        return await super().respond(messages)
+        return await super().coordinate(messages)
 
 
 @pytest.mark.anyio
@@ -234,7 +249,7 @@ async def test_web_sin_respuesta_dentro_de_horario_ofrece_un_ejecutivo(monkeypat
     use_llm(monkeypatch, FakeAgentLLM(AgentReply("no_answer", "")))
     session = web_session()
 
-    messages = dumps(await ask_web(session, "¿Venden repuestos?"))
+    messages = dumps(await after_areas_question(session, "¿Venden repuestos?"))
 
     assert [m["type"] for m in messages] == ["message", "offer_human"]
     assert session.phase == WebPhase.offering_human
@@ -245,7 +260,7 @@ async def test_web_sin_respuesta_dentro_de_horario_ofrece_un_ejecutivo(monkeypat
 async def test_web_sin_respuesta_fuera_de_horario_muestra_canales(monkeypatch: pytest.MonkeyPatch, schedule):
     use_llm(monkeypatch, FakeAgentLLM(AgentReply("no_answer", "")))
 
-    messages = dumps(await ask_web(web_session(), now=OUT_OF_HOURS))
+    messages = dumps(await after_areas_question(web_session(), "¿Cuál es el plazo?", OUT_OF_HOURS))
 
     assert [m["type"] for m in messages] == ["message", "official_channels"]
     assert messages[1]["channels"] == [{"label": "Teléfono", "value": "600 123 4567"}]
@@ -299,7 +314,7 @@ async def test_web_llm_caido_responde_no_disponible(monkeypatch: pytest.MonkeyPa
 async def test_web_bd_caida_responde_no_disponible_y_lo_registra(
     monkeypatch: pytest.MonkeyPatch, schedule, caplog: pytest.LogCaptureFixture
 ):
-    async def build_agent_context(session, requester):
+    async def build_agent_context(session, requester, offer_pending: bool = False):
         raise DatabaseUnavailableError("conexión rechazada")
 
     monkeypatch.setattr(chat_orchestrator, "build_agent_context", build_agent_context)
@@ -328,7 +343,7 @@ async def test_requester_cada_canal_pasa_su_identidad(monkeypatch: pytest.Monkey
     seen: list[Requester | None] = []
     llm = FakeAgentLLM(answer("Hasta 48 meses", 11))
 
-    async def build_agent_context(session, requester):
+    async def build_agent_context(session, requester, offer_pending: bool = False):
         seen.append(requester)
         return AgentContext(llm, FakeRetriever([SALARY, TERM]), load_catalog, FakeNotifier(), requester)
 
@@ -337,3 +352,110 @@ async def test_requester_cada_canal_pasa_su_identidad(monkeypatch: pytest.Monkey
     await ask_web(web_session())
 
     assert seen == [ANA, None]
+
+
+# --- Comportamiento de asistente (spec 002) -----------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("values", "max_steps"), [({}, 4), ({"agent_max_steps": "2"}, 2)])
+async def test_contexto_lee_agent_max_steps_y_la_oferta_pendiente(monkeypatch: pytest.MonkeyPatch, values, max_steps):
+    async def build_gemini_llm(session):
+        return FakeAgentLLM()
+
+    async def build_faq_retriever(session, session_factory):
+        return FakeRetriever()
+
+    monkeypatch.setattr(chat_orchestrator, "build_gemini_llm", build_gemini_llm)
+    monkeypatch.setattr(chat_orchestrator, "build_faq_retriever", build_faq_retriever)
+
+    context = await chat_orchestrator.build_agent_context(property_session(values), None, offer_pending=True)
+
+    assert (context.max_steps, context.offer_pending) == (max_steps, True)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("kind", "text"), [("greeting", "¡Hola!"), ("closing", "¡Con gusto!"), ("off_topic", "No puedo ayudarte")])
+async def test_fijo_en_ambos_canales_sin_aviso_ni_oferta(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier, schedule, kind, text):
+    use_llm(monkeypatch, FakeAgentLLM(coordinator=[CoordinatorReply(kind)]), FakeRetriever())
+
+    internal = await ask("hola")
+    web = dumps(await ask_web(web_session(), "hola"))
+
+    assert internal.startswith(text) and notifier.sent == []
+    assert len(web) == 1 and web[0]["type"] == "message" and web[0]["text"].startswith(text)
+
+
+@pytest.mark.anyio
+async def test_aclaracion_en_ambos_canales_sin_aviso_ni_oferta(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier, schedule):
+    candidates = [Candidate("faq", 41, 10, "¿Cuándo pagan?", 0.6), Candidate("faq", 11, 1, "¿Plazo?", 0.6)]
+    use_llm(monkeypatch, FakeAgentLLM(coordinator=[CoordinatorReply("no_answer")]), FakeRetriever(candidates=candidates))
+
+    internal = await ask("tengo un problema")
+    web = dumps(await ask_web(web_session(), "tengo un problema"))
+
+    assert internal.startswith("¿A cuál de estos temas te refieres?") and notifier.sent == []
+    assert [m["type"] for m in web] == ["message"] and web[0]["text"].startswith("¿A cuál de estos temas te refieres?")
+
+
+@pytest.mark.anyio
+async def test_oferta_por_texto_aceptada_pide_los_datos_de_contacto(monkeypatch: pytest.MonkeyPatch, schedule):
+    use_llm(monkeypatch, FakeAgentLLM(coordinator=[CoordinatorReply("accept_offer")]), FakeRetriever())
+    session = web_session(WebPhase.offering_human, "¿Venden repuestos?")
+
+    messages = dumps(await ask_web(session, "ok"))
+
+    assert messages == [{"type": "request_contact", "attempt": 1}]
+    assert session.phase == WebPhase.collecting_contact and session.pending_question == "¿Venden repuestos?"
+
+
+@pytest.mark.anyio
+async def test_oferta_por_texto_rechazada_muestra_los_canales(monkeypatch: pytest.MonkeyPatch, schedule):
+    use_llm(monkeypatch, FakeAgentLLM(coordinator=[CoordinatorReply("decline_offer")]), FakeRetriever())
+    session = web_session(WebPhase.offering_human, "¿Venden repuestos?")
+
+    messages = dumps(await ask_web(session, "no, gracias"))
+
+    assert [m["type"] for m in messages] == ["message", "official_channels"]
+    assert session.phase == WebPhase.bot
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("phase", [WebPhase.offering_human, WebPhase.collecting_contact])
+async def test_mantiene_fase_ante_un_mensaje_fijo(monkeypatch: pytest.MonkeyPatch, schedule, phase):
+    use_llm(monkeypatch, FakeAgentLLM(coordinator=[CoordinatorReply("greeting")]), FakeRetriever())
+    session = web_session(phase, "¿Venden repuestos?")
+
+    messages = dumps(await ask_web(session, "hola"))
+
+    assert [m["type"] for m in messages] == ["message"]
+    assert session.phase == phase and session.pending_question == "¿Venden repuestos?"
+
+
+@pytest.mark.anyio
+async def test_mantiene_fase_en_cola_sin_llegar_al_agente(monkeypatch: pytest.MonkeyPatch, schedule):
+    llm = FakeAgentLLM(coordinator=[CoordinatorReply("greeting")])
+    use_llm(monkeypatch, llm, FakeRetriever())
+    session = web_session(WebPhase.queued)
+
+    messages = dumps(await ask_web(session, "hola"))
+
+    assert [m["type"] for m in messages] == ["message"] and llm.calls == 0
+    assert session.phase == WebPhase.queued
+
+
+@pytest.mark.anyio
+async def test_caido_saludo_responde_no_disponible_en_ambos_canales(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier, schedule):
+    use_llm(monkeypatch, DownLLM())
+
+    assert await ask("hola") == UNAVAILABLE
+    assert dumps(await ask_web(web_session(), "hola"))[0]["code"] == "service_unavailable"
+
+
+@pytest.mark.anyio
+async def test_aclaracion_fuera_de_horario_fallida_muestra_los_canales(monkeypatch: pytest.MonkeyPatch, schedule):
+    use_llm(monkeypatch, FakeAgentLLM(coordinator=[CoordinatorReply("no_answer")]), FakeRetriever())
+
+    messages = dumps(await after_areas_question(web_session(), "algo que nadie sabe", OUT_OF_HOURS))
+
+    assert [m["type"] for m in messages] == ["message", "official_channels"]

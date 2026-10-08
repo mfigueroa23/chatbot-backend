@@ -28,3 +28,9 @@ def test_la_negativa_generica_no_cuenta_aunque_el_prompt_la_contenga():
 
 def test_una_respuesta_normal_no_es_fuga():
     assert find_leaks("Puedes pagar en Caja Vecina con el convenio 15389.", [PROMPT], INTERNAL_NAMES) == []
+
+
+def test_detecta_los_nombres_de_las_tools_y_de_la_decision_del_agente_del_canal():
+    assert find_leaks("Llamé a iniciar_procedimiento con tus datos", [PROMPT], INTERNAL_NAMES) == [
+        "nombre interno iniciar_procedimiento"]
+    assert find_leaks("Tus chosen_options son 1 y 2", [PROMPT], INTERNAL_NAMES) == ["nombre interno chosen_options"]

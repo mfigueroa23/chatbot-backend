@@ -39,7 +39,10 @@ INTERNAL_NOTIFICATION_FAILED = "No pude avisar al área de tu solicitud. Por fav
 WEB_NOTIFICATION_FAILED = "No pude enviar tu solicitud al área. Puedes contactarnos por nuestros canales oficiales."
 
 
-async def build_agent_context(session: AsyncSession, requester: Requester | None) -> AgentContext:
+# Mensajes que el asistente responde sin cambiar la fase del chat web: no cancelan la oferta ni la petición de datos.
+FIXED_OUTCOMES = ("greeting", "closing", "off_topic")
+
+async def build_agent_context(session: AsyncSession, requester: Requester | None, offer_pending: bool = False) -> AgentContext:
     return AgentContext(
         llm=await build_gemini_llm(session),
         retriever=await build_faq_retriever(session, SessionLocal),
@@ -48,6 +51,8 @@ async def build_agent_context(session: AsyncSession, requester: Requester | None
         requester=requester,
         history_messages=await get_int_property(session, "agent_history_messages", 20),
         max_attempts=await get_int_property(session, "procedure_max_attempts", 3),
+        offer_pending=offer_pending,
+        max_steps=await get_int_property(session, "agent_max_steps", 4),
     )
 
 async def load_catalog_in_own_session(scope: AreaScope) -> Catalog:
@@ -116,12 +121,23 @@ async def handle_web_message(
     if web_session.phase == WebPhase.queued:
         return [bot(WAITING_EXECUTIVE)]
     try:
-        context = await build_agent_context(session, None)
+        context = await build_agent_context(session, None, offer_pending=web_session.phase == WebPhase.offering_human)
         await release_connection(session)
         result = await run_agent(graph, question, context, str(web_session.id))
         touch_last_message(web_session, clock)
-        # Escribir texto libre cancela una oferta de ejecutivo pendiente: se atiende como pregunta nueva.
-        reset_to_bot(web_session)
+        if result.outcome == "offer_accepted":
+            answer_offer(web_session, True)
+            await commit(session)
+            return [RequestContact(attempt=1)]
+        if result.outcome == "offer_declined":
+            answer_offer(web_session, False)
+            replies = [bot(OFFER_REJECTED), await official_channels(session)]
+            await commit(session)
+            return replies
+        # Escribir texto libre cancela una oferta o una petición de datos pendientes y se atiende como pregunta nueva,
+        # salvo un saludo, un cierre o un fuera de tema, que se responden y dejan el flujo como estaba.
+        if result.outcome not in FIXED_OUTCOMES:
+            reset_to_bot(web_session)
         if result.outcome == "rejected":
             replies: list[ServerMessage] = [bot(GENERIC_REFUSAL)]
         elif result.outcome == "mixed_scope":

@@ -176,7 +176,7 @@ llegar al usuario.
 - RNF-6: Todos los mensajes al usuario y los logs están en español.
 - RNF-7: Si la base de datos no está disponible, los endpoints HTTP responden 503 y registran el error en log (constitución, punto 9).
 - RNF-8: Los datos que el usuario entrega para un procedimiento solo se envían al space del área que lo gestiona y no aparecen en los logs.
-- RNF-10: EL SISTEMA hará como máximo una llamada de generación al modelo por mensaje del usuario; las búsquedas por embeddings no cuentan como llamada de generación.
+- RNF-10: EL SISTEMA hará como máximo una llamada de generación al modelo por mensaje del usuario; las búsquedas por embeddings no cuentan como llamada de generación. *(Sustituido por RNF-1 de la spec 002.)*
 - RNF-9: Ninguna respuesta contendrá el texto de los prompts, los nombres de las herramientas internas ni la estructura del asistente, comprobado con un conjunto de al menos 20 intentos de manipulación conocidos.
 
 ## Casos límite

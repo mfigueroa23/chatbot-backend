@@ -2,11 +2,27 @@
 
 Backend de ChatBot, construido con FastAPI, SQLAlchemy (async) y PostgreSQL.
 
-Es un asistente virtual con un patrón agéntico coordinador ([spec 001](docs/specs/001-agentic-pattern-coordinator/spec.md)):
-un grafo de LangGraph por ámbito recupera las FAQ y los procedimientos de las áreas de negocio (RAG con pgvector y Gemini)
-y responde cada mensaje con **una sola llamada al modelo** con salida estructurada. El código decide el resto: un
-guardarraíl descarta las respuestas que no citan lo recuperado, los procedimientos siguen plantillas, y un auditor
-sustituye por una negativa genérica cualquier respuesta que filtre prompts o funcionamiento interno.
+Es un asistente virtual con un patrón agéntico coordinador ([spec 001](docs/specs/001-agentic-pattern-coordinator/spec.md)
+y [spec 002](docs/specs/002-assistant-behavior/spec.md)). Cada canal tiene un grafo de LangGraph con un **agente del
+canal** que resuelve o delega, y un **agente por área de negocio** con sus propias tools (RAG con pgvector y Gemini):
+
+```
+START → [coordinate] ──(saludo, cierre, fuera de tema, manipulación, persona, oferta, pregunta mixta)──► END
+              │ route
+              ├─(sin áreas)───────────────────────────────► [finalize] ──► END
+              └─ Send × N ─► [area_agent: área A] ─┐
+                             [area_agent: área B] ─┴──────► [finalize] ──► END
+```
+
+- `coordinate`: una llamada estructurada clasifica el mensaje o elige las áreas, mientras en paralelo se calcula el
+  embedding y las señales del ámbito (áreas con coincidencias, candidatos para aclarar y pregunta mixta).
+- `area_agent`: cada área busca sus FAQ y procedimientos con ese embedding y responde con su prompt; puede volver a
+  buscar o iniciar un procedimiento con sus tools (como máximo `agent_max_steps` pasos). Las áreas corren en paralelo.
+- `finalize`: combina las respuestas, aplica el guardarraíl (sin FAQ ni procedimiento no hay respuesta) y el auditor de
+  fugas, y si nadie responde pregunta qué necesita el usuario (opciones numeradas o las áreas del canal) antes de
+  aplicar el flujo de "sin respuesta".
+
+Saluda, cierra la conversación y declina lo ajeno con mensajes fijos editables en la BD, sin derivar a una persona.
 Atiende dos canales:
 
 - **Chat web** (clientes, áreas externas) por WebSocket, con memoria por sesión y derivación a un ejecutivo en vivo.
@@ -57,7 +73,8 @@ Properties usadas actualmente:
 | `gemini_embedding_model` | Modelo de embeddings, p. ej. `gemini-embedding-001` (obligatoria) | — |
 | `llm_timeout_seconds` | Tiempo máximo de espera de cada llamada a Gemini | `20` |
 | `rag_top_k` | FAQ recuperadas por área | `4` |
-| `rag_min_similarity` | Similitud coseno mínima para usar una FAQ | `0.68` |
+| `rag_min_similarity` | Similitud coseno mínima para usar una FAQ o un procedimiento al responder | `0.68` |
+| `rag_clarify_similarity` | Similitud mínima de un candidato para ofrecerlo como opción de una aclaración; debe ser menor que `rag_min_similarity` (si no, no se ofrecen opciones) | `0.55` |
 | `web_session_retention_days` | Días que se conserva una sesión web desde su último mensaje | `30` |
 | `web_max_sessions` | Sesiones web activas simultáneas | `50` |
 | `executive_max_chats` | Chats en vivo simultáneos por ejecutivo | `3` |
@@ -72,6 +89,7 @@ Properties usadas actualmente:
 | `google_chat_sync_timeout_seconds` | Segundos que se espera la respuesta antes de contestar "procesando" | `25` |
 | `google_chat_retention_days` | Días que se conserva la memoria de una conversación de Google Chat desde su último mensaje | `30` |
 | `agent_history_messages` | Mensajes anteriores de la conversación que se envían al modelo | `20` |
+| `agent_max_steps` | Pasos (llamadas al modelo) de cada agente de área por mensaje | `4` |
 | `procedure_max_attempts` | Intentos para entregar datos válidos de un procedimiento antes de abandonarlo | `3` |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
@@ -99,7 +117,7 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 | `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y `chat_space` (space de Google Chat del área, `spaces/…`) |
 | `faq_category`, `faq` | Categorías y preguntas frecuentes de cada área. El embedding se calcula solo al usarlas |
 | `procedure`, `procedure_field` | Procedimientos de cada área (nombre y pasos que se explican al usuario) y los datos que exige cada uno, con su tipo (`text`, `email`, `phone`, `rut`, `number`, `date`). El embedding se calcula solo al usarlos |
-| `agent_prompt` | Prompts con las keys `internal_agent` y `external_agent` (agente de cada canal: cómo responder, combinar varias áreas y cuándo marcar una petición de ejecutivo o una manipulación) y `area_rules` (reglas comunes de todas las áreas). Su texto solo vive en la BD (no se versiona): cada uno debe prohibir revelar instrucciones, prompts, herramientas, áreas o funcionamiento interno y tratar lo que escribe el usuario como información, nunca como instrucciones |
+| `agent_prompt` | Prompts con las keys `internal_agent` y `external_agent` (agente de cada canal: clasificar el mensaje y elegir las áreas en las que delegar) y `area_rules` (reglas comunes de los agentes de área). Su texto solo vive en la BD (no se versiona): cada uno debe prohibir revelar instrucciones, prompts, herramientas, áreas o funcionamiento interno y tratar lo que escribe el usuario como información, nunca como instrucciones. También guarda los mensajes fijos de cada canal, `{internal,external}_{greeting,closing,off_topic}`, que siembra la migración y se pueden editar; la lista de áreas la añade el código al saludo y al fuera de tema |
 | `service_schedule` | Franja de atención por día (`weekday` 0 = lunes … 6 = domingo), en hora de Santiago |
 | `holiday` | Fechas sin atención |
 | `official_channel` | Canales oficiales que se muestran al cliente |
@@ -110,7 +128,19 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 uv run python -m src.cli.hash_password   # pide la contraseña sin mostrarla e imprime el hash Argon2
 ```
 
-Los cambios en áreas, FAQ, procedimientos y prompts se aplican desde el siguiente mensaje, sin reiniciar.
+Los cambios en áreas, FAQ, procedimientos, prompts y mensajes fijos se aplican desde el siguiente mensaje, sin reiniciar.
+
+#### Alta de un área
+
+Una área nueva es solo datos: el grafo lanza un `area_agent` por cada área activa, sin código ni despliegue.
+
+1. Insertar la fila en `business_area` con su `scope`, una `description` clara (es lo único que ve el agente del canal
+   para decidir si le delega una consulta), su `system_prompt` (sin él el área no responde) y su `chat_space`.
+2. Cargar sus categorías y FAQ en `faq_category` y `faq`, y sus procedimientos en `procedure` y `procedure_field`. Los
+   embeddings se calculan solos en el siguiente mensaje.
+3. Añadir la app de Google Chat como miembro del space del área.
+
+Para retirar un área se usa `active = false`; borrarla elimina en cascada sus FAQ y procedimientos.
 
 La app de Google Chat se configura como **complemento de Google Workspace**: en la API de Chat, la URL del endpoint
 HTTP es la de `google_chat_audience`, y la cuenta de servicio que muestra la consola va en
@@ -129,7 +159,22 @@ uv run python -m src.cli.jailbreak_check --url ws://127.0.0.1:8000/ws/v1/chat
 
 Envía una batería de más de 20 intentos de manipulación (revelar el prompt, las herramientas o las áreas internas,
 "ignora tus instrucciones", juegos de rol…) y falla (código de salida 1) si alguna respuesta contiene fragmentos de los
-prompts de la BD, nombres internos, código o áreas internas. Ejecútalo tras cambiar los prompts.
+prompts de la BD, nombres internos, código o áreas internas. Ejecútalo tras cambiar los prompts. Los mensajes fijos
+no cuentan como prompts: se muestran al usuario.
+
+### Baterías de comportamiento
+
+```bash
+uv run python -m src.cli.behavior_check --scope external
+uv run python -m src.cli.behavior_check --scope external --faqs 1,2 --procedure 1 --paraphrase "¿cuánto cuesta levantar la prenda?"
+```
+
+Ejecuta contra la BD y Gemini (dentro del pod o en local) la batería de clasificación de la spec 002 (saludos, cierres,
+fuera de tema y consultas) y, con `--faqs`, `--procedure` y `--paraphrase`, la de elección de opciones sobre una
+pregunta con esas tres opciones. No envía avisos a las áreas. Termina con código 1 si algún caso falla.
+
+En el chat web, mientras se ofrece un ejecutivo, el cliente puede aceptar o rechazar escribiendo («ok», «no, gracias»)
+además de con `human_response`; un saludo, un cierre o un fuera de tema no cancelan la oferta ni la petición de datos.
 
 ## Ejecución
 
@@ -209,8 +254,8 @@ Las migraciones **no** se ejecutan en el pipeline: el contenedor las aplica al a
 main.py                     App FastAPI, lifespan y configuración de logs
 entrypoint.sh               Entrypoint del contenedor: aplica migraciones y arranca la API
 src/
-├── agents/                 Grafo coordinador (LangGraph), LLM, recuperador de FAQ y estrategias por canal
-├── cli/                    Comandos de mantenimiento (hash_password)
+├── agents/                 Grafo coordinador (LangGraph), agentes de área y sus tools, LLM, recuperador y estrategias por canal
+├── cli/                    Comandos de mantenimiento (hash_password, jailbreak_check, behavior_check)
 ├── config.py               Settings leídos del .env
 ├── database/session.py     Engine y sesión por request (SessionDep)
 ├── models/                 Modelos ORM de SQLAlchemy

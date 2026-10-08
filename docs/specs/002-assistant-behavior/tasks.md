@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 1/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 3/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -15,10 +15,10 @@ referencia de los agentes de área está en `git show 60a517e^:src/agents/{sub_a
   Hecho cuando: R6 y R7 del plan dicen «Decisión del usuario» con la respuesta; si cambia algo, la spec tiene el RF correspondiente.
 
 ## Fase 1 — Datos y catálogo
-- [ ] **T-3 — Crear la migración de datos de los textos fijos** · RF-1, RNF-3 · ~20 min
+- [x] **T-3 — Crear la migración de datos de los textos fijos** · RF-1, RNF-3 · ~20 min
   `alembic/versions/<rev>_seed_fixed_messages.py` con `down_revision = '36f04146ef00'`: 6 keys de `agent_prompt` con los textos de la sección 3 del plan y `ON CONFLICT (key) DO NOTHING`; el downgrade borra esas keys.
   Hecho cuando: en local, `uv run alembic upgrade head` deja las 6 keys en `agent_prompt` y `uv run alembic downgrade -1` las quita.
-- [ ] **T-4 — Leer los textos fijos y los nombres de áreas en el catálogo** · RF-1, RF-2 · ~20 min
+- [x] **T-4 — Leer los textos fijos y los nombres de áreas en el catálogo** · RF-1, RF-2 · ~20 min
   `Catalog` añade `fixed: dict[str, str | None]` y `area_names`; `load_catalog` lee `{scope}_greeting`, `{scope}_closing` y `{scope}_off_topic` con `get_agent_prompt`, sin caché.
   Hecho cuando: `uv run pytest -q tests/business_data_test.py -k catalog` pasa con un texto presente, uno ausente (`None`) y los nombres de todas las áreas activas del ámbito.
 

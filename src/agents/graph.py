@@ -1,6 +1,6 @@
 import logging
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated, Literal, TypedDict
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
@@ -24,12 +24,16 @@ from src.services.procedures import web_contact_fields
 logger = logging.getLogger(__name__)
 
 Outcome = Literal["answered", "no_answer", "mixed_scope", "wants_human", "notification_failed", "rejected"]
+# Mensajes fijos de cada canal: viven en agent_prompt con la key "<ámbito>_<tipo>".
+FIXED_KINDS = ("greeting", "closing", "off_topic")
 
 @dataclass(frozen=True)
 class Catalog:
     areas: list[AreaInfo]  # solo las del ámbito del grafo: el contenido del otro ámbito nunca llega al modelo
     agent_prompt: str
     area_rules: str  # reglas comunes de todas las áreas
+    fixed: dict[str, str | None] = field(default_factory=dict)  # texto de cada mensaje fijo; None si falta en la BD
+    area_names: list[str] = field(default_factory=list)  # todas las áreas activas del ámbito, tengan prompt o no
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -187,6 +191,7 @@ async def run_agent(graph: AgentGraph, question: str, context: AgentContext, thr
 async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     areas = await get_areas(session, scope)
     prompts = {key: await get_agent_prompt(session, key) for key in (f"{scope}_agent", "area_rules")}
+    fixed = {kind: await get_agent_prompt(session, f"{scope}_{kind}") for kind in FIXED_KINDS}
     missing = [key for key, value in prompts.items() if value is None]
     if missing:
         logger.warning("Faltan prompts en agent_prompt: %s", ", ".join(missing))
@@ -194,4 +199,6 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
         [AreaInfo(area.id, area.name, area.description, area.scope, area.system_prompt, area.chat_space) for area in areas],
         prompts[f"{scope}_agent"] or "",
         prompts["area_rules"] or "",
+        fixed,
+        [area.name for area in areas],
     )

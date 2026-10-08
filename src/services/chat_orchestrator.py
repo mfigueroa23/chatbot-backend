@@ -1,4 +1,5 @@
 import logging
+import re
 from datetime import datetime
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
@@ -38,6 +39,12 @@ HUMAN_REQUESTED = "El cliente pidió hablar con un ejecutivo."
 INTERNAL_NOTIFICATION_FAILED = "No pude avisar al área de tu solicitud. Por favor, contacta directamente con el área."
 WEB_NOTIFICATION_FAILED = "No pude enviar tu solicitud al área. Puedes contactarnos por nuestros canales oficiales."
 
+
+# Google Chat marca la negrita con un asterisco; el modelo escribe la de Markdown, que se vería con los asteriscos.
+MARKDOWN_BOLD = re.compile(r"\*\*(.+?)\*\*", re.DOTALL)
+
+def google_chat_text(text: str) -> str:
+    return MARKDOWN_BOLD.sub(r"*\1*", text)
 
 async def build_agent_context(
     session: AsyncSession, requester: Requester | None, offer_pending: bool = False, clock: Clock = SystemClock()
@@ -106,8 +113,8 @@ async def handle_internal_message(
         result = await run_agent(graph, question, context, conversation_id)
         # El coordinador es la única voz: sin texto solo queda la negativa genérica o el aviso fijo de fallo.
         if result.outcome == "notification_failed":
-            return result.reply or INTERNAL_NOTIFICATION_FAILED
-        return result.reply or GENERIC_REFUSAL
+            return google_chat_text(result.reply or INTERNAL_NOTIFICATION_FAILED)
+        return google_chat_text(result.reply or GENERIC_REFUSAL)
     except LlmNotConfiguredError:
         return UNAVAILABLE
     except LlmUnavailableError as exc:

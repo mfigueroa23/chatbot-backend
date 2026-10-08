@@ -446,3 +446,22 @@ async def test_contexto_lee_la_temperatura_de_conversacion_en_ambos_canales(real
     await chat_orchestrator.build_agent_context(property_session(values), requester)
 
     assert real_context == [temperature]
+
+
+
+# --- Formato por canal ---------------------------------------------------------------------------------------------
+
+@pytest.mark.anyio
+async def test_interno_convierte_la_negrita_para_google_chat(monkeypatch: pytest.MonkeyPatch):
+    use_llm(monkeypatch, says("Tengo info de **Ayuda General** y de **Proyectos (TI)**. ¿Te sirve * así *?"))
+
+    assert await ask("¿qué áreas cubres?") == "Tengo info de *Ayuda General* y de *Proyectos (TI)*. ¿Te sirve * así *?"
+
+
+@pytest.mark.anyio
+async def test_web_no_cambia_la_negrita(monkeypatch: pytest.MonkeyPatch, schedule):
+    use_llm(monkeypatch, says("Puede pagar en **Caja Vecina**."))
+
+    messages = dumps(await ask_web(web_session(), "¿dónde pago?"))
+
+    assert messages == [{"type": "message", "from": "bot", "text": "Puede pagar en **Caja Vecina**."}]

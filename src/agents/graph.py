@@ -27,11 +27,13 @@ logger = logging.getLogger(__name__)
 
 Outcome = Literal["answered", "rejected", "offer_human", "official_channels", "offer_accepted", "offer_declined",
                   "notification_failed"]
-# Motivos del control posterior que se corrigen con un reintento; una fuga nunca se reintenta.
-RETRYABLE = ("dato personal", "promesa de seguimiento", "acción no realizada")
+# Motivos del control posterior que se corrigen con un reintento. Nombrar una herramienta es un descuido (el usuario
+# preguntó por ella); un fragmento de prompt o código nunca se reintenta.
+RETRYABLE = ("nombre interno", "dato personal", "promesa de seguimiento", "acción no realizada")
 RETRY_NOTE = ("[Nota del sistema, no del usuario] Tu respuesta anterior no puede enviarse: {problems}. Reescríbela sin "
-              "datos personales que no vengan de la información de las áreas, sin prometer avisos ni seguimientos y sin "
-              "afirmar acciones que no hayas hecho con una herramienta en este mensaje.")
+              "nombres internos (di lo que haces, no cómo se llama), sin datos personales que no vengan de la información "
+              "de las áreas, sin prometer avisos ni seguimientos y sin afirmar acciones que no hayas hecho con una "
+              "herramienta en este mensaje.")
 
 @dataclass(frozen=True)
 class Catalog:

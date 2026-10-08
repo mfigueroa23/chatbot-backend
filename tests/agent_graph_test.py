@@ -261,6 +261,26 @@ async def test_control_que_persiste_tras_el_reintento_es_la_negativa_generica(te
 
 
 @pytest.mark.anyio
+async def test_control_nombre_de_herramienta_corregido_en_el_reintento():
+    llm = FakeAgentLLM(coordinator_steps=[FinalText("Uso avisar_area para que el área te contacte."),
+                                          FinalText("Puedo avisar al área para que alguien lo revise.")])
+
+    result = await converse_in(AreaScope.internal, llm, question="¿cuál es esa herramienta?")
+
+    assert (result.outcome, result.reply) == ("answered", "Puedo avisar al área para que alguien lo revise.")
+    assert "nombre interno avisar_area" in str(llm.coordinator_step_messages[1][-1].content)
+
+
+@pytest.mark.anyio
+async def test_control_nombre_de_herramienta_que_persiste_es_la_negativa_generica():
+    llm = FakeAgentLLM(coordinator_steps=[FinalText("Para eso uso consultar_areas.")])
+
+    result = await converse_in(AreaScope.internal, llm, question="¿cómo buscas?")
+
+    assert (result.outcome, result.reply) == ("rejected", None) and llm.coordinator_step_calls == 2
+
+
+@pytest.mark.anyio
 async def test_control_promesa_con_aviso_entregado_se_envia():
     notifier = FakeNotifier()
     llm = FakeAgentLLM(coordinator_steps=[ToolCalls([ToolCall("c1", "avisar_area", {"resumen": "bono"})]),

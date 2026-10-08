@@ -1,6 +1,6 @@
 # Tareas 005 — Archivos adjuntos, consulta de Jira y EDR en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 18/22 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 20/22 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a Google
 ni a Jira: los clientes HTTP reciben un `httpx.MockTransport`. Cada pieza nueva entra con parámetros por defecto que no
@@ -75,10 +75,10 @@ cambian el comportamiento vigente hasta que se conecta.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "evidencia_archivo or evidencia_jira or archivo_instrucciones or web_sin_herramientas"` pasa.
 
 ## Fase 8 — Cierre
-- [ ] **T-19 — Actualizar el README** · RF-27 · ~20 min
+- [x] **T-19 — Actualizar el README** · RF-27 · ~20 min
   Adjuntos, Jira, EDR, tablas `jira_board`/`project_collaborator`/`edr_document`, `business_area.tools` y properties nuevas.
   Hecho cuando: `grep -c "jira_board\|project_collaborator\|edr_drive_folder_id\|attachment_max_mb" README.md` da al menos 4.
-- [ ] **T-20 — Verificación completa y versión 1.5.0** · todos · ~15 min
+- [x] **T-20 — Verificación completa y versión 1.5.0** · todos · ~15 min
   `uv run pyright`, `uv run pytest`; versión 1.5.0 en `pyproject.toml`/`uv.lock` (incluye el fix 1.4.1, aún sin publicar).
   Hecho cuando: pyright da 0 errores, pytest no tiene fallos y `grep '^version = "1.5.0"' pyproject.toml` encuentra la línea.
 

@@ -12,10 +12,25 @@ class ChatUser(ChatModel):
 class ChatThread(ChatModel):
     name: str
 
+class AttachmentDataRef(ChatModel):
+    resource_name: str
+
+class DriveDataRef(ChatModel):
+    drive_file_id: str
+
+class ChatAttachment(ChatModel):
+    """Archivo adjunto a un mensaje: subido a Chat (attachmentDataRef) o enlazado desde Drive (driveDataRef)."""
+    content_name: str = "archivo"
+    content_type: str = ""
+    source: str | None = None
+    attachment_data_ref: AttachmentDataRef | None = None
+    drive_data_ref: DriveDataRef | None = None
+
 class ChatMessage(ChatModel):
     text: str | None = None
     argument_text: str | None = None
     thread: ChatThread | None = None
+    attachment: list[ChatAttachment] = []
 
 class ChatSpace(ChatModel):
     name: str

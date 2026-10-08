@@ -5,7 +5,8 @@ GENERIC_REFUSAL = "Solo puedo ayudarte con consultas de las áreas de este canal
 INTERNAL_NAMES = [
     "faq_ids", "procedure_id", "wants_human", "no_answer", "manipulation", "area_ids", "chosen_options", "accept_offer",
     "decline_offer", "off_topic", "buscar_faq", "buscar_procedimiento", "iniciar_procedimiento", "procedimiento_id",
-    "about_assistant", "consultar_areas", "avisar_area", "ofrecer_ejecutivo", "responder_oferta",
+    "about_assistant", "consultar_areas", "avisar_area", "ofrecer_ejecutivo", "responder_oferta", "buscar_tickets",
+    "leer_ticket", "leer_edr", "guardar_edr", "edr_json",
 ]
 # Un fragmento de este largo copiado de un prompt ya revela su contenido.
 LEAK_FRAGMENT_LENGTH = 30
@@ -55,6 +56,8 @@ CLAIMED_ACTIONS = [
                r"\b(?:solicitud|consulta|caso)\b", re.IGNORECASE),
     re.compile(r"\b(?:avisé|notifiqué|he avisado|hemos avisado|he notificado|hemos notificado)\b", re.IGNORECASE),
     re.compile(r"\b(?:quedaste|quedó|queda)\s+en\s+(?:la\s+)?cola\b", re.IGNORECASE),
+    re.compile(r"\b(?:guardé|he guardado|hemos guardado|dejé guardado|quedó guardado|subí|he subido)\b.{0,40}?"
+               r"\b(?:edr|documento|borrador)\b", re.IGNORECASE),
 ]
 
 def personal_data_values(text: str) -> list[tuple[str, str]]:

@@ -95,8 +95,9 @@ realizadas, con un reintento.
   validación y la notificación son las de la spec 001, y el resultado sube al coordinador como información. *Descartada:*
   mover `iniciar_procedimiento` al coordinador — tendría que conocer los procedimientos, contra RF-6.
 - **D5 — Control posterior con un reintento.** `review` detecta fuga, dato personal fuera de la evidencia, promesa sin
-  aviso y acción afirmada sin realizar; ante los tres últimos se reintenta una vez con una nota que nombra el problema; si
-  persiste, o si hay fuga, `GENERIC_REFUSAL`. *Descartada:* sustituir directamente — una negativa por un descuido
+  aviso y acción afirmada sin realizar; ante un nombre interno, un dato personal, una promesa o una acción se reintenta una
+  vez con una nota que nombra el problema; si persiste, o si hay un fragmento de prompt o código, `GENERIC_REFUSAL`
+  (ajustado el 2026-10-08, RF-59: un nombre interno es un descuido corregible, como vio el usuario en Google Chat). *Descartada:* sustituir directamente — una negativa por un descuido
   corregible; *descartada:* confiar solo en el prompt — RF-53 a RF-55 dejarían de ser verificables (casos A y B de
   `agente-ti`).
 - **D6 — En el web, sin evidencia tras consultar, la oferta se aplica aunque el coordinador no la pida.** RF-25 y RF-39
@@ -115,6 +116,9 @@ realizadas, con un reintento.
   una migración — la spec los deja solo en la BD.
 - **D10 — Saludo al añadir el bot redactado por el coordinador.** Cumple RF-2 también en el alta del space.
   *Descartada:* mantener el texto fijo de `google_chat.py` — es una plantilla con la lista de áreas.
+- **D12 — Negrita de Google Chat en el orquestador (RF-60).** `handle_internal_message` convierte `**texto**` en
+  `*texto*` antes de devolver la respuesta. *Descartada:* confiar en el prompt — la persona ya pedía no usar negritas y el
+  modelo las usó igual.
 - **D11 — Tope de llamadas como presupuesto compartido.** Coordinador, agente de ámbito y agentes de área descuentan de
   `agent_max_model_calls`; al agotarse, el turno termina con el mensaje de servicio no disponible y un log de aviso.
   *Descartada:* topes separados por nivel — la spec fija uno por mensaje.
@@ -227,6 +231,8 @@ y cuenta las llamadas.
 | RF-56 | `graph.load_catalog` | `business_data_test` |
 | RF-57 | `business_data` (sin caché) | `business_data_test` |
 | RF-58 | `graph.respond` (D8) | `agent_graph_test` |
+| RF-59 | `graph.respond` (`RETRYABLE`, D5) | `agent_graph_test` |
+| RF-60 | `chat_orchestrator.handle_internal_message` (D12) | `chat_orchestrator_test` |
 | RNF-1 | presupuesto compartido (D11) | `coordinator_test` |
 | RNF-2 | — | prueba de carga |
 | RNF-3 | persona y prompts | demo |
@@ -241,7 +247,16 @@ y cuenta las llamadas.
 - **R3 — Latencia.** Una consulta son al menos 4 llamadas en serie (coordinador, ámbito, área, coordinador); con 2 la
   spec 002 midió 8,69 s. Google Chat tiene la respuesta diferida de 30 s (spec 001, RF-68); el web espera por el
   WebSocket. *Mitigación:* áreas en paralelo, embedding en paralelo con el ámbito, `thinking_budget=0` y medición con la
-  prueba de carga antes de fusionar (RNF-2).
+  prueba de carga antes de fusionar (RNF-2). **Medición en el despliegue (2026-10-08, 1.4.0, `gemini-3.1-flash-lite`,
+  50 sesiones simultáneas por ronda; web por WebSocket, interno en proceso):**
+  - Con 300m de CPU: web p50 22,5 s, p95 23,7 s, máx 25,0 s (50/50); interno con FAQ p95 22,0 s (44/50); interno sin
+    FAQ p95 18,6 s (48/50). Prometheus: 99,5 % de los periodos con throttling. Una sesión sola: ~3,2 s.
+  - Con 1 CPU (manifiestos del clúster actualizados): web con FAQ p50 10,6 s, p95 13,1 s, máx 14,1 s (50/50); interno
+    con FAQ p50 3,8 s, p95 6,6 s (49/50); interno sin FAQ p50 6,6 s, p95 8,0 s (50/50). Throttling máx 14,5 %.
+  - Perfil de una consulta web con FAQ en reposo (5,5–7,5 s): coordinador 0,9–1,9 s → ámbito 1,0 s (en paralelo con
+    el embedding, 0,4–1,1 s) → área 1,5–1,8 s (+1,4 s por cada búsqueda extra) → coordinador 1,4–1,8 s.
+  - **Decisión del usuario:** RNF-2 queda en p95 ≤ 15 s. Mejoras para bajar a 10 s: precargar las señales del ámbito
+    mientras el coordinador da su primer paso y limitar las búsquedas extra de las áreas (`agent_max_steps`).
 - **R4 — Requisitos que solo cumple el prompt** (RF-15 a RF-18, RF-20, RF-26, RF-27, RF-50): no son verificables en
   código; se aceptan en la demo manual, como decidiste.
 - **R5 — Prompts de la BD.** Si se despliega el código sin `{scope}_coordinator` cargado, el coordinador solo tendría la

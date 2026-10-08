@@ -260,3 +260,15 @@ async def test_presupuesto_agotado_es_servicio_no_disponible():
     with pytest.raises(LlmUnavailableError):
         await run_coordinator(llm, internal(), coordinator_messages(), CallBudget(5))
     assert llm.coordinator_step_calls == 5
+
+
+
+@pytest.mark.anyio
+async def test_consultar_areas_edr_incluye_el_enlace_guardado():
+    area = AreaInfo(3, "Proyectos", "TI", AreaScope.internal, "Eres Proyectos", None, ("jira", "edr"))
+    saved = AreaAnswer(area, "answered", "Borrador listo con 3 RF.", {}, links=["https://docs.google.com/document/d/DOC1/edit"])
+    box = internal(Consult(ScopeReport([saved])))
+
+    result = await box.execute(call("consultar_areas", consulta="arma el EDR de DAIA-52"))
+
+    assert result == "[Proyectos]\nBorrador listo con 3 RF.\nEnlace del EDR: https://docs.google.com/document/d/DOC1/edit"

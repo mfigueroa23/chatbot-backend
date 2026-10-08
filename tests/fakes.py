@@ -15,6 +15,9 @@ from src.models.executive_session import ExecutiveSession
 from src.models.live_chat import LiveChat, LiveChatStatus
 from src.models.web_session import WebPhase, WebSession
 from src.services.realtime import ConnectionHub, Event
+import httpx
+from src.services.edr import EdrSaved
+from src.utils.exceptions.jira import JiraUnavailableError
 from src.utils.exceptions.notification import NotificationDeliveryError
 
 
@@ -83,11 +86,14 @@ class FakeAgentLLM:
     """
 
     def __init__(self, *replies: AgentReply, steps: dict[str, list[AgentStep]] | None = None,
-                 scope: list[ScopeDecision] | None = None, coordinator_steps: list[AgentStep] | None = None):
+                 scope: list[ScopeDecision] | None = None, coordinator_steps: list[AgentStep] | None = None,
+                 transcripts: list[str] | None = None):
         self.replies = list(replies) or [AgentReply("no_answer", "")]
         self.steps = {area: list(script) for area, script in (steps or {}).items()}
         self.scope = list(scope or [])
         self.coordinator_steps = list(coordinator_steps or [])
+        self.transcripts = list(transcripts or [])
+        self.transcribe_calls = 0
         self.scope_calls = 0
         self.coordinator_step_calls = 0
         self.scope_messages: list[list[BaseMessage]] = []
@@ -125,6 +131,12 @@ class FakeAgentLLM:
             call = ToolCall("call-1", "iniciar_procedimiento", {"procedimiento_id": reply.procedure_id, "datos": data})
             return ToolCalls([call], reply.text)
         return FinalText(reply.text if reply.kind == "answer" else "")
+
+    async def transcribe(self, data: bytes, mime_type: str) -> str:
+        self.transcribe_calls += 1
+        if not self.transcripts:
+            return ""
+        return self.transcripts.pop(0) if len(self.transcripts) > 1 else self.transcripts[0]
 
     def coordinator_step(self, messages: list[BaseMessage]) -> AgentStep:
         self.coordinator_step_calls += 1
@@ -205,6 +217,59 @@ class FakeRetriever:
 
     async def refresh_stale_embeddings(self, area_ids: list[int]) -> None:
         self.refreshed_area_ids.extend(area_ids)
+
+
+class FakeProjects:
+    """Jira y el acceso de Proyectos en memoria: cuenta las llamadas a Jira para comprobar que el acceso va antes."""
+
+    def __init__(self, enabled: bool = True, boards: list[str] | None = None, issues: dict | None = None,
+                 children: dict | None = None, found: list | None = None, down: bool = False,
+                 edrs: dict | None = None, drive_down: bool = False):
+        self.enabled = enabled
+        self.boards = boards if boards is not None else ["DAIA"]
+        self.issues = issues or {}
+        self.children_of = children or {}
+        self.found = found or []
+        self.down = down
+        self.jira_calls = 0
+        self.searches: list[str] = []
+        self.edrs = dict(edrs or {})
+        self.drive_down = drive_down
+        self.saved: list[tuple[str, object, bool]] = []
+
+    async def is_enabled(self, email: str | None) -> bool:
+        return self.enabled
+
+    async def allowed_boards(self) -> list[str]:
+        return list(self.boards)
+
+    def _call(self) -> None:
+        self.jira_calls += 1
+        if self.down:
+            raise JiraUnavailableError("caído")
+
+    async def search(self, jql: str):
+        self._call()
+        self.searches.append(jql)
+        return list(self.found)
+
+    async def get_issue(self, key: str):
+        self._call()
+        return self.issues.get(key)
+
+    async def children(self, key: str):
+        self._call()
+        return list(self.children_of.get(key, []))
+
+    async def get_edr(self, conversation_id: str):
+        return self.edrs.get(conversation_id)
+
+    async def save_edr(self, conversation_id: str, edr, new: bool):
+        if self.drive_down:
+            raise httpx.ConnectError("drive caído")
+        self.saved.append((conversation_id, edr, new))
+        self.edrs[conversation_id] = edr
+        return EdrSaved("https://docs.google.com/document/d/DOC1/edit", created=new or len(self.saved) == 1)
 
 
 class FakeNotifier:

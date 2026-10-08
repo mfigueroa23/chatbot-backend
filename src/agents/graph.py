@@ -18,8 +18,10 @@ from src.agents.llm import AgentLLM, AreaInfo, CallBudget, ProcedureHit, build_c
 from src.agents.retriever import Retriever
 from src.agents.scope_agent import ScopeReport, ScopeRequest, run_scope_agent
 from src.agents.strategies import Notifier
+from src.agents.tools import ProjectServices
 from src.models.business_area import AreaScope
 from src.services.area_notifier import Requester
+from src.services.attachments import FILES_NOTE
 from src.services.business_data import AreaTopics, get_agent_prompt, get_area_topics, get_areas
 from src.services.property import get_int_property
 
@@ -27,11 +29,13 @@ logger = logging.getLogger(__name__)
 
 Outcome = Literal["answered", "rejected", "offer_human", "official_channels", "offer_accepted", "offer_declined",
                   "notification_failed"]
-# Motivos del control posterior que se corrigen con un reintento; una fuga nunca se reintenta.
-RETRYABLE = ("dato personal", "promesa de seguimiento", "acción no realizada")
+# Motivos del control posterior que se corrigen con un reintento. Nombrar una herramienta es un descuido (el usuario
+# preguntó por ella); un fragmento de prompt o código nunca se reintenta.
+RETRYABLE = ("nombre interno", "dato personal", "promesa de seguimiento", "acción no realizada")
 RETRY_NOTE = ("[Nota del sistema, no del usuario] Tu respuesta anterior no puede enviarse: {problems}. Reescríbela sin "
-              "datos personales que no vengan de la información de las áreas, sin prometer avisos ni seguimientos y sin "
-              "afirmar acciones que no hayas hecho con una herramienta en este mensaje.")
+              "nombres internos (di lo que haces, no cómo se llama), sin datos personales que no vengan de la información "
+              "de las áreas, sin prometer avisos ni seguimientos y sin afirmar acciones que no hayas hecho con una "
+              "herramienta en este mensaje.")
 
 @dataclass(frozen=True)
 class Catalog:
@@ -58,6 +62,8 @@ class AgentContext:
     max_model_calls: int = 100  # llamadas al modelo por mensaje entre todos los agentes
     fallback_space: Callable[[], Awaitable[str | None]] | None = None  # space general del canal interno
     is_open: Callable[[], Awaitable[bool]] | None = None  # horario de atención del chat web
+    projects: ProjectServices | None = None  # Jira y EDR de las áreas que los tengan habilitados (solo Google Chat)
+    conversation_id: str = ""  # el EDR de una conversación se sigue editando en ella
 
 @dataclass(frozen=True)
 class AgentResult:
@@ -140,7 +146,8 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
                 rules=catalog.area_rules, question=query, history=history, pending=pending,
                 attempts=state.get("procedure_attempts") or {}, requester=context.requester, notifier=context.notifier,
                 history_messages=context.history_messages, max_attempts=context.max_attempts,
-                max_steps=context.max_steps, original=question), budget)
+                max_steps=context.max_steps, original=question, projects=context.projects,
+                conversation_id=context.conversation_id), budget)
 
         toolbox = CoordinatorToolbox(scope, consult, context.notifier, context.requester, question,
                                      context.fallback_space, context.is_open, context.offer_pending)
@@ -152,12 +159,18 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
                    *(area.system_prompt or "" for area in catalog.areas)]
         # El cliente web nunca debe ver nombres de áreas internas; en Google Chat las áreas son de su ámbito.
         names = INTERNAL_NAMES + (catalog.other_area_names if scope == AreaScope.external else [])
-        problems = review(turn.text, prompts, names, toolbox.evidence, toolbox.delivered)
+        # Los archivos que el colaborador compartió en la conversación también son evidencia: puede preguntar por sus datos.
+        files = [text_of(message) for message in state["messages"]
+                 if isinstance(message, HumanMessage) and FILES_NOTE in text_of(message)]
+        evidence = toolbox.evidence + files
+        # Afirmar una acción vale si en este mensaje se entregó un aviso o se guardó un EDR.
+        done = toolbox.delivered or toolbox.saved_edr
+        problems = review(turn.text, prompts, names, evidence, done)
         if problems and all(problem.startswith(RETRYABLE) for problem in problems):
             logger.info("Se pide reescribir la respuesta del coordinador: %s", ", ".join(problems))
             retry = [*messages, AIMessage(turn.text), HumanMessage(RETRY_NOTE.format(problems=", ".join(problems)))]
             turn = await run_coordinator(context.llm, toolbox, retry, budget)
-            problems = review(turn.text, prompts, names, toolbox.evidence, toolbox.delivered)
+            problems = review(turn.text, prompts, names, toolbox.evidence + files, toolbox.delivered or toolbox.saved_edr)
         updates = procedure_state(toolbox)
         if problems:
             # El texto rechazado no se envía ni queda en la memoria del hilo.
@@ -211,7 +224,8 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     # El auditor del web prohíbe los nombres de las áreas internas; en Google Chat no hace falta la otra lista.
     other_names = [area.name for area in await get_areas(session, AreaScope.internal)] if scope == AreaScope.external else []
     return Catalog(
-        [AreaInfo(area.id, area.name, area.description, area.scope, area.system_prompt, area.chat_space) for area in areas],
+        [AreaInfo(area.id, area.name, area.description, area.scope, area.system_prompt, area.chat_space, tuple(area.tools or ()))
+         for area in areas],
         prompts[f"{scope}_coordinator"] or "",
         prompts[f"{scope}_agent"] or "",
         prompts["area_rules"] or "",

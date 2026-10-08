@@ -81,6 +81,7 @@ class CoordinatorToolbox:
         self.offer: Offer | None = None
         self.offer_answer: bool | None = None
         self.catalog_given = False
+        self.saved_edr = False  # un área guardó un EDR en este mensaje
 
     def specs(self) -> list[ToolSpec]:
         if self.scope == AreaScope.internal:
@@ -115,6 +116,8 @@ class CoordinatorToolbox:
         for answer in report.answers:
             self.evidence += [f"{faq.question}\n{faq.answer}" for faq in answer.faqs]
             self.evidence += [f"{procedure.name}\n{procedure.steps}" for procedure in answer.procedures]
+            self.evidence += answer.documents
+            self.saved_edr = self.saved_edr or bool(answer.links)
         return "\n\n".join(f"[{answer.area.name}]\n{self._describe(answer)}" for answer in report.answers)
 
     def _describe(self, answer: AreaAnswer) -> str:
@@ -123,7 +126,9 @@ class CoordinatorToolbox:
         name = next((p.name for p in answer.procedures if p.id == answer.procedure_id), "el trámite")
         match answer.kind:
             case "answered":
-                return strip_citations(answer.text or "") or NO_INFO
+                text = strip_citations(answer.text or "") or NO_INFO
+                # El enlace real del EDR lo pone el código: el modelo no debe inventarlo ni olvidarlo.
+                return "\n".join([text, *(f"Enlace del EDR: {link}" for link in answer.links)])
             case "procedure_ask" | "procedure_sent":
                 if answer.kind == "procedure_sent":
                     self.delivered = True

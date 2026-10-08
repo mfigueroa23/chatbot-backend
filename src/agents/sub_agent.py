@@ -19,12 +19,17 @@ class AreaAnswer:
     # Contenido del área en que se apoyó la respuesta: el control posterior acepta los datos que vienen de aquí.
     faqs: list[FaqHit] = field(default_factory=list, compare=False)
     procedures: list[ProcedureHit] = field(default_factory=list, compare=False)
+    links: list[str] = field(default_factory=list, compare=False)  # enlaces de los EDR guardados
+    documents: list[str] = field(default_factory=list, compare=False)  # lo leído en Jira o guardado en un EDR
 
 def with_evidence(answer: AreaAnswer, toolbox: AreaToolbox) -> AreaAnswer:
     procedures = toolbox.procedures + ([toolbox.pending] if toolbox.pending and toolbox.pending not in toolbox.procedures else [])
     found = answer.kind != "no_answer"
     return AreaAnswer(answer.area, answer.kind, answer.text, answer.attempts, answer.procedure_id,
-                      list(toolbox.faqs) if found else [], procedures if found else [])
+                      list(toolbox.faqs) if found else [], procedures if found else [], list(toolbox.links),
+                      list(toolbox.documents))
+
+EDR_SAVED_WITHOUT_SUMMARY = "El EDR quedó guardado; no alcancé a resumir su contenido."
 
 async def run_sub_agent(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMessage], max_steps: int,
                         budget: CallBudget | None = None) -> AreaAnswer:
@@ -64,4 +69,7 @@ async def answer_area(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMe
                         return AreaAnswer(area, "notification_failed", None, result.attempts, procedure_id)
                 return AreaAnswer(area, "gave_up", None, result.attempts, procedure_id)
     logger.warning("El área %s superó el máximo de %s pasos sin responder", area.name, max_steps)
+    if toolbox.links:
+        # El EDR ya quedó guardado: aunque falte el resumen, el colaborador debe recibir el enlace real.
+        return AreaAnswer(area, "answered", EDR_SAVED_WITHOUT_SUMMARY, toolbox.attempts)
     return AreaAnswer(area, "no_answer", None, toolbox.attempts)

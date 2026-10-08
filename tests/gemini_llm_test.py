@@ -268,3 +268,49 @@ def test_coordinador_mensajes_con_oferta_y_tramite_en_curso():
     system = str(build_coordinator_messages("Prompt", None, True, "Copia del contrato", [], "sí", 20)[0].content)
 
     assert "oferta" in system and "«Copia del contrato»" in system and "Persona" not in system
+
+
+
+# --- Spec 005: transcripción de imágenes y PDF ----------------------------------------------------------------------
+
+class CapturingChat:
+    def __init__(self, text: str = "", error: Exception | None = None):
+        self.text = text
+        self.error = error
+        self.messages: list = []
+
+    async def ainvoke(self, messages):
+        self.messages = messages
+        if self.error:
+            raise self.error
+        return AIMessage(self.text)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("mime_type", "block_type"), [("image/png", "image"), ("application/pdf", "file")])
+async def test_transcribe_envia_el_archivo_como_bloque_multimodal(mime_type, block_type):
+    chat = CapturingChat("Captura de un error 500 en el portal")
+
+    text = await GeminiAgentLLM(cast(BaseChatModel, chat)).transcribe(b"%bytes%", mime_type)
+
+    assert text == "Captura de un error 500 en el portal"
+    instruction, media = chat.messages[0].content
+    assert instruction["type"] == "text" and "transcribe" in instruction["text"].lower()
+    assert (media["type"], media["base64"], media["mime_type"]) == (block_type, "JWJ5dGVzJQ==", mime_type)
+
+
+@pytest.mark.anyio
+async def test_transcribe_error_del_proveedor_es_llm_no_disponible():
+    chat = CapturingChat(error=RuntimeError("timeout"))
+
+    with pytest.raises(LlmUnavailableError):
+        await GeminiAgentLLM(cast(BaseChatModel, chat)).transcribe(b"x", "image/png")
+
+
+@pytest.mark.anyio
+async def test_fake_transcribe_guionizado_y_por_defecto():
+    llm = FakeAgentLLM(transcripts=["Texto del PDF"])
+
+    assert await llm.transcribe(b"x", "application/pdf") == "Texto del PDF"
+    assert await FakeAgentLLM().transcribe(b"x", "image/png") == ""
+    assert llm.transcribe_calls == 1

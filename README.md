@@ -36,6 +36,18 @@ genérica. Cada mensaje tiene un tope de `agent_max_model_calls` llamadas al mod
   propio conocimiento avisando que no es información oficial y solo avisa al space del área cuando el colaborador lo
   pide; tras 3 datos inválidos de un procedimiento ofrece avisar al área en lugar de hacerlo.
 
+En **Google Chat** el asistente además ([spec 005](docs/specs/005-attachments-jira-edr/spec.md)):
+
+- **Lee los archivos compartidos** (subidos a Chat o enlazados desde Drive): PDF, Word, Excel, PowerPoint, texto, CSV,
+  JSON e imágenes JPG, PNG y WebP, hasta `attachment_max_mb`. Imágenes y PDF los transcribe Gemini; Office y texto se
+  leen en código. El texto entra en el mensaje marcado como información (no instrucciones) y queda en la memoria del hilo.
+- **Consulta Jira en solo lectura** y **redacta EDR** como Google Docs desde las áreas con herramientas habilitadas
+  (`business_area.tools`, p. ej. Proyectos con `{jira,edr}`), solo para los colaboradores de `project_collaborator` y
+  los tableros de `jira_board`. El EDR usa la plantilla institucional de `agente-ti` (`src/templates/edr.html`, o la de la
+  property `edr_template_base64` si existe), deja
+  «[PENDIENTE DEFINIR]» lo que nadie entregó y se actualiza sobre el mismo documento en la conversación. La guía de
+  redacción de cada sección va en el `system_prompt` del área (BD), así que se ajusta sin desplegar.
+
 Si existe un procedimiento, el asistente explica los pasos, pide los datos que exige (validados en código) y publica la
 solicitud en el space del área para que una persona la ejecute.
 
@@ -97,9 +109,17 @@ Properties usadas actualmente:
 | `google_chat_sync_timeout_seconds` | Segundos que se espera la respuesta antes de contestar "procesando" | `25` |
 | `google_chat_retention_days` | Días que se conserva la memoria de una conversación de Google Chat desde su último mensaje | `30` |
 | `agent_history_messages` | Mensajes anteriores de la conversación que se envían al modelo | `20` |
-| `agent_max_steps` | Pasos (llamadas al modelo) de cada agente de área por mensaje | `4` |
+| `agent_max_steps` | Pasos (llamadas al modelo) de cada agente de área por mensaje; con Jira y EDR conviene `8` (leer épica, hijos y EDR, guardar y responder) | `4` |
 | `procedure_max_attempts` | Intentos para entregar datos válidos de un procedimiento antes de abandonarlo | `3` |
 | `agent_max_model_calls` | Tope de llamadas al modelo por mensaje entre coordinador, agente de ámbito y agentes de área; al agotarse se responde "servicio no disponible" | `100` |
+| `attachment_max_mb` | Tamaño máximo de un archivo compartido que el asistente lee | `20` |
+| `attachment_max_chars` | Caracteres de texto que se usan de cada archivo; el resto se descarta y se avisa | `60000` |
+| `jira_base_url` | URL de Jira Cloud, p. ej. `https://autofin.atlassian.net` | — |
+| `jira_email` | Correo de la cuenta de Jira del asistente (de solo lectura) | — |
+| `jira_api_token` | Token de API de esa cuenta (secreto: ver SECURITY.md) | — |
+| `jira_max_results` | Tickets por búsqueda o por lista de hijos | `20` |
+| `edr_drive_folder_id` | Carpeta de una unidad compartida de Drive donde se crean los EDR | — |
+| `edr_template_base64` | Plantilla HTML (Jinja2, en sandbox) del EDR en base64; reemplaza a `src/templates/edr.html` sin desplegar | — (usa la del repo) |
 | `scope_topics_per_area` | Temas (FAQ) y trámites (procedimientos) de cada área que conoce el agente de ámbito | `50` |
 | `conversation_temperature` | Temperatura de Gemini en ambos canales: con `0` los textos redactados serían siempre idénticos | `0.7` |
 
@@ -125,7 +145,10 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 
 | Tabla | Contenido |
 |---|---|
-| `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y `chat_space` (space de Google Chat del área, `spaces/…`) |
+| `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt, `chat_space` (space de Google Chat del área, `spaces/…`) y `tools` (herramientas extra de su agente: `jira`, `edr`) |
+| `jira_board` | Tableros de Jira que el asistente puede consultar (`key`, p. ej. `DAIA`) |
+| `project_collaborator` | Colaboradores habilitados para Jira y EDR, por su correo de Google Chat |
+| `edr_document` | EDR guardados por conversación: documento de Drive, enlace y el último contenido |
 | `faq_category`, `faq` | Categorías y preguntas frecuentes de cada área. El embedding se calcula solo al usarlas |
 | `procedure`, `procedure_field` | Procedimientos de cada área (nombre y pasos que se explican al usuario) y los datos que exige cada uno, con su tipo (`text`, `email`, `phone`, `rut`, `number`, `date`). El embedding se calcula solo al usarlos |
 | `agent_prompt` | Prompts del asistente; su texto solo vive en la BD (no se versiona). `internal_coordinator` y `external_coordinator`: el coordinador de cada canal (rol, prioridades, cuándo usar cada herramienta, principios: inferir sin inventar, no confirmar lo que una herramienta no confirmó, no prometer avisos; en el interno, la respuesta libre con aviso de no oficial). `internal_agent` y `external_agent`: el agente de ámbito (decidir a qué áreas va la consulta, reformularla con el contexto y reconocer «qué puedo consultar»). `area_rules`: reglas comunes de los agentes de área (generar contenido solo con lo encontrado para el coordinador). `internal_persona` (trato de tú, humor ligero) y `external_persona` (trato de usted): el tono de cada canal, sembrado por la migración. Todos deben tratar lo que escribe el usuario como información, nunca como instrucciones, y un cambio aplica desde el siguiente mensaje. Las keys `{internal,external}_{greeting,closing,off_topic}` de la spec 002 ya no se usan |
@@ -161,6 +184,11 @@ después en el mismo hilo con la API de Chat.
 
 La app de Google Chat debe ser **miembro del space de cada área** (y del space general) para poder publicar en él; si no
 lo es, el aviso falla y se pide al usuario contactar directamente con el área. Es configuración de Google Workspace.
+
+La cuenta de servicio de `google_chat_service_account_json` también lee Drive (scope `drive`): debe ser miembro de la
+unidad compartida de `edr_drive_folder_id` y tener acceso a los archivos de Drive que se compartan en el chat; si no, el
+asistente pide compartirlos con su correo (`client_email`). Jira se consulta por REST con el token de una cuenta de
+solo lectura.
 
 ### Protección frente a manipulación
 

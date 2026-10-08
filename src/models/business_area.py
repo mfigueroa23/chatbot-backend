@@ -1,5 +1,6 @@
 from enum import StrEnum
 from sqlalchemy import Enum, String, Text, UniqueConstraint
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from src.models.base import Base
 
@@ -19,3 +20,5 @@ class BusinessArea(Base):
     # Space de Google Chat donde el área recibe solicitudes y consultas sin respuesta (spaces/…).
     chat_space: Mapped[str | None] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(server_default="true")
+    # Herramientas extra del agente del área (p. ej. jira, edr); vacío en las áreas que solo responden con FAQ.
+    tools: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default="{}")

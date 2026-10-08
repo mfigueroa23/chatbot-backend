@@ -29,6 +29,8 @@ def with_evidence(answer: AreaAnswer, toolbox: AreaToolbox) -> AreaAnswer:
                       list(toolbox.faqs) if found else [], procedures if found else [], list(toolbox.links),
                       list(toolbox.documents))
 
+EDR_SAVED_WITHOUT_SUMMARY = "El EDR quedó guardado; no alcancé a resumir su contenido."
+
 async def run_sub_agent(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMessage], max_steps: int,
                         budget: CallBudget | None = None) -> AreaAnswer:
     return with_evidence(await answer_area(llm, toolbox, messages, max_steps, budget), toolbox)
@@ -67,4 +69,7 @@ async def answer_area(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMe
                         return AreaAnswer(area, "notification_failed", None, result.attempts, procedure_id)
                 return AreaAnswer(area, "gave_up", None, result.attempts, procedure_id)
     logger.warning("El área %s superó el máximo de %s pasos sin responder", area.name, max_steps)
+    if toolbox.links:
+        # El EDR ya quedó guardado: aunque falte el resumen, el colaborador debe recibir el enlace real.
+        return AreaAnswer(area, "answered", EDR_SAVED_WITHOUT_SUMMARY, toolbox.attempts)
     return AreaAnswer(area, "no_answer", None, toolbox.attempts)

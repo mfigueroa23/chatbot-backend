@@ -43,8 +43,9 @@ En **Google Chat** el asistente además ([spec 005](docs/specs/005-attachments-j
   leen en código. El texto entra en el mensaje marcado como información (no instrucciones) y queda en la memoria del hilo.
 - **Consulta Jira en solo lectura** y **redacta EDR** como Google Docs desde las áreas con herramientas habilitadas
   (`business_area.tools`, p. ej. Proyectos con `{jira,edr}`), solo para los colaboradores de `project_collaborator` y
-  los tableros de `jira_board`. El EDR sigue la estructura de `agente-ti`, deja «[PENDIENTE DEFINIR]» lo que nadie
-  entregó y se actualiza sobre el mismo documento en la conversación.
+  los tableros de `jira_board`. El EDR usa la plantilla institucional de `agente-ti` (`src/templates/edr.html`), deja
+  «[PENDIENTE DEFINIR]» lo que nadie entregó y se actualiza sobre el mismo documento en la conversación. La guía de
+  redacción de cada sección va en el `system_prompt` del área (BD), así que se ajusta sin desplegar.
 
 Si existe un procedimiento, el asistente explica los pasos, pide los datos que exige (validados en código) y publica la
 solicitud en el space del área para que una persona la ejecute.
@@ -107,7 +108,7 @@ Properties usadas actualmente:
 | `google_chat_sync_timeout_seconds` | Segundos que se espera la respuesta antes de contestar "procesando" | `25` |
 | `google_chat_retention_days` | Días que se conserva la memoria de una conversación de Google Chat desde su último mensaje | `30` |
 | `agent_history_messages` | Mensajes anteriores de la conversación que se envían al modelo | `20` |
-| `agent_max_steps` | Pasos (llamadas al modelo) de cada agente de área por mensaje | `4` |
+| `agent_max_steps` | Pasos (llamadas al modelo) de cada agente de área por mensaje; con Jira y EDR conviene `8` (leer épica, hijos y EDR, guardar y responder) | `4` |
 | `procedure_max_attempts` | Intentos para entregar datos válidos de un procedimiento antes de abandonarlo | `3` |
 | `agent_max_model_calls` | Tope de llamadas al modelo por mensaje entre coordinador, agente de ámbito y agentes de área; al agotarse se responde "servicio no disponible" | `100` |
 | `attachment_max_mb` | Tamaño máximo de un archivo compartido que el asistente lee | `20` |

@@ -366,3 +366,14 @@ async def test_edr_el_enlace_llega_en_la_respuesta_del_area():
     answer = await run_sub_agent(llm, box, messages_for(box), max_steps=4)
 
     assert answer.kind == "answered" and answer.links == ["https://docs.google.com/document/d/DOC1/edit"]
+
+
+@pytest.mark.anyio
+async def test_edr_guardado_sin_pasos_para_resumir_igual_entrega_el_enlace():
+    llm = FakeAgentLLM(steps={"Proyectos": [ToolCalls([save_call()])]})
+    box = project_toolbox(FakeProjects())
+
+    answer = await run_sub_agent(llm, box, messages_for(box), max_steps=1)
+
+    assert answer.kind == "answered" and answer.text
+    assert answer.links == ["https://docs.google.com/document/d/DOC1/edit"]

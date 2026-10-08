@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 37/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 44/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -138,25 +138,25 @@ El grafo nuevo se construye como `build_coordinator_graph` en `src/agents/graph.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k texto_fijo_cambia` pasa.
 
 ## Fase 8 — Aclaraciones y elección
-- [ ] **T-39 — Hacer la pregunta con opciones en `finalize`** · RF-10, RF-19 · ~25 min
+- [x] **T-39 — Hacer la pregunta con opciones en `finalize`** · RF-10, RF-19 · ~25 min
   Sin respuestas y con `turn_candidates` ⇒ `build_options` + `options_text`, guarda la `Clarification` del usuario, outcome `clarify`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k pregunta_con_opciones` pasa y el contenido de los candidatos no llega al modelo.
-- [ ] **T-40 — Hacer la pregunta de áreas** · RF-16, RF-17, RF-18, RF-19 · ~20 min
+- [x] **T-40 — Hacer la pregunta de áreas** · RF-16, RF-17, RF-18, RF-19 · ~20 min
   Sin candidatos ⇒ `areas_question`; tras ella se permite una pregunta con opciones, no otra de áreas; tras opciones, "sin respuesta".
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k pregunta_de_areas` pasa con la secuencia áreas → opciones → `no_answer`.
-- [ ] **T-41 — Guardar y borrar la aclaración por usuario** · RF-24, RF-40 · ~20 min
+- [x] **T-41 — Guardar y borrar la aclaración por usuario** · RF-24, RF-40 · ~20 min
   Toda salida ≠ `clarify` borra solo la aclaración de ese usuario; otra persona del hilo no la toca.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k "aclaracion_por_usuario or descarta_aclaracion"` pasa con dos `Requester` en el mismo hilo.
-- [ ] **T-42 — Enrutar la elección de una opción** · RF-23, RF-25, RF-26, RF-34, RF-54 · ~30 min
+- [x] **T-42 — Enrutar la elección de una opción** · RF-23, RF-25, RF-26, RF-34, RF-54 · ~30 min
   Nivel 8: `chosen_options` válidas de la aclaración del mismo usuario ⇒ `Send` al área de cada opción con lo elegido (`get_faq`/`get_procedure`); opción inactiva ⇒ `no_answer`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k eleccion` pasa con FAQ, procedimiento, opción inactiva y elección de otra persona del hilo.
-- [ ] **T-43 — Atender varias opciones elegidas** · RF-27, RF-28, RF-29 · ~25 min
+- [x] **T-43 — Atender varias opciones elegidas** · RF-27, RF-28, RF-29 · ~25 min
   FAQ elegidas combinadas, solo el primer procedimiento iniciado y el resto mencionado con `OTHER_PROCEDURES`.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k varias_opciones` pasa con 2 FAQ y con 1 FAQ + 2 procedimientos.
-- [ ] **T-44 — Cerrar las respuestas que no eligen opción** · RF-21, RF-32, RF-33 · ~15 min
+- [x] **T-44 — Cerrar las respuestas que no eligen opción** · RF-21, RF-32, RF-33 · ~15 min
   Con opciones pendientes: número fuera de rango, «ninguna» o mensaje sin respuesta ⇒ `no_answer`; «2» sin aclaración ⇒ mensaje nuevo.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k no_elige` pasa con los 4 casos.
-- [ ] **T-45 — Probar la prioridad de RF-39 por pares contiguos** · RF-39 · ~25 min
+- [x] **T-45 — Probar la prioridad de RF-39 por pares contiguos** · RF-39 · ~25 min
   Un test por cada par de niveles (1–2 … 10–11) donde el mensaje cumple ambos y gana el de mayor prioridad.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k prioridad` pasa con 10 casos.
 

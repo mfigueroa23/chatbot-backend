@@ -79,9 +79,16 @@ async def ask(text: str = "¿Cuándo pagan el sueldo?", graph=INTERNAL_GRAPH, co
     return await handle_internal_message(SESSION, graph, text, ANA, conversation_id)
 
 
-async def ask_web(session: WebSession, text: str = "¿Cuál es el plazo?", now: datetime = IN_HOURS) -> list:
-    graph = build_graph(AreaScope.external, InMemorySaver())
+async def ask_web(session: WebSession, text: str = "¿Cuál es el plazo?", now: datetime = IN_HOURS, graph=None) -> list:
+    graph = graph or build_graph(AreaScope.external, InMemorySaver())
     return await handle_web_message(property_session({}), graph, session, text, FakeClock(now))
+
+
+async def after_areas_question(session: WebSession, text: str, now: datetime = IN_HOURS) -> list:
+    # El primer mensaje sin respuesta recibe la pregunta de áreas; el flujo de sin respuesta llega con el segundo.
+    graph = build_graph(AreaScope.external, InMemorySaver())
+    await ask_web(session, "Necesito ayuda", now, graph)
+    return await ask_web(session, text, now, graph)
 
 
 def dumps(messages: list) -> list[dict]:
@@ -108,8 +115,12 @@ async def test_internal_mixta_pide_reformular(monkeypatch: pytest.MonkeyPatch, n
 @pytest.mark.anyio
 async def test_internal_sin_respuesta_avisa_al_area(monkeypatch: pytest.MonkeyPatch, notifier: FakeNotifier):
     use_llm(monkeypatch, FakeAgentLLM(AgentReply("no_answer", "")), FakeRetriever([SALARY]))
+    graph = build_graph(AreaScope.internal, InMemorySaver())
 
-    reply = await ask()
+    first = await ask("Necesito ayuda", graph)
+    assert first.startswith("¿Con qué necesitas ayuda?") and notifier.sent == []
+
+    reply = await ask(graph=graph)
 
     assert "te contactará a la brevedad" in reply
     assert notifier.sent[0][0] == "spaces/RRHH"
@@ -234,7 +245,7 @@ async def test_web_sin_respuesta_dentro_de_horario_ofrece_un_ejecutivo(monkeypat
     use_llm(monkeypatch, FakeAgentLLM(AgentReply("no_answer", "")))
     session = web_session()
 
-    messages = dumps(await ask_web(session, "¿Venden repuestos?"))
+    messages = dumps(await after_areas_question(session, "¿Venden repuestos?"))
 
     assert [m["type"] for m in messages] == ["message", "offer_human"]
     assert session.phase == WebPhase.offering_human
@@ -245,7 +256,7 @@ async def test_web_sin_respuesta_dentro_de_horario_ofrece_un_ejecutivo(monkeypat
 async def test_web_sin_respuesta_fuera_de_horario_muestra_canales(monkeypatch: pytest.MonkeyPatch, schedule):
     use_llm(monkeypatch, FakeAgentLLM(AgentReply("no_answer", "")))
 
-    messages = dumps(await ask_web(web_session(), now=OUT_OF_HOURS))
+    messages = dumps(await after_areas_question(web_session(), "¿Cuál es el plazo?", OUT_OF_HOURS))
 
     assert [m["type"] for m in messages] == ["message", "official_channels"]
     assert messages[1]["channels"] == [{"label": "Teléfono", "value": "600 123 4567"}]

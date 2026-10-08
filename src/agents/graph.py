@@ -14,7 +14,9 @@ from langgraph.runtime import Runtime
 from langgraph.types import Send
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.audit import GENERIC_REFUSAL, INTERNAL_NAMES, find_leaks, strip_citations
-from src.agents.behavior import Candidate, Clarification, combine, fixed_text, requester_key
+from src.agents.behavior import (
+    Candidate, Clarification, areas_question, build_options, can_clarify, chosen, combine, fixed_text, options_text,
+    other_procedures_text, requester_key)
 from src.agents.llm import AgentLLM, AreaInfo, ProcedureHit, build_area_messages, build_coordinator_messages
 from src.agents.retriever import Retriever, ScopeSignals
 from src.agents.sub_agent import AreaAnswer, run_sub_agent
@@ -28,7 +30,7 @@ from src.services.procedures import web_contact_fields
 logger = logging.getLogger(__name__)
 
 Outcome = Literal["answered", "no_answer", "mixed_scope", "wants_human", "notification_failed", "rejected", "greeting",
-                  "closing", "off_topic", "offer_accepted", "offer_declined"]
+                  "closing", "off_topic", "offer_accepted", "offer_declined", "clarify"]
 # Mensajes fijos de cada canal: viven en agent_prompt con la key "<ámbito>_<tipo>".
 FIXED_KINDS = ("greeting", "closing", "off_topic")
 
@@ -95,6 +97,7 @@ class AgentState(TypedDict):
     turn_candidates: list[Candidate]
     area_tasks: list[AreaTask]
     area_answers: Annotated[list[AreaAnswer], merge_answers]
+    turn_note: str | None  # aviso de los procedimientos elegidos que no se iniciaron
     selected_areas: list[AreaInfo]
     outcome: Outcome | None
     reply: str | None
@@ -135,13 +138,23 @@ def audited(text: str, prompts: list[str], used: list[AreaInfo]) -> dict:
         return finish("rejected", memory=GENERIC_REFUSAL)
     return finish("answered", text, used)
 
+def settle_clarification(state: AgentState, key: str, updates: dict) -> dict:
+    # Cualquier respuesta que no sea una aclaración descarta la aclaración pendiente de ese usuario, y solo la suya.
+    current = state.get("clarifications") or {}
+    if updates.get("outcome") in (None, "clarify") or key not in current:
+        return updates
+    return updates | {"clarifications": {other: value for other, value in current.items() if other != key}}
+
 def previous_question(history: list[BaseMessage]) -> str | None:
     # El mensaje anterior del usuario da contexto a las preguntas de seguimiento sin otra llamada al modelo.
     return next((text_of(message) for message in reversed(history) if isinstance(message, HumanMessage)), None)
 
 def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = None) -> AgentGraph:
     async def coordinate(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
-        context = runtime.context
+        updates = await decide(state, runtime.context)
+        return settle_clarification(state, requester_key(runtime.context.requester), updates)
+
+    async def decide(state: AgentState, context: AgentContext) -> dict:
         *history, last = state["messages"]
         question = text_of(last)
         catalog = await context.load_catalog(scope)
@@ -170,6 +183,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
             "turn_candidates": signals.candidates,
             "area_tasks": [],
             "area_answers": [],
+            "turn_note": None,
             "selected_areas": [],
             "outcome": None,
             "reply": None,
@@ -195,7 +209,9 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if fixed_kind is not None:
             template = catalog.fixed.get(fixed_kind)
             if template:
-                return turn | finish(fixed_kind, fixed_text(template, catalog.area_names))
+                # El saludo y el fuera de tema dicen con qué puede ayudar el asistente; el cierre no.
+                names = [] if fixed_kind == "closing" else catalog.area_names
+                return turn | finish(fixed_kind, fixed_text(template, names))
             # Sin texto en la BD el mensaje sigue el flujo normal: procedimiento, FAQ, aclaración o sin respuesta.
             logger.error("Falta el texto fijo %s_%s en agent_prompt", scope, fixed_kind)
 
@@ -207,12 +223,24 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if pending is not None:
             # Un procedimiento en curso sigue en su área aunque el agente del canal elija otra.
             return turn | {"area_tasks": [task(areas[pending.area_id], pending.id)]}
-        chosen = []
+        if decision.kind == "choice" and clarification is not None and clarification.kind == "options":
+            # Solo cuenta la elección de quien recibió las opciones: la aclaración se busca por su requester_key.
+            picked = chosen(clarification.options, decision.chosen_options)
+            tasks: dict[int, AreaTask] = {}
+            for option in [*picked.faqs, *([picked.procedure] if picked.procedure else [])]:
+                if option.area_id not in areas:
+                    continue
+                target = tasks.setdefault(option.area_id, task(areas[option.area_id]))
+                (target["granted_faq_ids"] if option.kind == "faq" else target["granted_procedure_ids"]).append(option.item_id)
+            note = other_procedures_text(picked.other_procedures) if picked.other_procedures else None
+            # Una elección que no corresponde a ninguna opción válida no se delega: va al flujo de sin respuesta.
+            return turn | {"area_tasks": list(tasks.values()), "turn_note": note}
+        selected = []
         if decision.kind == "delegate":
-            chosen = [areas[area_id] for area_id in dict.fromkeys(decision.area_ids) if area_id in areas]
+            selected = [areas[area_id] for area_id in dict.fromkeys(decision.area_ids) if area_id in areas]
         # Si el agente del canal no elige áreas válidas, o no delega pese a haber FAQ o procedimientos sobre el umbral
         # de respuesta, se delega en las áreas con coincidencias: el agente del área decide si responde.
-        return turn | {"area_tasks": [task(area) for area in chosen or own]}
+        return turn | {"area_tasks": [task(area) for area in selected or own]}
 
     def route(state: AgentState) -> list[Send] | str:
         if state.get("outcome") is not None:
@@ -246,6 +274,10 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         return {"area_answers": [answer], "procedure_attempts": answer.attempts}
 
     async def finalize(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
+        key = requester_key(runtime.context.requester)
+        return settle_clarification(state, key, close(state, key))
+
+    def close(state: AgentState, key: str) -> dict:
         answers = state.get("area_answers") or []
         cleared = {"pending_area_id": None, "pending_procedure_id": None}
         # No poder avisar al área cambia el flujo del canal: tiene prioridad sobre cualquier texto.
@@ -260,7 +292,9 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         reply = combine([(answer.area.name, strip_citations(answer.text) if answer.text and answer.kind in with_text else None)
                          for answer in answers])
         if reply is None:
-            return finish("no_answer", areas=[answer.area for answer in answers])
+            return clarify(state, key) or finish("no_answer", areas=[answer.area for answer in answers])
+        if state.get("turn_note"):
+            reply = f"{reply}\n\n{state['turn_note']}"
         updates = audited(reply, state["turn_prompts"], [answer.area for answer in answers if answer.text])
         asked = next((answer for answer in answers if answer.kind == "procedure_ask"), None)
         if asked is not None and updates["outcome"] == "answered":
@@ -268,6 +302,24 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if any(answer.kind == "procedure_sent" for answer in answers):
             return updates | cleared
         return updates
+
+    def clarify(state: AgentState, key: str) -> dict | None:
+        # Sin aclaraciones dentro de un procedimiento en curso: ahí manda el flujo del procedimiento.
+        if state.get("pending_procedure_id") is not None:
+            return None
+        clarifications = state.get("clarifications") or {}
+        pending = clarifications.get(key)
+        options = build_options(state.get("turn_candidates") or [])
+        if options and can_clarify(pending, "options"):
+            clarification, text = Clarification("options", options), options_text(options)
+        elif not options and can_clarify(pending, "areas"):
+            clarification, text = Clarification("areas"), areas_question(state.get("area_names") or [])
+        else:
+            return None
+        updates = audited(text, state["turn_prompts"], [])
+        if updates["outcome"] != "answered":
+            return updates
+        return finish("clarify", text) | {"clarifications": {**clarifications, key: clarification}}
 
     graph = StateGraph(AgentState, context_schema=AgentContext, input_schema=AgentInput)
     graph.add_node("coordinate", coordinate)

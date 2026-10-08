@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 44/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 49/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -161,19 +161,19 @@ El grafo nuevo se construye como `build_coordinator_graph` en `src/agents/graph.
   Hecho cuando: `uv run pytest -q tests/agent_graph_test.py -k prioridad` pasa con 10 casos.
 
 ## Fase 9 — Orquestador
-- [ ] **T-46 — Pasar `offer_pending` y `agent_max_steps` al contexto** · (habilita RF-41, RF-42, RNF-1) · ~15 min
+- [x] **T-46 — Pasar `offer_pending` y `agent_max_steps` al contexto** · (habilita RF-41, RF-42, RNF-1) · ~15 min
   `build_agent_context(session, requester, offer_pending=False)` lee `agent_max_steps` (4).
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k contexto` pasa con la property ausente y presente.
-- [ ] **T-47 — Responder mensajes fijos y aclaraciones en ambos canales** · RF-9, RF-29, RF-38 · ~20 min
+- [x] **T-47 — Responder mensajes fijos y aclaraciones en ambos canales** · RF-9, RF-29, RF-38 · ~20 min
   `greeting`, `closing`, `off_topic` y `clarify` devuelven su texto sin aviso al área ni oferta.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "fijo or aclaracion"` pasa y el `FakeNotifier` no recibe avisos.
-- [ ] **T-48 — Aceptar o rechazar la oferta por texto en el web** · RF-41, RF-42 · ~20 min
+- [x] **T-48 — Aceptar o rechazar la oferta por texto en el web** · RF-41, RF-42 · ~20 min
   `offer_accepted` ⇒ `answer_offer(True)` + `RequestContact(attempt=1)`; `offer_declined` ⇒ `OFFER_REJECTED` + canales.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k oferta_por_texto` pasa con ambos casos y la fase resultante.
-- [ ] **T-49 — Mantener la fase web ante un mensaje fijo** · RF-43, RF-44, RF-61 · ~20 min
+- [x] **T-49 — Mantener la fase web ante un mensaje fijo** · RF-43, RF-44, RF-61 · ~20 min
   `greeting`/`closing`/`off_topic` no llaman a `reset_to_bot` en `offering_human` ni en `collecting_contact`; `queued` sigue sin llegar al agente.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k mantiene_fase` pasa con las 3 fases.
-- [ ] **T-50 — Probar proveedor caído y "sin respuesta" tras aclaración** · RF-38, (RF-32 de la spec 001) · ~15 min
+- [x] **T-50 — Probar proveedor caído y "sin respuesta" tras aclaración** · RF-38, (RF-32 de la spec 001) · ~15 min
   «hola» con el modelo caído ⇒ servicio no disponible; aclaración fallida fuera de horario ⇒ canales oficiales.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "caido_saludo or aclaracion_fuera_de_horario"` pasa.
 

@@ -224,7 +224,7 @@ def live(calls: Calls, monkeypatch: pytest.MonkeyPatch):
     calls.session.phase = WebPhase.live
     llm = FakeAgentLLM()
 
-    async def build_agent_context(session, requester):
+    async def build_agent_context(session, requester, offer_pending: bool = False):
         raise AssertionError("En la fase en vivo no se llama al agente")
 
     async def get_open_chat(session, web_session_id):

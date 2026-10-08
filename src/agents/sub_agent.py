@@ -1,8 +1,8 @@
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Literal
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from src.agents.llm import AgentLLM, AreaInfo, FinalText
+from src.agents.llm import AgentLLM, AreaInfo, FaqHit, FinalText, ProcedureHit
 from src.agents.tools import AreaToolbox
 
 logger = logging.getLogger(__name__)
@@ -16,8 +16,20 @@ class AreaAnswer:
     text: str | None
     attempts: dict[int, int]
     procedure_id: int | None = None  # procedimiento iniciado por la tool, si lo hubo
+    # Contenido del área en que se apoyó la respuesta: el control posterior acepta los datos que vienen de aquí.
+    faqs: list[FaqHit] = field(default_factory=list, compare=False)
+    procedures: list[ProcedureHit] = field(default_factory=list, compare=False)
+
+def with_evidence(answer: AreaAnswer, toolbox: AreaToolbox) -> AreaAnswer:
+    procedures = toolbox.procedures + ([toolbox.pending] if toolbox.pending and toolbox.pending not in toolbox.procedures else [])
+    found = answer.kind != "no_answer"
+    return AreaAnswer(answer.area, answer.kind, answer.text, answer.attempts, answer.procedure_id,
+                      list(toolbox.faqs) if found else [], procedures if found else [])
 
 async def run_sub_agent(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMessage], max_steps: int) -> AreaAnswer:
+    return with_evidence(await answer_area(llm, toolbox, messages, max_steps), toolbox)
+
+async def answer_area(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMessage], max_steps: int) -> AreaAnswer:
     area = toolbox.area
     # Un área sin prompt no puede responder y no se llama al modelo.
     if not area.system_prompt:

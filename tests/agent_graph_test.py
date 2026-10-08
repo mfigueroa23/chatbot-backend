@@ -947,16 +947,6 @@ async def test_conversacional_saludo_cierre_redactado_sin_areas_y_en_la_memoria(
 
 
 @pytest.mark.anyio
-async def test_conversacional_persona_llega_a_los_agentes_de_area():
-    llm = FakeAgentLLM(coordinator=[delegate(10)], steps={"Remuneraciones": [FinalText("El día 30")]})
-
-    result = await run_internal(llm, FakeRetriever([SALARY]), "¿Cuándo pagan?")
-
-    assert result.reply == "El día 30"
-    assert INTERNAL_PERSONA in str(llm.step_messages[0][0].content)
-
-
-@pytest.mark.anyio
 async def test_conversacional_ajeno_responde_el_texto_con_las_areas():
     llm = FakeAgentLLM(coordinator=[says("off_topic", "¡Qué rico el pan! De recetas sé poco, la verdad.")])
 

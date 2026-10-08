@@ -10,9 +10,10 @@ from src.utils.exceptions.notification import NotificationDeliveryError
 
 logger = logging.getLogger(__name__)
 
-MISSING_DATA = "Para continuar con «{procedure}» necesito: {labels}."
-INVALID_DATA = "Estos datos no son válidos: {labels}. ¿Me los indicas de nuevo?"
-REQUEST_SENT = "Listo, enviamos tu solicitud «{procedure}» al área de {area}, que la gestionará y te contactará."
+# Información para el coordinador, que la redacta para el usuario: nombra el trámite, los datos y el área.
+MISSING_DATA = "Faltan datos para «{procedure}»: {labels}."
+INVALID_DATA = "Datos no válidos para «{procedure}»: {labels}."
+REQUEST_SENT = "Solicitud «{procedure}» entregada al área de {area}, que la gestionará y contactará al solicitante."
 
 ProcedureKind = Literal["ask", "sent", "gave_up", "failed"]
 
@@ -47,7 +48,7 @@ async def handle_procedure(
         attempts[procedure.id] = attempts.get(procedure.id, 0) + 1
         if attempts[procedure.id] >= max_attempts:
             return ProcedureResult("gave_up", None, attempts)
-        return ProcedureResult("ask", INVALID_DATA.format(labels=labels(check.invalid)), attempts)
+        return ProcedureResult("ask", INVALID_DATA.format(procedure=procedure.name, labels=labels(check.invalid)), attempts)
     if check.missing:
         # Al identificar el procedimiento, la explicación de los pasos la redacta el modelo en la misma llamada.
         if is_new and model_text.strip():

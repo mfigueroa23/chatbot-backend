@@ -318,7 +318,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         toolbox = AreaToolbox(area, context.retriever, context.notifier, context.requester, state["question"], faqs,
                               procedures, pending, state["attempts"], context.max_attempts)
         messages = build_area_messages(area, state["rules"], faqs, procedures, pending, state["history"], state["question"],
-                                       context.history_messages, extra_fields, state["persona"])
+                                       context.history_messages, extra_fields)
         answer = await run_sub_agent(context.llm, toolbox, messages, context.max_steps)
         return {"area_answers": [answer], "procedure_attempts": answer.attempts}
 

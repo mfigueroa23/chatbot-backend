@@ -25,7 +25,7 @@ async def run(data, procedure=LOAD, area=OPERATIONS, requester: Requester | None
 async def test_faltan_datos_se_piden_con_plantilla():
     result = await run({})
 
-    assert (result.kind, result.text) == ("ask", "Para continuar con «Cargar documento» necesito: Número de documento.")
+    assert (result.kind, result.text) == ("ask", "Faltan datos para «Cargar documento»: Número de documento.")
 
 
 @pytest.mark.anyio
@@ -40,7 +40,7 @@ async def test_datos_invalidos_cuentan_un_intento():
     result = await run({"documento": "mil"})
 
     assert result.kind == "ask"
-    assert result.text == "Estos datos no son válidos: Número de documento. ¿Me los indicas de nuevo?"
+    assert result.text == "Datos no válidos para «Cargar documento»: Número de documento."
     assert result.attempts == {9: 1}
 
 
@@ -56,7 +56,7 @@ async def test_datos_completos_notifican_y_confirman():
     result = await run({"documento": "123"}, attempts={9: 1}, notifier=notifier)
 
     assert result.kind == "sent" and result.attempts == {9: 0}
-    assert result.text == "Listo, enviamos tu solicitud «Cargar documento» al área de Gestión, que la gestionará y te contactará."
+    assert result.text == "Solicitud «Cargar documento» entregada al área de Gestión, que la gestionará y contactará al solicitante."
     space, text = notifier.sent[0]
     assert space == "spaces/GESTION" and "Número de documento: 123" in text and "Ana Pérez <ana@autofin.cl>" in text
 
@@ -69,7 +69,7 @@ async def test_en_web_exige_nombre_y_contacto_y_los_usa_como_solicitante():
     sent = await run({"rut": "12.345.678-5", "nombre": "Juan Soto", "contacto": "+56 9 1234 5678"}, procedure=CONTRACT,
                      area=CUSTOMER_SERVICE, requester=None, notifier=notifier)
 
-    assert missing.text == "Para continuar con «Copia del contrato» necesito: Nombre, Correo o teléfono."
+    assert missing.text == "Faltan datos para «Copia del contrato»: Nombre, Correo o teléfono."
     assert sent.kind == "sent" and "Solicitante: Juan Soto · +56 9 1234 5678" in notifier.sent[0][1]
 
 

@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 5/39 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 8/39 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -26,13 +26,13 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
   Hecho cuando: `uv run pytest -q tests/audit_test.py -k review` pasa con dato en la evidencia (permitido) y fuera (rechazado), promesa y acción con y sin entrega, y nombres prohibidos.
 
 ## Fase 3 — Agentes de área en modo contenido
-- [ ] **T-6 — Pedir a los agentes de área contenido para el coordinador** · RF-22 · ~15 min
+- [x] **T-6 — Pedir a los agentes de área contenido para el coordinador** · RF-22 · ~15 min
   `build_area_messages` en `src/agents/llm.py`: sin persona y con la instrucción de generar contenido para el coordinador.
   Hecho cuando: `uv run pytest -q tests/gemini_llm_test.py -k area_messages` pasa y el mensaje no contiene la persona.
-- [ ] **T-7 — Volver informativos los textos de los procedimientos** · RF-29, RF-31, RF-33 · ~15 min [P]
+- [x] **T-7 — Volver informativos los textos de los procedimientos** · RF-29, RF-31, RF-33 · ~15 min [P]
   `MISSING_DATA`, `INVALID_DATA` y `REQUEST_SENT` en `src/agents/procedure_flow.py` nombran el procedimiento, los datos y el área como información para el coordinador; validación, intentos y plantilla sin cambios.
   Hecho cuando: `uv run pytest -q tests/procedure_flow_test.py` pasa.
-- [ ] **T-8 — Devolver la evidencia de cada agente de área** · RF-22, RF-23, RF-25 · ~20 min
+- [x] **T-8 — Devolver la evidencia de cada agente de área** · RF-22, RF-23, RF-25 · ~20 min
   `AreaAnswer` añade `faqs` y `procedures` usados en `src/agents/sub_agent.py`; el guardarraíl de evidencia no cambia.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k evidencia` pasa y `tests/sub_agent_test.py` sigue en verde.
 

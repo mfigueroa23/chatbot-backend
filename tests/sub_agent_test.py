@@ -179,3 +179,36 @@ async def test_guardrail_lo_elegido_cuenta_como_evidencia_aunque_este_bajo_el_um
     answer = await run_sub_agent(llm, box, messages_for(box), max_steps=4)
 
     assert answer.kind == "answered"
+
+
+
+@pytest.mark.anyio
+async def test_evidencia_de_la_respuesta_son_las_faq_y_procedimientos_del_area():
+    llm = FakeAgentLLM(steps={"Créditos": [FinalText("Hasta 48 meses [F11]")]})
+    box = toolbox(faqs=[TERM], procedures=[CONTRACT])
+
+    answer = await run_sub_agent(llm, box, messages_for(box), max_steps=4)
+
+    assert (answer.faqs, answer.procedures) == ([TERM], [CONTRACT])
+
+
+@pytest.mark.anyio
+async def test_evidencia_incluye_lo_encontrado_por_las_tools():
+    retriever = FakeRetriever([TERM])
+    llm = FakeAgentLLM(steps={"Créditos": [ToolCalls([ToolCall("c1", "buscar_faq", {"consulta": "plazo"})]),
+                                           FinalText("Hasta 48 meses")]})
+    box = toolbox(retriever)
+
+    answer = await run_sub_agent(llm, box, messages_for(box), max_steps=4)
+
+    assert answer.kind == "answered" and answer.faqs == [TERM]
+
+
+@pytest.mark.anyio
+async def test_evidencia_vacia_sin_respuesta():
+    llm = FakeAgentLLM(steps={"Créditos": [FinalText("No sé")]})
+    box = toolbox()
+
+    answer = await run_sub_agent(llm, box, messages_for(box), max_steps=4)
+
+    assert answer.kind == "no_answer" and (answer.faqs, answer.procedures) == ([], [])

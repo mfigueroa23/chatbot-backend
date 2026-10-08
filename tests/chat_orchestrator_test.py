@@ -301,7 +301,7 @@ async def test_web_procedimiento_notificado_confirma_al_cliente(monkeypatch: pyt
     messages = dumps(await ask_web(web_session(), "Quiero copia de mi contrato"))
 
     assert messages == [{"type": "message", "from": "bot",
-                         "text": "Listo, enviamos tu solicitud «Copia del contrato» al área de Créditos, que la gestionará y te contactará."}]
+                         "text": "Solicitud «Copia del contrato» entregada al área de Créditos, que la gestionará y contactará al solicitante."}]
 
 
 @pytest.mark.anyio

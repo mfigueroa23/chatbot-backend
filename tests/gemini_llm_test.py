@@ -212,18 +212,12 @@ def test_coordinator_messages_sin_persona_no_cambian():
     assert "text" not in str(without[0].content)
 
 
-def test_area_messages_con_persona_la_incluyen():
-    messages = build_area_messages(CREDITS, "Reglas", SECTION.faqs, [], None, [], "¿Plazo?", 20, [],
-                                   persona="Tono cordial, con trato de usted.")
+def test_area_messages_piden_contenido_para_el_coordinador_sin_persona():
+    messages = build_area_messages(CREDITS, "Reglas", SECTION.faqs, [], None, [], "¿Plazo?", 20, [])
+    system = str(messages[0].content)
 
-    assert "Tono cordial, con trato de usted." in str(messages[0].content)
-
-
-def test_area_messages_sin_persona_no_cambian():
-    without = build_area_messages(CREDITS, "Reglas", SECTION.faqs, [], None, [], "¿Plazo?", 20, [])
-    with_none = build_area_messages(CREDITS, "Reglas", SECTION.faqs, [], None, [], "¿Plazo?", 20, [], persona=None)
-
-    assert [m.content for m in with_none] == [m.content for m in without]
+    assert "coordinador" in system and "no hablas con el usuario" in system
+    assert "Persona del asistente" not in system
 
 
 def test_converse_messages_con_temas_los_proponen_en_su_orden_sin_numerarlos():

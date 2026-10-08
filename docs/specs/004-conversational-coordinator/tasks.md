@@ -1,6 +1,6 @@
 # Tareas 004 — Coordinador conversacional de una sola voz (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 40/42 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 41/42 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. Las fases 1 a 5 añaden piezas nuevas sin
@@ -163,7 +163,7 @@ cambiar el grafo vigente; la fase 6 lo sustituye.
 - [x] **T-41 — Convertir la negrita para Google Chat** · RF-60 · ~20 min
   `handle_internal_message` en `src/services/chat_orchestrator.py` convierte `**texto**` en `*texto*`; el chat web no cambia.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k negrita` pasa en ambos canales.
-- [ ] **T-42 — Verificación y versión 1.4.1** · todos · ~15 min
+- [x] **T-42 — Verificación y versión 1.4.1** · todos · ~15 min
   `uv run pyright`, `uv run pytest` y bump de `pyproject.toml`/`uv.lock` a 1.4.1.
   Hecho cuando: pyright da 0 errores, pytest no tiene fallos y `grep '^version = "1.4.1"' pyproject.toml` encuentra la línea.
 

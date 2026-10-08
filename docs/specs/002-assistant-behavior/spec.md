@@ -86,7 +86,7 @@ Definiciones usadas en esta sección:
 
 ### Pedidos ajenos a las áreas
 - RF-35: CUANDO el mensaje del usuario sea ajeno, EL SISTEMA responderá con el mensaje de fuera de tema del canal.
-- RF-36: SI el mensaje solo corresponde a áreas del otro canal, ENTONCES EL SISTEMA lo tratará como ajeno.
+- RF-36: SI el mensaje solo corresponde a áreas del otro canal, ENTONCES EL SISTEMA lo tratará como ajeno, aunque tenga candidatos del propio canal.
 - RF-37: EL SISTEMA incluirá en el mensaje de fuera de tema los nombres de todas las áreas activas del canal.
 - RF-38: CUANDO el sistema responda con el mensaje de fuera de tema, EL SISTEMA no aplicará el flujo de "sin respuesta" del canal.
 
@@ -126,6 +126,9 @@ Definiciones usadas en esta sección:
 - RF-58: CUANDO el agente del canal delegue en varias áreas, EL SISTEMA consultará sus agentes de área en paralelo.
 - RF-59: CUANDO respondan varios agentes de área, EL SISTEMA combinará sus respuestas en una sola respuesta (RF-6 y RF-7 de la spec 001).
 - RF-60: SI ningún agente de área consultado responde, ENTONCES EL SISTEMA aplicará los niveles 10 y 11 de RF-39.
+
+### Oferta de ejecutivo
+- RF-61: MIENTRAS haya una oferta de ejecutivo pendiente, CUANDO el sistema responda con un mensaje fijo, EL SISTEMA mantendrá pendiente la oferta.
 
 ## Requisitos no funcionales
 - RNF-1: Por cada mensaje del usuario, EL SISTEMA hará como máximo 1 llamada de generación del agente del canal y 4 por cada agente de área consultado; las búsquedas por embeddings no cuentan. Sustituye a RNF-10 de la spec 001.
@@ -227,4 +230,6 @@ Definiciones usadas en esta sección:
 - **Varios procedimientos elegidos (2026-10-07, decisión del usuario):** se responden las FAQ elegidas y se inicia solo el primer procedimiento; los demás se mencionan.
 - **Coordinador con agentes de área (2026-10-07, decisión del usuario):** se vuelve a un agente del canal que resuelve o delega y a un agente con acciones propias por área, en ambos canales (constitución, punto 3). Sustituye la llamada única de la spec 001 (RNF-10 y D32 de su plan), cuyo p95 medido en local fue de 2,94 a 4,75 s; con agentes de área se midió 8,69 s.
 - **Latencia: medir y decidir (2026-10-07, decisión del usuario):** RNF-2 se fija con la prueba de carga en el despliegue de prueba (RNF-2 de esta spec).
+- **Mensaje fijo con la oferta pendiente (2026-10-07, decisión del usuario):** la oferta se mantiene (RF-61), igual que la petición de datos (RF-43).
+- **Otro canal con candidatos propios (2026-10-07, decisión del usuario):** gana la coincidencia con el otro canal y se responde fuera de tema (RF-36).
 - **Prioridad como lista ordenada (2026-10-07):** RF-39 agrupa en un solo requisito el orden de prioridad para que se lea y se pruebe de una vez; es una excepción consciente a «un requisito, una frase».

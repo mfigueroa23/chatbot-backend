@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 0/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 1/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -10,7 +10,7 @@ referencia de los agentes de área está en `git show 60a517e^:src/agents/{sub_a
 - [ ] **T-1 — Comprobar si el frontend permite escribir durante la oferta y el formulario** · (habilita RF-41, RF-42, RF-43) · ~15 min
   En el repo del frontend web, revisar si el campo de texto sigue activo con `offer_human` y `request_contact` en pantalla. Anotar el resultado en R4 del plan.
   Hecho cuando: R4 del plan dice «el frontend permite escribir» o enlaza la tarea abierta en el repo del frontend.
-- [ ] **T-2 — Cerrar con el usuario los huecos R6 y R7** · RF-36, RF-43 · ~10 min [P]
+- [x] **T-2 — Cerrar con el usuario los huecos R6 y R7** · RF-36, RF-43 · ~10 min [P]
   Preguntar si un saludo mantiene la oferta pendiente (R6) y si «solo el otro ámbito» con candidatos propios es fuera de tema (R7).
   Hecho cuando: R6 y R7 del plan dicen «Decisión del usuario» con la respuesta; si cambia algo, la spec tiene el RF correspondiente.
 
@@ -170,7 +170,7 @@ El grafo nuevo se construye como `build_coordinator_graph` en `src/agents/graph.
 - [ ] **T-48 — Aceptar o rechazar la oferta por texto en el web** · RF-41, RF-42 · ~20 min
   `offer_accepted` ⇒ `answer_offer(True)` + `RequestContact(attempt=1)`; `offer_declined` ⇒ `OFFER_REJECTED` + canales.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k oferta_por_texto` pasa con ambos casos y la fase resultante.
-- [ ] **T-49 — Mantener la fase web ante un mensaje fijo** · RF-43, RF-44 · ~20 min
+- [ ] **T-49 — Mantener la fase web ante un mensaje fijo** · RF-43, RF-44, RF-61 · ~20 min
   `greeting`/`closing`/`off_topic` no llaman a `reset_to_bot` en `offering_human` ni en `collecting_contact`; `queued` sigue sin llegar al agente.
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k mantiene_fase` pasa con las 3 fases.
 - [ ] **T-50 — Probar proveedor caído y "sin respuesta" tras aclaración** · RF-38, (RF-32 de la spec 001) · ~15 min
@@ -274,6 +274,7 @@ El grafo nuevo se construye como `build_coordinator_graph` en `src/agents/graph.
 | RF-58 | T-28 |
 | RF-59 | T-11, T-29 |
 | RF-60 | T-29 |
+| RF-61 | T-49 |
 | RNF-1 | T-24, T-32, T-60 |
 | RNF-2 | T-33, T-60 |
 | RNF-3 | T-3 |

@@ -234,6 +234,7 @@ llamadas de cada tipo; `FakeRetriever` con candidatos y búsquedas por área.
 | RF-58 | `graph.route` (`Send`) | `agent_graph_test` (dos áreas en un superpaso) |
 | RF-59 | `behavior.combine`, `graph.finalize` | `behavior_test`, `agent_graph_test` |
 | RF-60 | `graph.finalize` | `agent_graph_test` |
+| RF-61 | `chat_orchestrator.handle_web_message` | `chat_orchestrator_test` |
 | RNF-1 | `graph`, `sub_agent` (`max_steps`) | `agent_graph_test`, `sub_agent_test` |
 | RNF-2 | — | prueba de carga local (paso 6) y en el despliegue (paso 11) |
 | RNF-3 | migración, constantes de `behavior` | revisión en el PR |
@@ -253,13 +254,14 @@ llamadas de cada tipo; `FakeRetriever` con candidatos y búsquedas por área.
   (`business_area.description`). *Mitigación:* medición local en el paso 6 y aviso al usuario con los números antes de seguir;
   el umbral definitivo lo fija el usuario con la prueba en el despliegue.
 - **R4 — Frontend web.** Si deshabilita el texto durante la oferta o el formulario, RF-41 a RF-43 no se pueden ejercer.
-  *Pregunta pendiente:* ¿permite escribir en esas fases?
+  **Estado (2026-10-07, T-1):** no hay frontend de este chatbot en el workspace ni en la cuenta de GitHub, y el usuario no
+  sabe aún cómo será. Queda pendiente de verificar cuando exista; el backend implementa igual.
 - **R5 — Hilos guardados antes del despliegue.** No tienen los campos nuevos; se leen vacíos. Los tipos nuevos van en
   `CHECKPOINT_TYPES`.
-- **R6 — Hueco: saludo con la oferta de ejecutivo pendiente.** El plan la mantiene (como RF-43). *Pregunta pendiente:*
-  ¿se mantiene o se cancela?
-- **R7 — Hueco: otro ámbito con candidatos propios.** El plan responde fuera de tema (D12). *Pregunta pendiente:*
-  ¿fuera de tema o aclaración?
+- **R6 — Hueco: saludo con la oferta de ejecutivo pendiente.** **Decisión del usuario (2026-10-07, T-2):** la oferta se
+  mantiene; queda en RF-61 de la spec.
+- **R7 — Hueco: otro ámbito con candidatos propios.** **Decisión del usuario (2026-10-07, T-2):** fuera de tema (D12);
+  queda en RF-36 de la spec.
 - **R8 — Concurrencia en un space de grupo.** Dos mensajes a la vez en el mismo hilo: el checkpointer guarda la última
   escritura. Riesgo existente desde la spec 001; se acepta.
 - **R9 — Más escrituras al checkpointer y más llamadas a Gemini.** 4 superpasos por mensaje y hasta 1 + 4 llamadas por

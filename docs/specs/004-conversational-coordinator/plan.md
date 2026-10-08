@@ -95,8 +95,8 @@ realizadas, con un reintento.
   validación y la notificación son las de la spec 001, y el resultado sube al coordinador como información. *Descartada:*
   mover `iniciar_procedimiento` al coordinador — tendría que conocer los procedimientos, contra RF-6.
 - **D5 — Control posterior con un reintento.** `review` detecta fuga, dato personal fuera de la evidencia, promesa sin
-  aviso y acción afirmada sin realizar; ante un nombre interno, un dato personal, una promesa o una acción se reintenta una
-  vez con una nota que nombra el problema; si persiste, o si hay un fragmento de prompt o código, `GENERIC_REFUSAL`
+  aviso y acción afirmada sin realizar; ante un fragmento de prompt, un nombre interno, un dato personal, una promesa o una acción se
+  reintenta una vez con una nota que nombra el problema; si persiste, o si hay código, `GENERIC_REFUSAL`
   (ajustado el 2026-10-08, RF-59: un nombre interno es un descuido corregible, como vio el usuario en Google Chat). *Descartada:* sustituir directamente — una negativa por un descuido
   corregible; *descartada:* confiar solo en el prompt — RF-53 a RF-55 dejarían de ser verificables (casos A y B de
   `agente-ti`).
@@ -119,6 +119,10 @@ realizadas, con un reintento.
 - **D12 — Negrita de Google Chat en el orquestador (RF-60).** `handle_internal_message` convierte `**texto**` en
   `*texto*` antes de devolver la respuesta. *Descartada:* confiar en el prompt — la persona ya pedía no usar negritas y el
   modelo las usó igual.
+- **D13 — Fragmento de prompt de 50 caracteres y con reintento (RF-61).** `LEAK_FRAGMENT_LENGTH` sube de 30 a 50 y
+  «fragmento del prompt» entra en `RETRYABLE`. Con 30, el nombre de un trámite o «especificaciones de requerimientos»
+  bastaban para negar una respuesta inocente en producción. *Descartada:* solo el reintento — un término largo y natural
+  podría seguir fallando tras reescribir; *descartada:* solo subir el largo — una copia larga no tendría cómo corregirse.
 - **D11 — Tope de llamadas como presupuesto compartido.** Coordinador, agente de ámbito y agentes de área descuentan de
   `agent_max_model_calls`; al agotarse, el turno termina con el mensaje de servicio no disponible y un log de aviso.
   *Descartada:* topes separados por nivel — la spec fija uno por mensaje.
@@ -233,6 +237,7 @@ y cuenta las llamadas.
 | RF-58 | `graph.respond` (D8) | `agent_graph_test` |
 | RF-59 | `graph.respond` (`RETRYABLE`, D5) | `agent_graph_test` |
 | RF-60 | `chat_orchestrator.handle_internal_message` (D12) | `chat_orchestrator_test` |
+| RF-61 | `audit.LEAK_FRAGMENT_LENGTH`, `graph.respond` (`RETRYABLE`, D13) | `audit_test`, `agent_graph_test` |
 | RNF-1 | presupuesto compartido (D11) | `coordinator_test` |
 | RNF-2 | — | prueba de carga |
 | RNF-3 | persona y prompts | demo |

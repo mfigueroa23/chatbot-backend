@@ -8,8 +8,9 @@ INTERNAL_NAMES = [
     "about_assistant", "consultar_areas", "avisar_area", "ofrecer_ejecutivo", "responder_oferta", "buscar_tickets",
     "leer_ticket", "leer_edr", "guardar_edr", "edr_json",
 ]
-# Un fragmento de este largo copiado de un prompt ya revela su contenido.
-LEAK_FRAGMENT_LENGTH = 30
+# Un fragmento de este largo copiado de un prompt ya revela su contenido; uno más corto suele ser vocabulario del área
+# (el nombre de un trámite o una sigla escrita completa) que el asistente usa con naturalidad.
+LEAK_FRAGMENT_LENGTH = 50
 CODE_PATTERNS = [
     re.compile(r"```"),
     re.compile(r"^\s*(def|class|import)\s+\w+", re.MULTILINE),

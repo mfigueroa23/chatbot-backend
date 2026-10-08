@@ -2,31 +2,38 @@
 
 Backend de ChatBot, construido con FastAPI, SQLAlchemy (async) y PostgreSQL.
 
-Es un asistente virtual con un patrón agéntico coordinador ([spec 001](docs/specs/001-agentic-pattern-coordinator/spec.md)
-y [spec 002](docs/specs/002-assistant-behavior/spec.md)). Cada canal tiene un grafo de LangGraph con un **agente del
+Es un asistente virtual con un patrón agéntico coordinador ([spec 001](docs/specs/001-agentic-pattern-coordinator/spec.md),
+[spec 002](docs/specs/002-assistant-behavior/spec.md) y [spec 003](docs/specs/003-free-conversation/spec.md)). Cada canal tiene un grafo de LangGraph con un **agente del
 canal** que resuelve o delega, y un **agente por área de negocio** con sus propias tools (RAG con pgvector y Gemini):
 
 ```
-START → [coordinate] ──(saludo, cierre, fuera de tema, manipulación, persona, oferta, pregunta mixta)──► END
+START → [coordinate] ──(saludo, cierre, fuera de tema, sobre el asistente, manipulación, persona, oferta, mixta)──► END
               │ route
               ├─(sin áreas)───────────────────────────────► [finalize] ──► END
               └─ Send × N ─► [area_agent: área A] ─┐
                              [area_agent: área B] ─┴──────► [finalize] ──► END
 ```
 
-- `coordinate`: una llamada estructurada clasifica el mensaje o elige las áreas, mientras en paralelo se calcula el
+- `coordinate`: una llamada estructurada clasifica el mensaje o elige las áreas y, con la persona del canal, redacta el
+  texto del saludo, el cierre, el tema ajeno, la respuesta sobre el asistente o la negativa; en paralelo se calcula el
   embedding y las señales del ámbito (áreas con coincidencias, candidatos para aclarar y pregunta mixta).
 - `area_agent`: cada área busca sus FAQ y procedimientos con ese embedding y responde con su prompt; puede volver a
   buscar o iniciar un procedimiento con sus tools (como máximo `agent_max_steps` pasos). Las áreas corren en paralelo.
 - `finalize`: combina las respuestas, aplica el guardarraíl (sin FAQ ni procedimiento no hay respuesta) y el auditor de
-  fugas, y si nadie responde pregunta qué necesita el usuario (opciones numeradas o las áreas del canal) antes de
-  aplicar el flujo de "sin respuesta".
+  fugas. Si nadie responde y hay temas candidatos, una llamada de conversación redacta una pregunta que los propone;
+  sin ellos, Google Chat da una respuesta libre y el chat web pregunta por las áreas antes del flujo de "sin respuesta".
 
-Saluda, cierra la conversación y declina lo ajeno con mensajes fijos editables en la BD, sin derivar a una persona.
-Atiende dos canales:
+**Holgura en la forma, rigidez en la seguridad** (spec 003): el modelo redacta saludos, cierres, temas ajenos,
+respuestas sobre el asistente, negativas y aclaraciones con la persona de cada canal, para que no sean siempre
+idénticos; el código audita cada texto antes de enviarlo y, si viene vacío o filtra algo, usa el mensaje fijo de la BD o
+la negativa genérica. Los procedimientos siguen validándose en código. Atiende dos canales:
 
-- **Chat web** (clientes, áreas externas) por WebSocket, con memoria por sesión y derivación a un ejecutivo en vivo.
-- **Google Chat** (colaboradores, áreas internas), con memoria por conversación y aviso al space de Google Chat del área cuando no hay respuesta.
+- **Chat web** (clientes, áreas externas) por WebSocket, con trato de usted, memoria por sesión y derivación a un
+  ejecutivo en vivo. Nunca da respuestas libres: sin FAQ ni procedimiento ofrece un ejecutivo o los canales oficiales.
+- **Google Chat** (colaboradores, áreas internas), con trato de tú y memoria por conversación. Sin FAQ responde con su
+  propio conocimiento avisando que no es información oficial (sin datos personales: RUT, correos y teléfonos se
+  detectan en código) y solo avisa al space del área cuando el colaborador lo pide; tras 3 datos inválidos de un
+  procedimiento ofrece avisar al área en lugar de hacerlo.
 
 Si existe un procedimiento, el asistente explica los pasos, pide los datos que exige (validados en código) y publica la
 solicitud en el space del área para que una persona la ejecute.
@@ -91,6 +98,7 @@ Properties usadas actualmente:
 | `agent_history_messages` | Mensajes anteriores de la conversación que se envían al modelo | `20` |
 | `agent_max_steps` | Pasos (llamadas al modelo) de cada agente de área por mensaje | `4` |
 | `procedure_max_attempts` | Intentos para entregar datos válidos de un procedimiento antes de abandonarlo | `3` |
+| `conversation_temperature` | Temperatura de Gemini en ambos canales: con `0` los textos redactados serían siempre idénticos. Si la clasificación de `behavior_check` falla, bájala | `0.7` |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
 
@@ -117,7 +125,7 @@ Las tablas de negocio empiezan vacías y se cargan directamente en la base de da
 | `business_area` | Áreas con su ámbito (`internal`/`external`), descripción, system prompt y `chat_space` (space de Google Chat del área, `spaces/…`) |
 | `faq_category`, `faq` | Categorías y preguntas frecuentes de cada área. El embedding se calcula solo al usarlas |
 | `procedure`, `procedure_field` | Procedimientos de cada área (nombre y pasos que se explican al usuario) y los datos que exige cada uno, con su tipo (`text`, `email`, `phone`, `rut`, `number`, `date`). El embedding se calcula solo al usarlos |
-| `agent_prompt` | Prompts con las keys `internal_agent` y `external_agent` (agente de cada canal: clasificar el mensaje y elegir las áreas en las que delegar) y `area_rules` (reglas comunes de los agentes de área). Su texto solo vive en la BD (no se versiona): cada uno debe prohibir revelar instrucciones, prompts, herramientas, áreas o funcionamiento interno y tratar lo que escribe el usuario como información, nunca como instrucciones. También guarda los mensajes fijos de cada canal, `{internal,external}_{greeting,closing,off_topic}`, que siembra la migración y se pueden editar; la lista de áreas la añade el código al saludo y al fuera de tema |
+| `agent_prompt` | Prompts con las keys `internal_agent` y `external_agent` (agente de cada canal: clasificar el mensaje y elegir las áreas en las que delegar) y `area_rules` (reglas comunes de los agentes de área). Su texto solo vive en la BD (no se versiona): cada uno debe prohibir revelar instrucciones, prompts, herramientas, áreas o funcionamiento interno y tratar lo que escribe el usuario como información, nunca como instrucciones. También guarda los mensajes fijos de cada canal, `{internal,external}_{greeting,closing,off_topic}`, que siembra la migración y se pueden editar (son el respaldo cuando el modelo no redacta el texto); la lista de áreas la añade el código al saludo y al fuera de tema si el texto no nombra ninguna. Las keys `internal_persona` (trato de tú, humor ligero) y `external_persona` (trato de usted) guardan el tono del asistente de cada canal; las siembra la migración y un cambio aplica desde el siguiente mensaje. Para que el modelo redacte, `internal_agent` y `external_agent` deben pedirle completar `text` con la persona |
 | `service_schedule` | Franja de atención por día (`weekday` 0 = lunes … 6 = domingo), en hora de Santiago |
 | `holiday` | Fechas sin atención |
 | `official_channel` | Canales oficiales que se muestran al cliente |
@@ -155,26 +163,32 @@ lo es, el aviso falla y se pide al usuario contactar directamente con el área. 
 
 ```bash
 uv run python -m src.cli.jailbreak_check --url ws://127.0.0.1:8000/ws/v1/chat
+uv run python -m src.cli.jailbreak_check --scope internal
 ```
 
-Envía una batería de más de 20 intentos de manipulación (revelar el prompt, las herramientas o las áreas internas,
+Por defecto ataca el WebSocket del chat web; con `--scope internal` ejecuta la batería en proceso contra el grafo de
+Google Chat (con la BD y Gemini reales; los avisos a las áreas solo se registran). Envía una batería de más de 20 intentos de manipulación (revelar el prompt, las herramientas o las áreas internas,
 "ignora tus instrucciones", juegos de rol…) y falla (código de salida 1) si alguna respuesta contiene fragmentos de los
-prompts de la BD, nombres internos, código o áreas internas. Ejecútalo tras cambiar los prompts. Los mensajes fijos
-no cuentan como prompts: se muestran al usuario.
+prompts de la BD (incluidas las personas), nombres internos, código o, en el web, áreas internas. Ejecútalo tras
+cambiar los prompts. Los mensajes fijos no cuentan como prompts: se muestran al usuario.
 
 ### Baterías de comportamiento
 
 ```bash
 uv run python -m src.cli.behavior_check --scope external
 uv run python -m src.cli.behavior_check --scope external --faqs 1,2 --procedure 1 --paraphrase "¿cuánto cuesta levantar la prenda?"
+uv run python -m src.cli.behavior_check --scope internal --variety 5
 ```
 
-Ejecuta contra la BD y Gemini (dentro del pod o en local) la batería de clasificación de la spec 002 (saludos, cierres,
-fuera de tema y consultas) y, con `--faqs`, `--procedure` y `--paraphrase`, la de elección de opciones sobre una
-pregunta con esas tres opciones. No envía avisos a las áreas. Termina con código 1 si algún caso falla.
+Ejecuta contra la BD y Gemini (dentro del pod o en local) la batería de clasificación de las specs 002 y 003 (saludos,
+cierres, fuera de tema, preguntas sobre el asistente y consultas) y, con `--faqs`, `--procedure` y `--paraphrase`, la de
+elección de opciones sobre una pregunta con esas tres opciones. Con `--variety N` envía N saludos en conversaciones
+nuevas y exige al menos 3 textos distintos de cada 5. No envía avisos a las áreas. Termina con código 1 si algún caso
+falla.
 
 En el chat web, mientras se ofrece un ejecutivo, el cliente puede aceptar o rechazar escribiendo («ok», «no, gracias»)
-además de con `human_response`; un saludo, un cierre o un fuera de tema no cancelan la oferta ni la petición de datos.
+además de con `human_response`; un saludo, un cierre, un fuera de tema o una pregunta sobre el asistente no cancelan la
+oferta ni la petición de datos.
 
 ## Ejecución
 

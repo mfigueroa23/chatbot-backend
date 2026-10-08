@@ -1,6 +1,6 @@
 # Tareas 003 — Conversación libre en Google Chat (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 22/31 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 26/31 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD ni a la red
 (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. "Grafo interno" es `build_graph(AreaScope.internal)`
@@ -88,16 +88,16 @@ y "grafo web" es `build_graph(AreaScope.external)`. T-30 y T-31 se añadieron al
   Hecho cuando: `uv run pytest -q tests/chat_orchestrator_test.py -k "web_negativa or web_about_assistant"` pasa.
 
 ## Fase 7 — Baterías y cierre
-- [ ] **T-21 — Ampliar `behavior_check` para el modo conversacional** · RF-11, RNF-4 · ~25 min
+- [x] **T-21 — Ampliar `behavior_check` para el modo conversacional** · RF-11, RNF-4 · ~25 min
   Caso «¿eres IA o un vil robot?» → `about_assistant` en ambos ámbitos; la clase `other` acepta `free_answer` y `clarify`; `--variety N` cuenta textos distintos de N saludos en hilos nuevos (falla si hay menos de 3 de 5).
   Hecho cuando: `uv run pytest -q tests/behavior_check_test.py -k "about_assistant or variety"` pasa.
-- [ ] **T-22 — Añadir `jailbreak_check --scope internal`** · RF-21, RF-24, RNF-5 · ~25 min [P]
+- [x] **T-22 — Añadir `jailbreak_check --scope internal`** · RF-21, RF-24, RNF-5 · ~25 min [P]
   Ejecuta la batería en proceso contra el grafo interno, con notificador que solo registra; el modo WebSocket sigue siendo el de por defecto.
   Hecho cuando: `uv run pytest -q tests/jailbreak_check_test.py -k internal` pasa con un grafo de dobles que no filtra y otro que sí.
-- [ ] **T-23 — Actualizar el README** · RF-1, RF-2, RF-27 · ~15 min
+- [x] **T-23 — Actualizar el README** · RF-1, RF-2, RF-27 · ~15 min
   Modo conversacional de ambos canales, `internal_persona`, `external_persona`, `conversation_temperature`, avisos al área solo a pedido y `jailbreak_check --scope internal`.
   Hecho cuando: `grep -c "internal_persona\|conversation_temperature\|--scope internal" README.md` da al menos 3.
-- [ ] **T-24 — Verificación completa** · todos, RF-26 · ~15 min
+- [x] **T-24 — Verificación completa** · todos, RF-26 · ~15 min
   `uv run pyright` y `uv run pytest` (AGENTS.md); los tests de procedimientos (`sub_agent_test`, `procedure_flow_test`) siguen en verde sin cambios (RF-26).
   Hecho cuando: pyright da 0 errores, pytest no tiene fallos y cada test citado en la matriz del plan existe (`uv run pytest --collect-only -q`).
 

@@ -1,6 +1,6 @@
 # Tareas 002 — Comportamiento de asistente (chatbot-backend)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 20/60 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 24/60 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` = puede ir en paralelo con la anterior.
 Salvo que se diga otra cosa, "verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test
 se conecta a la BD ni a la red (constitución, punto 6). Los dobles compartidos viven en `tests/fakes.py`. El código de
@@ -80,16 +80,16 @@ referencia de los agentes de área está en `git show 60a517e^:src/agents/{sub_a
   Hecho cuando: la suite sigue en verde y `uv run pytest -q tests/gemini_llm_test.py` no cambia de resultado.
 
 ## Fase 5 — Agente de área
-- [ ] **T-22 — Recuperar `AreaToolbox` con las tools de búsqueda** · RF-56, RF-57 · ~25 min
+- [x] **T-22 — Recuperar `AreaToolbox` con las tools de búsqueda** · RF-56, RF-57 · ~25 min
   `src/agents/tools.py` desde `60a517e^`: `buscar_faq` y `buscar_procedimiento` limitadas al área; registro de evidencias (encontrado, elegido, buscado).
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k toolbox` pasa y una búsqueda nunca devuelve contenido de otra área.
-- [ ] **T-23 — Añadir la tool terminal `iniciar_procedimiento`** · RF-26 · ~25 min
+- [x] **T-23 — Añadir la tool terminal `iniciar_procedimiento`** · RF-26 · ~25 min
   Llama a `procedure_flow.handle_procedure` y cierra el agente con su resultado (`ask`, `sent`, `failed`, `gave_up`).
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k iniciar_procedimiento` pasa con los 4 resultados.
-- [ ] **T-24 — Recuperar el bucle de `run_sub_agent`** · RF-55, RNF-1 · ~25 min
+- [x] **T-24 — Recuperar el bucle de `run_sub_agent`** · RF-55, RNF-1 · ~25 min
   `src/agents/sub_agent.py` desde `60a517e^` con `AreaAnswer`; tope `max_steps`; un área sin `system_prompt` no llama al modelo.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k "loop or max_steps or sin_prompt"` pasa, con 1 paso en el caso normal y nunca más de `max_steps`.
-- [ ] **T-25 — Aplicar el guardarraíl de evidencias** · RF-25, RF-45, RF-46 · ~20 min
+- [x] **T-25 — Aplicar el guardarraíl de evidencias** · RF-25, RF-45, RF-46 · ~20 min
   Texto final sin evidencias ⇒ `no_answer`; lo elegido cuenta como evidencia aunque esté bajo el umbral.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k guardrail` pasa con y sin evidencias y con una opción elegida.
 

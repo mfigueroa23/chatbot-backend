@@ -6,7 +6,8 @@ from src.agents.graph import AgentContext, Catalog, build_graph
 from src.agents.llm import AreaInfo, CoordinatorReply, FaqHit, FinalText
 from src.agents.retriever import ProcedureHit
 from src.cli.behavior_check import (
-    CLASSIFICATION, choice_cases, graph_chooser, graph_classifier, main, run_choices, run_classification)
+    CLASSIFICATION, choice_cases, graph_chooser, graph_classifier, graph_greeter, main, required_variety, run_choices,
+    run_classification, run_variety)
 from src.models.business_area import AreaScope
 from tests.fakes import FakeAgentLLM, FakeNotifier, FakeRetriever
 
@@ -17,7 +18,8 @@ CONTRACT = ProcedureHit(7, "Copia del contrato", "El área envía la copia", [],
 OPTIONS = [ClarifyOption(1, "faq", 11, 1, "¿Plazo máximo del crédito?"), ClarifyOption(2, "faq", 12, 1, "¿Tasa de interés del crédito?"),
            ClarifyOption(3, "procedure", 7, 1, "Copia del contrato")]
 EXPECTED_KIND = {"greeting": CoordinatorReply("greeting"), "closing": CoordinatorReply("closing"),
-                 "off_topic": CoordinatorReply("off_topic"), "other": CoordinatorReply("no_answer")}
+                 "off_topic": CoordinatorReply("off_topic"), "other": CoordinatorReply("no_answer"),
+                 "about_assistant": CoordinatorReply("about_assistant", text="Soy el asistente virtual.")}
 
 
 async def load_catalog(scope: AreaScope) -> Catalog:
@@ -109,3 +111,50 @@ def test_runner_help_termina_con_codigo_0():
         main(["--help"])
 
     assert exit_info.value.code == 0
+
+
+
+@pytest.mark.parametrize("scope", [AreaScope.internal, AreaScope.external])
+def test_clasificacion_about_assistant_en_ambos_ambitos(scope: AreaScope):
+    cases = [case for case in CLASSIFICATION if scope in case.scopes and case.expected == "about_assistant"]
+
+    assert [case.message for case in cases] == ["¿eres IA o un vil robot?"]
+
+
+@pytest.mark.anyio
+async def test_clasificacion_about_assistant_y_other_con_respuesta_libre_o_aclaracion():
+    llm = ScriptedCoordinator({"¿eres IA?": CoordinatorReply("about_assistant", text="Soy el asistente."),
+                               "¿vacaciones?": CoordinatorReply("no_answer")})
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+    classify = graph_classifier(graph, context(llm))
+
+    assert [await classify("¿eres IA?"), await classify("¿vacaciones?")] == ["about_assistant", "other"]
+
+
+@pytest.mark.anyio
+async def test_eleccion_respuesta_libre_del_interno_cuenta_como_sin_respuesta():
+    llm = ScriptedCoordinator({"ninguna": CoordinatorReply("no_answer")})
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    results = await run_choices(graph_chooser(graph, context(llm), OPTIONS), [
+        case for case in choice_cases(OPTIONS, "Quiero saber cuánto interés me cobran") if case.message == "ninguna"])
+
+    assert [result.observed for result in results] == ["no_answer"] and results[0].ok
+
+
+@pytest.mark.parametrize(("count", "required"), [(5, 3), (3, 2), (10, 6), (1, 1)])
+def test_variety_exige_tres_de_cada_cinco(count, required):
+    assert required_variety(count) == required
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(("texts", "ok"), [(["¡Hola!", "¡Buenas!", "¡Qué tal!", "¡Hola!", "¡Buenas!"], True),
+                                           (["¡Hola!", "¡Hola!", "¡Buenas!", "¡Hola!", "¡Buenas!"], False)])
+async def test_variety_cuenta_los_saludos_distintos_en_hilos_nuevos(texts, ok):
+    llm = FakeAgentLLM(coordinator=[CoordinatorReply("greeting", text=text) for text in texts])
+    graph = build_graph(AreaScope.internal, InMemorySaver())
+
+    replies, passed = await run_variety(graph_greeter(graph, context(llm)), len(texts))
+
+    assert len(replies) == 5 and passed is ok
+    assert replies[0].startswith("¡Hola!")

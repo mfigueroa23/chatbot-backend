@@ -76,23 +76,26 @@ class FakeAgentLLM:
     """Guioniza el modelo y cuenta sus llamadas.
 
     Cada AgentReply guioniza un mensaje completo; `coordinator` y `steps` (por nombre de área) guionizan por separado
-    al agente del canal y a cada agente de área.
+    al agente del canal y a cada agente de área, y `converse` los textos de la conversación (vacío si no se guioniza).
     """
 
     def __init__(self, *replies: AgentReply, coordinator: list[CoordinatorReply] | None = None,
-                 steps: dict[str, list[AgentStep]] | None = None):
+                 steps: dict[str, list[AgentStep]] | None = None, converse: list[str] | None = None):
         self.replies = list(replies) or [AgentReply("no_answer", "")]
         self.coordinator = list(coordinator or [])
         self.steps = {area: list(script) for area, script in (steps or {}).items()}
+        self.conversations = list(converse or [])
         self.coordinator_calls = 0
         self.step_calls = 0
+        self.converse_calls = 0
+        self.converse_messages: list[list[BaseMessage]] = []
         self.coordinator_messages: list[list[BaseMessage]] = []
         self.step_messages: list[list[BaseMessage]] = []
         self.current: AgentReply | None = None
 
     @property
     def calls(self) -> int:
-        return self.coordinator_calls + self.step_calls
+        return self.coordinator_calls + self.step_calls + self.converse_calls
 
     async def coordinate(self, messages: list[BaseMessage]) -> CoordinatorReply:
         self.coordinator_calls += 1
@@ -118,6 +121,13 @@ class FakeAgentLLM:
             call = ToolCall("call-1", "iniciar_procedimiento", {"procedimiento_id": reply.procedure_id, "datos": data})
             return ToolCalls([call], reply.text)
         return FinalText(reply.text if reply.kind == "answer" else "")
+
+    async def converse(self, messages: list[BaseMessage]) -> str:
+        self.converse_calls += 1
+        self.converse_messages.append(list(messages))
+        if not self.conversations:
+            return ""
+        return self.conversations.pop(0) if len(self.conversations) > 1 else self.conversations[0]
 
     def next_reply(self) -> AgentReply:
         return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]

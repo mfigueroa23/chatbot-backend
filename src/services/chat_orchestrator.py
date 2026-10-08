@@ -18,7 +18,7 @@ from src.services.business_data import get_official_channels
 from src.services.live_chat import enqueue
 from src.services.area_notifier import AreaNotifier, Requester
 from src.services.message_validation import MAX_MESSAGE_LENGTH, validate_user_message
-from src.services.property import get_int_property
+from src.services.property import get_float_property, get_int_property
 from src.services.web_session import answer_offer, reset_to_bot, start_offer, submit_contact, touch_last_message
 from src.utils.clock import Clock, SystemClock
 from src.utils.exceptions.agent import LlmNotConfiguredError, LlmUnavailableError
@@ -40,11 +40,13 @@ WEB_NOTIFICATION_FAILED = "No pude enviar tu solicitud al área. Puedes contacta
 
 
 # Mensajes que el asistente responde sin cambiar la fase del chat web: no cancelan la oferta ni la petición de datos.
-FIXED_OUTCOMES = ("greeting", "closing", "off_topic")
+FIXED_OUTCOMES = ("greeting", "closing", "off_topic", "about_assistant")
 
 async def build_agent_context(session: AsyncSession, requester: Requester | None, offer_pending: bool = False) -> AgentContext:
+    # Con temperatura 0 los textos redactados serían siempre idénticos; la clasificación se valida con behavior_check.
+    temperature = await get_float_property(session, "conversation_temperature", 0.7)
     return AgentContext(
-        llm=await build_gemini_llm(session),
+        llm=await build_gemini_llm(session, temperature),
         retriever=await build_faq_retriever(session, SessionLocal),
         load_catalog=load_catalog_in_own_session,
         notifier=AreaNotifier(SessionLocal),
@@ -89,8 +91,9 @@ async def handle_internal_message(
         context = await build_agent_context(session, requester)
         await release_connection(session)
         result = await run_agent(graph, question, context, conversation_id)
+        # La negativa redactada ya pasó el auditor; sin ella, la genérica.
         if result.outcome == "rejected":
-            return GENERIC_REFUSAL
+            return result.reply or GENERIC_REFUSAL
         if result.outcome == "mixed_scope":
             return MIXED_SCOPE
         if result.outcome == "notification_failed":
@@ -139,7 +142,7 @@ async def handle_web_message(
         if result.outcome not in FIXED_OUTCOMES:
             reset_to_bot(web_session)
         if result.outcome == "rejected":
-            replies: list[ServerMessage] = [bot(GENERIC_REFUSAL)]
+            replies: list[ServerMessage] = [bot(result.reply or GENERIC_REFUSAL)]
         elif result.outcome == "mixed_scope":
             replies = [bot(MIXED_SCOPE)]
         elif result.outcome == "notification_failed":

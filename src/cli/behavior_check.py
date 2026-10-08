@@ -1,8 +1,10 @@
-"""Baterías de comportamiento de asistente contra la BD y el modelo reales: clasificación de mensajes y elección de opciones.
+"""Baterías de comportamiento de asistente contra la BD y el modelo reales: clasificación de mensajes, elección de opciones
+y variedad de los saludos redactados.
 
 Se ejecuta dentro del pod (o en local con la BD cargada); los avisos a las áreas solo se registran, no se envían.
 Uso: uv run python -m src.cli.behavior_check --scope external
      uv run python -m src.cli.behavior_check --scope external --faqs 11,12 --procedure 7 --paraphrase "texto"
+     uv run python -m src.cli.behavior_check --scope internal --variety 5
 """
 import argparse
 import asyncio
@@ -31,6 +33,8 @@ logger = logging.getLogger(__name__)
 BOTH = (AreaScope.internal, AreaScope.external)
 WEB = (AreaScope.external,)
 FIXED = ("greeting", "closing", "off_topic")
+# Clases que la batería distingue; cualquier otro flujo (respuesta, aclaración, respuesta libre…) cuenta como "other".
+CLASSES = (*FIXED, "about_assistant")
 # Identidad de prueba para el canal interno: los avisos a las áreas no se envían.
 CHECK_REQUESTER = Requester("behavior_check", "behavior_check@local", "google_chat")
 
@@ -46,7 +50,8 @@ class CaseResult:
     observed: str | frozenset[int]
     ok: bool
 
-# Batería de clasificación de la spec 002 (criterios de finalización); "other" es cualquier flujo que no sea un mensaje fijo.
+# Batería de clasificación de las specs 002 y 003 (criterios de finalización); "other" es cualquier flujo que no sea un
+# mensaje fijo ni una respuesta sobre el asistente.
 CLASSIFICATION = [
     Case("hola", "greeting"),
     Case("buenas tardes", "greeting"),
@@ -64,6 +69,7 @@ CLASSIFICATION = [
     Case("dame una receta de pan", "off_topic"),
     Case("¿quién ganó el partido ayer?", "off_topic"),
     Case("¿cuántos días de vacaciones me quedan?", "off_topic", WEB),
+    Case("¿eres IA o un vil robot?", "about_assistant"),
 ]
 
 def choice_cases(options: list[ClarifyOption], paraphrase: str) -> list[Case]:
@@ -85,8 +91,14 @@ def thread_config() -> RunnableConfig:
 def graph_classifier(graph: AgentGraph, context: AgentContext) -> Callable[[str], Awaitable[str]]:
     async def classify(message: str) -> str:
         state = await graph.ainvoke({"messages": [HumanMessage(message)]}, thread_config(), context=context)
-        return state["outcome"] if state["outcome"] in FIXED else "other"
+        return state["outcome"] if state["outcome"] in CLASSES else "other"
     return classify
+
+def graph_greeter(graph: AgentGraph, context: AgentContext) -> Callable[[str], Awaitable[str]]:
+    async def greet(message: str) -> str:
+        state = await graph.ainvoke({"messages": [HumanMessage(message)]}, thread_config(), context=context)
+        return state["reply"] or ""
+    return greet
 
 def graph_chooser(graph: AgentGraph, context: AgentContext,
                   options: list[ClarifyOption]) -> Callable[[str], Awaitable[str | frozenset[int]]]:
@@ -103,7 +115,8 @@ def graph_chooser(graph: AgentGraph, context: AgentContext,
             for task in state.get("area_tasks") or []
             for kind, ids in (("faq", task["granted_faq_ids"]), ("procedure", task["granted_procedure_ids"]))
             for item_id in ids)
-        return attended or state["outcome"]
+        # En el canal interno no elegir lleva a una respuesta libre: es su flujo de sin respuesta.
+        return attended or ("no_answer" if state["outcome"] == "free_answer" else state["outcome"])
     return choose
 
 async def run_classification(classify: Callable[[str], Awaitable[str]], scope: AreaScope) -> list[CaseResult]:
@@ -119,6 +132,14 @@ async def run_choices(choose: Callable[[str], Awaitable[str | frozenset[int]]], 
         observed = await choose(case.message)
         results.append(CaseResult(case, observed, observed == case.expected))
     return results
+
+def required_variety(count: int) -> int:
+    # Al menos 3 textos distintos de cada 5 saludos, redondeando hacia arriba.
+    return -(-3 * count // 5)
+
+async def run_variety(greet: Callable[[str], Awaitable[str]], count: int) -> tuple[list[str], bool]:
+    replies = [await greet("hola") for _ in range(count)]
+    return replies, len(set(replies)) >= required_variety(count)
 
 class LoggingNotifier:
     async def notify(self, space: str, text: str) -> None:
@@ -147,7 +168,16 @@ def report(title: str, results: list[CaseResult]) -> int:
     print(f"{passed}/{len(results)} aciertos")
     return len(results) - passed
 
-async def check(scope: AreaScope, faq_ids: list[int], procedure_id: int | None, paraphrase: str | None) -> int:
+def report_variety(replies: list[str], ok: bool) -> int:
+    print("\nVariedad")
+    for reply in replies:
+        print(f"- {reply[:120]}")
+    print(f"{'PASA ' if ok else 'FALLA'} | {len(set(replies))} textos distintos de {len(replies)} "
+          f"(mínimo {required_variety(len(replies))})")
+    return 0 if ok else 1
+
+async def check(scope: AreaScope, faq_ids: list[int], procedure_id: int | None, paraphrase: str | None,
+                variety: int = 0) -> int:
     graph = build_graph(scope, InMemorySaver(serde=checkpoint_serializer()))
     async with SessionLocal() as session:
         requester = CHECK_REQUESTER if scope == AreaScope.internal else None
@@ -156,18 +186,21 @@ async def check(scope: AreaScope, faq_ids: list[int], procedure_id: int | None, 
     if faq_ids and procedure_id is not None and paraphrase:
         options = await load_options(faq_ids, procedure_id)
         failures += report("Elección", await run_choices(graph_chooser(graph, context, options), choice_cases(options, paraphrase)))
+    if variety > 0:
+        failures += report_variety(*await run_variety(graph_greeter(graph, context), variety))
     await engine.dispose()
     return 1 if failures else 0
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Ejecuta las baterías de clasificación y de elección de la spec 002.")
+    parser = argparse.ArgumentParser(description="Ejecuta las baterías de clasificación, elección y variedad de las specs 002 y 003.")
     parser.add_argument("--scope", choices=[scope.value for scope in AreaScope], default=AreaScope.external.value)
     parser.add_argument("--faqs", default="", help="Ids de las dos FAQ de la pregunta con opciones, separados por coma")
     parser.add_argument("--procedure", type=int, help="Id del procedimiento de la pregunta con opciones")
     parser.add_argument("--paraphrase", help="Paráfrasis de la segunda opción")
+    parser.add_argument("--variety", type=int, default=0, help="Saludos en hilos nuevos para medir la variedad de los textos")
     args = parser.parse_args(argv)
     faq_ids = [int(value) for value in args.faqs.split(",") if value.strip()]
-    sys.exit(asyncio.run(check(AreaScope(args.scope), faq_ids, args.procedure, args.paraphrase)))
+    sys.exit(asyncio.run(check(AreaScope(args.scope), faq_ids, args.procedure, args.paraphrase, args.variety)))
 
 if __name__ == "__main__":
     main()

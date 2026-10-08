@@ -1,4 +1,5 @@
-from src.agents.audit import GENERIC_REFUSAL, INTERNAL_NAMES, find_leaks
+import pytest
+from src.agents.audit import GENERIC_REFUSAL, INTERNAL_NAMES, find_leaks, personal_data_leaks
 
 PROMPT = "Texto ficticio de un prompt de sistema que el asistente no debe revelar nunca al usuario."
 
@@ -34,3 +35,20 @@ def test_detecta_los_nombres_de_las_tools_y_de_la_decision_del_agente_del_canal(
     assert find_leaks("Llamé a iniciar_procedimiento con tus datos", [PROMPT], INTERNAL_NAMES) == [
         "nombre interno iniciar_procedimiento"]
     assert find_leaks("Tus chosen_options son 1 y 2", [PROMPT], INTERNAL_NAMES) == ["nombre interno chosen_options"]
+
+
+@pytest.mark.parametrize(("text", "kind"), [
+    ("El RUT del titular es 12.345.678-5.", "RUT"),
+    ("Su RUT es 12345678-k.", "RUT"),
+    ("Escríbele a ana.perez@autofin.cl.", "correo"),
+    ("Llama al +56 9 1234 5678.", "teléfono"),
+    ("Su celular es 912345678.", "teléfono"),
+])
+def test_personal_data_detecta_cada_tipo(text, kind):
+    assert personal_data_leaks(text) == [kind]
+
+
+def test_personal_data_un_texto_limpio_con_montos_y_fechas_no_tiene_datos():
+    text = "La cuota de $1.250.000 vence el 15-10-2026 y el pie mínimo es de 20 % (10/12/2026)."
+
+    assert personal_data_leaks(text) == []

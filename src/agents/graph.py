@@ -13,11 +13,12 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import Send
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agents.audit import GENERIC_REFUSAL, INTERNAL_NAMES, find_leaks, strip_citations
+from src.agents.audit import GENERIC_REFUSAL, INTERNAL_NAMES, find_leaks, personal_data_leaks, strip_citations
 from src.agents.behavior import (
-    Candidate, Clarification, areas_question, build_options, can_clarify, chosen, combine, fixed_text, options_text,
-    other_procedures_text, requester_key)
-from src.agents.llm import AgentLLM, AreaInfo, ProcedureHit, build_area_messages, build_coordinator_messages
+    FREE_ANSWER_FALLBACK, PROCEDURE_EXHAUSTED, Candidate, Clarification, areas_question, build_options, can_clarify, chosen,
+    combine, ensure_areas, fixed_text, options_text, other_procedures_text, requester_key)
+from src.agents.llm import (
+    AgentLLM, AreaInfo, ProcedureHit, build_area_messages, build_converse_messages, build_coordinator_messages)
 from src.agents.retriever import Retriever, ScopeSignals
 from src.agents.sub_agent import AreaAnswer, run_sub_agent
 from src.agents.strategies import Notifier
@@ -30,7 +31,7 @@ from src.services.procedures import web_contact_fields
 logger = logging.getLogger(__name__)
 
 Outcome = Literal["answered", "no_answer", "mixed_scope", "wants_human", "notification_failed", "rejected", "greeting",
-                  "closing", "off_topic", "offer_accepted", "offer_declined", "clarify"]
+                  "closing", "off_topic", "offer_accepted", "offer_declined", "clarify", "about_assistant", "free_answer"]
 # Mensajes fijos de cada canal: viven en agent_prompt con la key "<ámbito>_<tipo>".
 FIXED_KINDS = ("greeting", "closing", "off_topic")
 
@@ -41,6 +42,7 @@ class Catalog:
     area_rules: str  # reglas comunes de todas las áreas
     fixed: dict[str, str | None] = field(default_factory=dict)  # texto de cada mensaje fijo; None si falta en la BD
     area_names: list[str] = field(default_factory=list)  # todas las áreas activas del ámbito, tengan prompt o no
+    persona: str | None = None  # tono del asistente del canal; se lee en cada mensaje para aplicar los cambios de la BD
 
 @dataclass(frozen=True)
 class AgentContext:
@@ -76,6 +78,7 @@ class AreaTask(TypedDict):
     """Lo que recibe cada agente de área por Send: ids, no contenido; el agente busca lo suyo."""
     area: AreaInfo
     rules: str
+    persona: str | None
     question: str
     history: list[BaseMessage]
     embedding: list[float]
@@ -93,6 +96,8 @@ class AgentState(TypedDict):
     clarifications: dict[str, Clarification]  # una aclaración pendiente por usuario (requester_key)
     # Por turno: coordinate los reinicia.
     turn_prompts: list[str]
+    turn_agent_prompt: str
+    turn_persona: str | None
     area_names: list[str]
     turn_candidates: list[Candidate]
     area_tasks: list[AreaTask]
@@ -130,13 +135,33 @@ def finish(outcome: Outcome, reply: str | None = None, areas: list[AreaInfo] | N
         "messages": [AIMessage(remembered)] if remembered else [],
     }
 
-def audited(text: str, prompts: list[str], used: list[AreaInfo]) -> dict:
+def audited(text: str, prompts: list[str], used: list[AreaInfo], outcome: Outcome = "answered") -> dict:
     leaks = find_leaks(text, prompts, INTERNAL_NAMES)
     if leaks:
         # El texto filtrado no se envía ni queda en la memoria del hilo.
         logger.warning("Respuesta sustituida por el auditor: %s", ", ".join(leaks))
         return finish("rejected", memory=GENERIC_REFUSAL)
-    return finish("answered", text, used)
+    return finish(outcome, text, used)
+
+def free_text(text: str, prompts: list[str], fallback: str) -> dict:
+    # Una fuga del prompt recibe la negativa genérica, como cualquier texto; sin texto o con datos personales se usa
+    # un respaldo que no los tiene.
+    found = personal_data_leaks(text)
+    if found:
+        logger.warning("Respuesta libre sustituida por datos personales: %s", ", ".join(found))
+    if found or not text.strip():
+        return finish("free_answer", fallback)
+    return audited(text.strip(), prompts, [], "free_answer")
+
+def drafted(text: str, prompts: list[str]) -> str | None:
+    """Texto que redactó el modelo, si puede enviarse: None si viene vacío o el auditor encuentra una fuga."""
+    if not text.strip():
+        return None
+    leaks = find_leaks(text, prompts, INTERNAL_NAMES)
+    if leaks:
+        logger.warning("Texto redactado sustituido por el auditor: %s", ", ".join(leaks))
+        return None
+    return text.strip()
 
 def settle_clarification(state: AgentState, key: str, updates: dict) -> dict:
     # Cualquier respuesta que no sea una aclaración descarta la aclaración pendiente de ese usuario, y solo la suya.
@@ -150,6 +175,10 @@ def previous_question(history: list[BaseMessage]) -> str | None:
     return next((text_of(message) for message in reversed(history) if isinstance(message, HumanMessage)), None)
 
 def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = None) -> AgentGraph:
+    # Ambos canales redactan sus textos; solo el interno responde libre: al cliente web nunca se le da información no
+    # oficial, y sin respuesta sigue la pregunta de áreas y la oferta de ejecutivo.
+    free_answers = scope == AreaScope.internal
+
     async def coordinate(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
         updates = await decide(state, runtime.context)
         return settle_clarification(state, requester_key(runtime.context.requester), updates)
@@ -174,11 +203,16 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         decision, signals = await asyncio.gather(
             context.llm.coordinate(build_coordinator_messages(
                 catalog.agent_prompt, list(areas.values()), options, context.offer_pending, pending, history, question,
-                context.history_messages)),
+                context.history_messages, catalog.persona)),
             scope_signals(),
         )
+        # La persona también es un prompt: un texto que la copie se trata como fuga.
+        prompts = [catalog.agent_prompt, catalog.area_rules, *(area.system_prompt or "" for area in catalog.areas),
+                   *([catalog.persona] if catalog.persona else [])]
         turn = {
-            "turn_prompts": [catalog.agent_prompt, catalog.area_rules, *(area.system_prompt or "" for area in catalog.areas)],
+            "turn_prompts": prompts,
+            "turn_agent_prompt": catalog.agent_prompt,
+            "turn_persona": catalog.persona,
             "area_names": catalog.area_names,
             "turn_candidates": signals.candidates,
             "area_tasks": [],
@@ -190,7 +224,9 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         }
         own = [areas[area_id] for area_id in signals.own_area_ids if area_id in areas]
         if decision.kind == "manipulation":
-            return turn | finish("rejected", memory=GENERIC_REFUSAL)
+            # La negativa redactada pasa por el auditor; vacía o con fuga, la genérica.
+            refusal = drafted(decision.text, prompts)
+            return turn | (finish("rejected", refusal) if refusal else finish("rejected", memory=GENERIC_REFUSAL))
         if decision.kind == "wants_human":
             return turn | finish("wants_human", areas=own)
         # La respuesta a la oferta de ejecutivo solo cuenta si hay una oferta pendiente.
@@ -200,6 +236,11 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
             return turn | finish("offer_declined")
         if own and signals.other_scope_match:
             return turn | finish("mixed_scope")
+        # Una pregunta sobre el asistente con una FAQ propia sobre el umbral la responde el área; sin texto sigue el
+        # flujo normal, y un texto con fuga recibe la negativa genérica.
+        if decision.kind == "about_assistant" and not own and decision.text.strip():
+            about = drafted(decision.text, prompts)
+            return turn | (finish("about_assistant", about) if about else finish("rejected", memory=GENERIC_REFUSAL))
         # Una FAQ o un procedimiento propio sobre el umbral demuestran que el mensaje no es ajeno al canal.
         fixed_kind = None
         if decision.kind in ("greeting", "closing") or (decision.kind == "off_topic" and not own):
@@ -207,16 +248,20 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if fixed_kind is None and signals.other_scope_match and not own:
             fixed_kind = "off_topic"
         if fixed_kind is not None:
+            # El saludo y el fuera de tema dicen con qué puede ayudar el asistente; el cierre no.
+            names = [] if fixed_kind == "closing" else catalog.area_names
+            # El texto redactado solo vale para lo que clasificó el agente del canal; vacío o con fuga, el texto fijo.
+            text = drafted(decision.text, prompts) if decision.kind == fixed_kind else None
+            if text:
+                return turn | finish(fixed_kind, ensure_areas(text, names))
             template = catalog.fixed.get(fixed_kind)
             if template:
-                # El saludo y el fuera de tema dicen con qué puede ayudar el asistente; el cierre no.
-                names = [] if fixed_kind == "closing" else catalog.area_names
                 return turn | finish(fixed_kind, fixed_text(template, names))
             # Sin texto en la BD el mensaje sigue el flujo normal: procedimiento, FAQ, aclaración o sin respuesta.
             logger.error("Falta el texto fijo %s_%s en agent_prompt", scope, fixed_kind)
 
         def task(area: AreaInfo, pending_id: int | None = None) -> AreaTask:
-            return AreaTask(area=area, rules=catalog.area_rules, question=question, history=history,
+            return AreaTask(area=area, rules=catalog.area_rules, persona=catalog.persona, question=question, history=history,
                             embedding=signals.embedding, pending_procedure_id=pending_id, granted_faq_ids=[],
                             granted_procedure_ids=[], attempts=state.get("procedure_attempts") or {})
 
@@ -269,15 +314,15 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         toolbox = AreaToolbox(area, context.retriever, context.notifier, context.requester, state["question"], faqs,
                               procedures, pending, state["attempts"], context.max_attempts)
         messages = build_area_messages(area, state["rules"], faqs, procedures, pending, state["history"], state["question"],
-                                       context.history_messages, extra_fields)
+                                       context.history_messages, extra_fields, state["persona"])
         answer = await run_sub_agent(context.llm, toolbox, messages, context.max_steps)
         return {"area_answers": [answer], "procedure_attempts": answer.attempts}
 
     async def finalize(state: AgentState, runtime: Runtime[AgentContext]) -> dict:
         key = requester_key(runtime.context.requester)
-        return settle_clarification(state, key, close(state, key))
+        return settle_clarification(state, key, await close(state, key, runtime.context))
 
-    def close(state: AgentState, key: str) -> dict:
+    async def close(state: AgentState, key: str, context: AgentContext) -> dict:
         answers = state.get("area_answers") or []
         cleared = {"pending_area_id": None, "pending_procedure_id": None}
         # No poder avisar al área cambia el flujo del canal: tiene prioridad sobre cualquier texto.
@@ -286,13 +331,24 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
             return finish("notification_failed", areas=[failed.area]) | cleared
         gave_up = next((answer for answer in answers if answer.kind == "gave_up"), None)
         if gave_up is not None and gave_up.procedure_id is not None:
+            reset = cleared | {"procedure_attempts": {gave_up.procedure_id: 0}}
+            if free_answers:
+                # En el canal interno no se avisa al área sin que el colaborador lo pida: se le ofrece hacerlo.
+                return await exhausted(state, gave_up, context) | reset
             # Tras los intentos permitidos se aplica el flujo de sin respuesta del canal.
-            return finish("no_answer", areas=[gave_up.area]) | cleared | {"procedure_attempts": {gave_up.procedure_id: 0}}
+            return finish("no_answer", areas=[gave_up.area]) | reset
         with_text = ("answered", "procedure_ask", "procedure_sent")
         reply = combine([(answer.area.name, strip_citations(answer.text) if answer.text and answer.kind in with_text else None)
                          for answer in answers])
         if reply is None:
-            return clarify(state, key) or finish("no_answer", areas=[answer.area for answer in answers])
+            clarification = await clarify(state, key, context)
+            if clarification is not None:
+                return clarification
+            if free_answers:
+                # La conversación solo cuesta una llamada más cuando ninguna área respondió.
+                text = await context.llm.converse(conversation(state, context, []))
+                return free_text(text, state["turn_prompts"], FREE_ANSWER_FALLBACK)
+            return finish("no_answer", areas=[answer.area for answer in answers])
         if state.get("turn_note"):
             reply = f"{reply}\n\n{state['turn_note']}"
         updates = audited(reply, state["turn_prompts"], [answer.area for answer in answers if answer.text])
@@ -303,7 +359,7 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
             return updates | cleared
         return updates
 
-    def clarify(state: AgentState, key: str) -> dict | None:
+    async def clarify(state: AgentState, key: str, context: AgentContext) -> dict | None:
         # Sin aclaraciones dentro de un procedimiento en curso: ahí manda el flujo del procedimiento.
         if state.get("pending_procedure_id") is not None:
             return None
@@ -311,8 +367,12 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         pending = clarifications.get(key)
         options = build_options(state.get("turn_candidates") or [])
         if options and can_clarify(pending, "options"):
-            clarification, text = Clarification("options", options), options_text(options)
-        elif not options and can_clarify(pending, "areas"):
+            # El modelo propone los temas con sus palabras; se guardan las mismas opciones numeradas, así la elección
+            # se reconoce igual. Sin texto o con fuga, la plantilla.
+            written = await context.llm.converse(conversation(state, context, [option.label for option in options]))
+            text = drafted(written, state["turn_prompts"]) or options_text(options)
+            clarification = Clarification("options", options)
+        elif not options and not free_answers and can_clarify(pending, "areas"):
             clarification, text = Clarification("areas"), areas_question(state.get("area_names") or [])
         else:
             return None
@@ -320,6 +380,14 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
         if updates["outcome"] != "answered":
             return updates
         return finish("clarify", text) | {"clarifications": {**clarifications, key: clarification}}
+
+    async def exhausted(state: AgentState, gave_up: AreaAnswer, context: AgentContext) -> dict:
+        procedure = None
+        if gave_up.procedure_id is not None:
+            procedure = await context.retriever.get_procedure(gave_up.area.id, gave_up.procedure_id)
+        name = procedure.name if procedure is not None else gave_up.area.name
+        text = await context.llm.converse(conversation(state, context, [], name))
+        return free_text(text, state["turn_prompts"], PROCEDURE_EXHAUSTED.format(name=name))
 
     graph = StateGraph(AgentState, context_schema=AgentContext, input_schema=AgentInput)
     graph.add_node("coordinate", coordinate)
@@ -330,6 +398,13 @@ def build_graph(scope: AreaScope, checkpointer: BaseCheckpointSaver | None = Non
     graph.add_edge("area_agent", "finalize")
     graph.add_edge("finalize", END)
     return graph.compile(checkpointer=checkpointer)
+
+def conversation(state: AgentState, context: AgentContext, topics: list[str],
+                 exhausted_procedure: str | None = None) -> list[BaseMessage]:
+    *history, last = state["messages"]
+    return build_converse_messages(state.get("turn_persona"), state.get("turn_agent_prompt") or "",
+                                   state.get("area_names") or [], topics, history, text_of(last), context.history_messages,
+                                   exhausted_procedure)
 
 async def pending_procedure(state: AgentState, areas: dict[int, AreaInfo], context: AgentContext) -> ProcedureHit | None:
     area_id, procedure_id = state.get("pending_area_id"), state.get("pending_procedure_id")
@@ -346,6 +421,7 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     areas = await get_areas(session, scope)
     prompts = {key: await get_agent_prompt(session, key) for key in (f"{scope}_agent", "area_rules")}
     fixed = {kind: await get_agent_prompt(session, f"{scope}_{kind}") for kind in FIXED_KINDS}
+    persona = await get_agent_prompt(session, f"{scope}_persona")
     missing = [key for key, value in prompts.items() if value is None]
     if missing:
         logger.warning("Faltan prompts en agent_prompt: %s", ", ".join(missing))
@@ -355,4 +431,5 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
         prompts["area_rules"] or "",
         fixed,
         [area.name for area in areas],
+        persona,
     )

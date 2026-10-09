@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel
 from src.agents.llm import AreaInfo, AreaResult, Catalog, FaqHit, Subtask
 from src.agents.sub_agent import TOOL_FAILED, run_sub_agent
-from src.agents.tools import AreaTool
+from src.agents.tools.registry import ToolContext, code_tool
 from src.models.business_area import AreaScope
 from src.utils.exceptions.llm import LlmUnavailableError
 from tests.fakes import FakeSubAgentModel, answer, tool_call
@@ -19,16 +19,16 @@ class Rut(BaseModel):
     rut: str
 
 
-async def lookup(args: BaseModel) -> str:
+async def lookup(args: Rut, context: ToolContext) -> str:
     return "Cuota al día"
 
 
-async def broken(args: BaseModel) -> str:
+async def broken(args: Rut, context: ToolContext) -> str:
     raise ConnectionError("detalle interno")
 
 
-LOOKUP = AreaTool("estado_cuota", "Estado de la cuota", Rut, lookup)
-BROKEN = AreaTool("estado_cuota", "Estado de la cuota", Rut, broken)
+LOOKUP = code_tool("estado_cuota", "Estado de la cuota", Rut, lookup)
+BROKEN = code_tool("estado_cuota", "Estado de la cuota", Rut, broken)
 
 
 async def run(model, tools=(), max_steps=3, timeout=5.0):
@@ -114,3 +114,19 @@ async def test_error_del_modelo_devuelve_found_false_como_un_timeout(caplog):
         result = await run(model)
 
     assert result.found is False and "LlmUnavailableError" in caplog.text and "cuota excedida" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_interpretaciones_distintas_llegan_como_opciones():
+    reply = answer(True, "Hay dos formas de pago.", ["pagar la cuota del mes", " pagar todo el crédito (prepago) ", ""])
+
+    result = await run(FakeSubAgentModel({QUERY: [reply]}))
+
+    assert result.options == ("pagar la cuota del mes", "pagar todo el crédito (prepago)")
+
+
+@pytest.mark.anyio
+async def test_interpretaciones_una_sola_no_es_ambiguedad():
+    result = await run(FakeSubAgentModel({QUERY: [answer(True, "Pague en la web.", ["pagar la cuota"])]}))
+
+    assert result.options == ()

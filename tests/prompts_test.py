@@ -86,3 +86,29 @@ def test_la_prohibicion_de_prometer_avisos_es_lo_ultimo_del_prompt():
 
     for messages in (route_messages(CATALOG, [], "x"), synthesize_messages(CATALOG, [], "x", results)):
         assert str(messages[0].content).endswith(NO_PROMISES)
+
+
+def test_interpretaciones_en_resultados_y_pedido_de_aclarar():
+    results = [AreaResult(1, "Servicio al Cliente", "cómo pago", True, "Dos formas.",
+                          ("pagar la cuota del mes", "pagar todo el crédito"))]
+
+    system = str(synthesize_messages(CATALOG, [], "¿Cómo pago?", results)[0].content)
+
+    assert "Interpretaciones posibles: pagar la cuota del mes; pagar todo el crédito" in block(system)
+    assert "pregunta a la persona a cuál se refiere" in system
+
+
+def test_interpretaciones_y_nueva_busqueda_en_el_paso_del_sub_agente():
+    system = str(sub_agent_messages(CATALOG, SAC, [], Subtask(1, "x"))[0].content)
+
+    assert "búscalas de nuevo con otras palabras" in system and "«interpretaciones»" in system
+
+
+def test_archivos_instrucciones_en_route_y_el_contenido_sigue_marcado():
+    question = '<informacion fuente="archivos compartidos">\n[contrato.pdf · leído]\nTexto\n</informacion>'
+
+    messages = route_messages(CATALOG, [], question)
+    system = str(messages[0].content)
+
+    assert "si el mensaje trae solo archivos" in system and "incluye en la subtarea el fragmento del archivo" in system
+    assert messages[-1] == HumanMessage(question) and "[contrato.pdf · leído]" not in system

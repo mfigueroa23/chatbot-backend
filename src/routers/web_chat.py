@@ -13,7 +13,8 @@ logger = logging.getLogger(__name__)
 async def chat(request: ChatRequest, deps: AssistantDepsDep) -> ChatResponse:
     logger.debug("Mensaje del chat web recibido")
     try:
-        result = await answer(deps, Channel.web, request.session_id, request.message)
+        # El web es anónimo (spec 002, RF-3) y no admite archivos (RF-42).
+        result = await answer(deps, Channel.web, request.session_id, request.message, requester=None)
     except DatabaseUnavailableError as exc:
         logger.error("Chat web: base de datos no disponible (%s)", exc)
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Servicio no disponible") from exc

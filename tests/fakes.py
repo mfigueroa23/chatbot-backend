@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from src.agents.llm import (ANSWER_TOOL, AreaInfo, Catalog, CoordinatorModel, Embedder, FaqHit, KnowledgeSource,
-                            RoutingDecision, SubAgentModel, Subtask)
-from src.agents.tools import AreaTool
+                            RoutingDecision, SubAgentModel, Subtask, Transcriber)
+from src.agents.tools.registry import AreaTool
 from src.models.business_area import AreaScope
-from src.services.assistant import AssistantDeps, Models
+from src.services.assistant import AssistantDeps, FileReader, Models
 from src.services.conversation import ConversationStore
 from src.services.property import Properties
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -39,9 +39,10 @@ class PropertySession:
         return [SimpleNamespace(key=key, value=value) for key, value in self.values.items()]
 
 
-def answer(found: bool, content: str = "") -> AIMessage:
+def answer(found: bool, content: str = "", interpretations: list[str] | None = None) -> AIMessage:
     """Lo que devuelve un sub-agente al terminar: la llamada a `responder`."""
-    return tool_call(ANSWER_TOOL, {"encontrado": found, "contenido": content}, "answer")
+    return tool_call(ANSWER_TOOL, {"encontrado": found, "contenido": content,
+                                   "interpretaciones": interpretations or []}, "answer")
 
 
 def tool_call(name: str, args: dict[str, Any], call_id: str = "call-1") -> AIMessage:
@@ -103,6 +104,19 @@ class FakeSubAgentModel(SubAgentModel):
         return result
 
 
+class FakeTranscriber(Transcriber):
+    def __init__(self, text: str = "Texto transcrito", error: Exception | None = None):
+        self.text = text
+        self.error = error
+        self.calls: list[str] = []
+
+    async def transcribe(self, data: bytes, mime_type: str) -> str:
+        self.calls.append(mime_type)
+        if self.error is not None:
+            raise self.error
+        return self.text
+
+
 class FakeEmbedder(Embedder):
     def __init__(self):
         self.batches: list[list[str]] = []
@@ -116,10 +130,15 @@ class FakeKnowledge(KnowledgeSource):
     def __init__(self, faqs: Mapping[int, list[FaqHit]] | None = None):
         self.faqs = dict(faqs or {})
         self.searches: list[tuple[list[Subtask], int]] = []
+        self.area_searches: list[tuple[int, str, int]] = []
 
     async def search(self, subtasks: Sequence[Subtask], k: int) -> dict[int, list[FaqHit]]:
         self.searches.append((list(subtasks), k))
         return {subtask.area_id: self.faqs.get(subtask.area_id, [])[:k] for subtask in subtasks}
+
+    async def search_area(self, area_id: int, query: str, k: int) -> list[FaqHit]:
+        self.area_searches.append((area_id, query, k))
+        return self.faqs.get(area_id, [])[:k]
 
 
 class FakeConversationStore(ConversationStore):
@@ -176,7 +195,8 @@ class AssistantHarness:
     """Arma AssistantDeps con dobles y deja a mano lo que cada test quiere cambiar o mirar."""
 
     def __init__(self, coordinator: FakeCoordinatorModel | None = None, properties: dict[str, str] | None = None,
-                 db_down: bool = False):
+                 db_down: bool = False, read_files: FileReader | None = None):
+        self.read_files = read_files
         self.coordinator = coordinator or FakeCoordinatorModel(RoutingDecision("direct", reply="¡Hola!"))
         self.properties = dict(PROPERTIES if properties is None else properties)
         self.store = FakeConversationStore(down=db_down)
@@ -194,9 +214,10 @@ class AssistantHarness:
 
         def models(properties: Properties) -> Models:
             properties.required("gemini_api_key")
-            return Models(self.coordinator, FakeSubAgentModel(), FakeEmbedder())
+            return Models(self.coordinator, FakeSubAgentModel(), FakeEmbedder(), FakeTranscriber())
 
         async def prompt(key: str) -> str | None:
             return self.prompts.get(key)
 
-        return AssistantDeps(properties, self.store, catalog, models, lambda embedder: FakeKnowledge(), prompt)
+        return AssistantDeps(properties, self.store, catalog, models, lambda embedder: FakeKnowledge(), prompt,
+                             read_files=self.read_files)

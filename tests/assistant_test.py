@@ -5,7 +5,9 @@ from langchain_core.messages import AIMessage, HumanMessage
 from src.agents.llm import Catalog, RoutingDecision, Subtask
 from src.models.business_area import AreaScope
 from src.models.conversation import Channel
+from src.services import assistant as assistant_module
 from src.services.assistant import UNAVAILABLE, answer
+from src.services.files.attachments import Attachment, AttachmentStatus, AttachmentText
 from src.services.message_validation import EMPTY_MESSAGE
 from src.utils.exceptions.llm import LlmUnavailableError
 from tests.fakes import PROPERTIES, SAC, SECRET, AssistantHarness, FakeCoordinatorModel
@@ -119,3 +121,79 @@ async def test_respuesta_con_areas_no_registra_el_texto_del_usuario(caplog):
 
     assert reply.reply == "En la web."
     assert "4455" not in caplog.text and "Paso route" in caplog.text and "Paso synthesize" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_requester_llega_al_contexto_del_grafo(monkeypatch):
+    seen: dict = {}
+
+    async def fake_run_graph(context, history, question):
+        seen.update(requester=context.requester, has_properties="gemini_api_key" in context.properties.values)
+        return "ok"
+
+    monkeypatch.setattr(assistant_module, "run_graph", fake_run_graph)
+
+    await answer(AssistantHarness().deps(), Channel.google_chat, "spaces/A/threads/1", "hola", requester="jp@autofin.cl")
+    from_chat = dict(seen)
+    await answer(AssistantHarness().deps(), Channel.web, None, "hola")
+
+    assert from_chat == {"requester": "jp@autofin.cl", "has_properties": True}
+    assert seen["requester"] is None
+
+
+def file_reader(status: AttachmentStatus = "read", text: str = "Contrato: prepago con 1% de comisión", calls: list | None = None):
+    async def read(attachments, properties, transcriber):
+        if calls is not None:
+            calls.append([item.name for item in attachments])
+        return [AttachmentText(item.name, status, text if status == "read" else "") for item in attachments]
+    return read
+
+
+CONTRACT = [Attachment("contrato.pdf", "application/pdf", "spaces/A/attachments/1")]
+
+
+@pytest.mark.anyio
+async def test_archivos_un_mensaje_solo_con_archivos_es_valido_y_el_bloque_llega_al_coordinador():
+    harness = AssistantHarness(read_files=file_reader())
+
+    reply = await answer(harness.deps(), Channel.google_chat, "spaces/A/threads/1", "  ", attachments=CONTRACT)
+
+    question = str(harness.coordinator.route_calls[0][-1].content)
+    assert reply.reply == "¡Hola!" and question.startswith('<informacion fuente="archivos compartidos">')
+    assert "[contrato.pdf · leído]" in question and "prepago con 1% de comisión" in question
+
+
+@pytest.mark.anyio
+async def test_archivos_el_bloque_queda_en_el_historial_para_el_mensaje_siguiente():
+    calls: list = []
+    harness = AssistantHarness(read_files=file_reader(calls=calls))
+    harness.properties["history_messages"] = "10"
+
+    await answer(harness.deps(), Channel.google_chat, "spaces/A/threads/1", "léelo", attachments=CONTRACT)
+    await answer(harness.deps(), Channel.google_chat, "spaces/A/threads/1", "¿y qué dice del prepago?")
+
+    second = harness.coordinator.route_calls[1]
+    assert calls == [["contrato.pdf"]]  # no se vuelve a descargar
+    assert any("prepago con 1% de comisión" in str(message.content) for message in second[1:-1])
+
+
+@pytest.mark.anyio
+async def test_archivos_usan_su_propio_tope_de_tiempo():
+    properties = {**PROPERTIES, "response_timeout_seconds": "1", "file_response_timeout_seconds": "3"}
+    slow = FakeCoordinatorModel(RoutingDecision("direct", reply="Listo."), delay=1.5)
+
+    with_files = await answer(AssistantHarness(slow, properties, read_files=file_reader()).deps(), Channel.google_chat,
+                              "spaces/A/threads/1", "léelo", attachments=CONTRACT)
+    without = await answer(AssistantHarness(slow, properties).deps(), Channel.google_chat, "spaces/A/threads/2", "hola")
+
+    assert with_files.reply == "Listo." and without.reply == UNAVAILABLE
+
+
+@pytest.mark.anyio
+async def test_archivos_su_contenido_no_va_al_log(caplog):
+    harness = AssistantHarness(read_files=file_reader(text="RUT 12.345.678-5 del titular"))
+
+    with caplog.at_level(logging.DEBUG, logger="src"):
+        await answer(harness.deps(), Channel.google_chat, "spaces/A/threads/1", "léelo", attachments=CONTRACT)
+
+    assert "12.345.678-5" not in caplog.text and "Paso files" in caplog.text

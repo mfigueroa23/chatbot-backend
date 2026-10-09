@@ -1,11 +1,15 @@
+from types import SimpleNamespace
 import pytest
 import httpx
 from fastapi.testclient import TestClient
 from main import app
 from src.interfaces.google_chat import AddonEvent
+from src.routers import google_chat as google_chat_router
 from src.routers.dependencies import get_assistant_deps, get_token_verifier
-from src.services import google_chat
-from src.services.google_chat import conversation_key, message_text, verify_addon_token
+from src.services.files.attachments import Attachment
+from src.services.google import chat_auth
+from src.services.google.chat_auth import verify_addon_token
+from src.services.google.chat_events import conversation_key, message_text, requester_of
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from tests.fakes import AssistantHarness
 
@@ -39,8 +43,8 @@ def claims(monkeypatch):
             raise ValueError("audiencia incorrecta")
         return decoded
 
-    monkeypatch.setattr(google_chat, "get_google_certs", certs)
-    monkeypatch.setattr(google_chat.jwt, "decode", decode)
+    monkeypatch.setattr(chat_auth, "get_google_certs", certs)
+    monkeypatch.setattr(chat_auth.jwt, "decode", decode)
     return decoded
 
 
@@ -132,3 +136,43 @@ def test_endpoint_sin_token_responde_401_antes_de_leer_la_configuracion():
         app.dependency_overrides.clear()
 
     assert response.status_code == 401
+
+
+def test_requester_del_evento_llega_a_answer_en_minusculas(monkeypatch):
+    seen: dict = {}
+
+    async def fake_answer(deps, channel, conversation, text, requester=None, **kwargs):
+        seen.update(requester=requester, text=text)
+        return SimpleNamespace(reply="ok")
+
+    monkeypatch.setattr(google_chat_router, "answer", fake_answer)
+    event = space_event()
+    event["chat"]["user"] = {"email": " JP@Autofin.cl ", "displayName": "Jefa de Proyecto"}
+
+    response = post(AssistantHarness(), event)
+
+    assert response.status_code == 200 and seen == {"requester": "jp@autofin.cl", "text": " ¿cómo pago?"}
+
+
+def test_requester_ausente_en_el_evento_es_none():
+    assert requester_of(AddonEvent.model_validate(space_event())) is None
+
+
+def test_adjuntos_subidos_y_de_drive_llegan_a_answer(monkeypatch):
+    seen: dict = {}
+
+    async def fake_answer(deps, channel, conversation, text, requester=None, attachments=()):
+        seen["attachments"] = list(attachments)
+        return SimpleNamespace(reply="ok")
+
+    monkeypatch.setattr(google_chat_router, "answer", fake_answer)
+    event = space_event(argument="")
+    event["chat"]["messagePayload"]["message"]["attachment"] = [
+        {"contentName": "error.png", "contentType": "image/png", "source": "UPLOADED_CONTENT",
+         "attachmentDataRef": {"resourceName": "spaces/AAA/attachments/1"}},
+        {"contentName": "Informe", "contentType": "application/vnd.google-apps.document", "source": "DRIVE_FILE",
+         "driveDataRef": {"driveFileId": "abc"}}]
+
+    assert post(AssistantHarness(), event).status_code == 200
+    assert seen["attachments"] == [Attachment("error.png", "image/png", "spaces/AAA/attachments/1"),
+                                   Attachment("Informe", "application/vnd.google-apps.document", None)]

@@ -4,7 +4,7 @@ import httpx
 from fastapi import Depends
 from src.database.session import SessionDep
 from src.services.assistant import AssistantDeps, pg_deps
-from src.services.google_chat import verify_addon_token
+from src.services.google.chat_auth import verify_addon_token
 from src.services.property import get_property
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 

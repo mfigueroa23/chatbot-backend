@@ -13,6 +13,9 @@ from src.models.faq import Faq
 from src.models.agent_prompt import AgentPrompt
 from src.models.conversation import Conversation
 from src.models.message import Message
+from src.models.area_member import AreaMember
+from src.models.jira_board import JiraBoard
+from src.models.mcp_server import McpServer
 
 config = context.config
 

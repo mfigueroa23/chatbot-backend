@@ -6,7 +6,7 @@ from src.interfaces.google_chat import AddonEvent, chat_reply
 from src.models.conversation import Channel
 from src.routers.dependencies import AssistantDepsDep, TokenVerifierDep
 from src.services.assistant import answer, welcome
-from src.services.google_chat import conversation_key, message_text
+from src.services.google.chat_events import attachments_of, conversation_key, message_text, requester_of
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from src.utils.exceptions.property import PropertyNotFoundError
@@ -31,7 +31,8 @@ async def google_chat_events(
             return chat_reply(await welcome(deps))
         if chat is None or chat.message_payload is None:
             return {}
-        result = await answer(deps, Channel.google_chat, conversation_key(event), message_text(event))
+        result = await answer(deps, Channel.google_chat, conversation_key(event), message_text(event),
+                              requester=requester_of(event), attachments=attachments_of(event))
     except InvalidGoogleTokenError as exc:
         logger.warning("Petición de Google Chat rechazada: %s", exc)
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token de Google Chat no válido") from exc

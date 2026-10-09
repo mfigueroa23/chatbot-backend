@@ -5,7 +5,9 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.llm import Embedder, FaqHit, Subtask
+from src.models.area_member import AreaMember
 from src.models.business_area import AreaScope, BusinessArea
+from src.models.mcp_server import McpServer
 from src.models.faq_category import FaqCategory
 from src.services.knowledge import FaqRow, PgKnowledge, build_catalog, pending_faqs
 
@@ -97,3 +99,63 @@ async def test_sync_genera_los_embeddings_pendientes_antes_de_buscar():
     assert log == ["buscar pendientes", "embed ['¿Cómo pago?\\nEn la web.']", "guardar embedding", "commit",
                    "embed ['pagar cuota']", "buscar FAQ parecidas"]
     assert hits == {1: [FaqHit(7, "Pagos", "¿Cómo pago?", "En la web.")]}
+
+
+def test_catalog_members_en_minusculas_y_none_si_el_area_no_tiene_lista():
+    projects = BusinessArea(id=4, name="Proyectos", description="Jira", scope=AreaScope.internal, system_prompt="x",
+                            tools=["leer_ticket"], active=True, mcp_servers=[])
+    people = AREAS[3]
+    members = [AreaMember(area_id=4, email=" JP@Autofin.cl"), AreaMember(area_id=4, email="otra@autofin.cl")]
+
+    catalog = build_catalog([projects, people], [], PROMPTS, AreaScope.internal, members)
+
+    projects_info, people_info = catalog.area(4), catalog.area(10)
+    assert projects_info is not None and projects_info.members == frozenset({"jp@autofin.cl", "otra@autofin.cl"})
+    assert people_info is not None and people_info.members is None
+
+
+def test_catalog_mcp_solo_servidores_activos_y_asignados():
+    area = BusinessArea(id=4, name="Proyectos", description="Jira", scope=AreaScope.internal, system_prompt="x",
+                        tools=[], active=True, mcp_servers=["atlassian", "apagado"])
+    servers = [McpServer(name="atlassian", url="https://mcp.example/mcp", credential_key="atlassian_token",
+                         allowed_tools=["getJiraIssue"], active=True),
+               McpServer(name="apagado", url="https://x/mcp", credential_key=None, allowed_tools=[], active=False),
+               McpServer(name="sin_asignar", url="https://y/mcp", credential_key=None, allowed_tools=[], active=True)]
+
+    catalog = build_catalog([area], [], PROMPTS, AreaScope.internal, (), servers)
+
+    assert list(catalog.mcp_servers) == ["atlassian"]
+    assert catalog.mcp_servers["atlassian"].allowed_tools == ("getJiraIssue",)
+    assert catalog.areas[0].mcp_servers == ("atlassian", "apagado")
+
+
+class FactorySession:
+    """Sesión que abre la fábrica: registra cada consulta y si se cerró."""
+
+    def __init__(self, log: list[str]):
+        self.log = log
+
+    async def __aenter__(self):
+        self.log.append("abre sesión")
+        return self
+
+    async def __aexit__(self, *exc_info):
+        self.log.append("cierra sesión")
+
+    async def execute(self, statement):
+        compiled = statement.compile(dialect=postgresql.dialect())
+        self.log.append(f"consulta área={compiled.params.get('area_id_1')} sync={'IS DISTINCT FROM' in str(compiled)}")
+        return [SimpleNamespace(id=9, name="Prepagos", question="¿Qué es un prepago?", answer="Pagar todo el crédito.")]
+
+
+@pytest.mark.anyio
+async def test_search_area_abre_su_propia_sesion_y_filtra_por_el_area_recibida():
+    log: list[str] = []
+    request_session = cast(AsyncSession, cast(Any, RecordingSession([])))
+    factory = cast(Any, lambda: FactorySession(log))
+    knowledge = PgKnowledge(request_session, RecordingEmbedder(log), factory)
+
+    hits = await knowledge.search_area(4, "pagar todo el crédito", 3)
+
+    assert log == ["embed ['pagar todo el crédito']", "abre sesión", "consulta área=4 sync=False", "cierra sesión"]
+    assert hits == [FaqHit(9, "Prepagos", "¿Qué es un prepago?", "Pagar todo el crédito.")]

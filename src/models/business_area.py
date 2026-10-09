@@ -20,4 +20,6 @@ class BusinessArea(Base):
     system_prompt: Mapped[str | None] = mapped_column(Text)
     # Nombres del registro de herramientas en código (src/agents/tools/registry.py); vacío si el área solo responde con FAQ.
     tools: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default="{}")
+    # Nombres de mcp_server asignados al área (plan 002, D10).
+    mcp_servers: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default="{}")
     active: Mapped[bool] = mapped_column(server_default="true")

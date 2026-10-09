@@ -1,6 +1,6 @@
 # Tareas 002 — Herramientas y MCP por área, archivos en Google Chat y el área Proyectos consultando Jira
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 3/34 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 6/34 hechas
 
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
@@ -24,17 +24,17 @@ comportamiento de la 2.0.0 hasta que se conectan en el grafo o en `assistant`.
   cambios en sus aserciones.
 
 ## Fase 2 — Modelo de datos
-- [ ] **T-4 — Crear los modelos de acceso, Jira y MCP** · RF-4, RF-9, RF-23, RNF-5 · ~20 min
+- [x] **T-4 — Crear los modelos de acceso, Jira y MCP** · RF-4, RF-9, RF-23, RNF-5 · ~20 min
   `AreaMember` (PK `area_id` + `email`), `JiraBoard` (`key`, `active`), `McpServer` (`name` único, `url`,
   `credential_key`, `allowed_tools text[]`, `active`) y `BusinessArea.mcp_servers text[]`.
   Hecho cuando: `uv run pyright` da 0 errores y
   `uv run python -c "import src.models.area_member, src.models.jira_board, src.models.mcp_server"` termina con 0.
-- [ ] **T-5 — Migración del esquema** · RF-4, RF-9, RF-23 · ~20 min
+- [x] **T-5 — Migración del esquema** · RF-4, RF-9, RF-23 · ~20 min
   `uv run alembic revision --autogenerate -m "add tools access mcp and jira boards"`, revisada a mano
   (`server_default` de los arrays y de `active`, `CASCADE`, sin tocar la extensión).
   Hecho cuando: contra la BD local, `upgrade head`, `downgrade -1` y `upgrade head` terminan sin error y las 3 tablas
   quedan con dueño `chatbot_autofin`.
-- [ ] **T-6 — Sembrar las properties nuevas** · RF-13, RF-18, RF-22, RF-37, RF-40, RNF-7, RNF-8 · ~15 min
+- [x] **T-6 — Sembrar las properties nuevas** · RF-13, RF-18, RF-22, RF-37, RF-40, RNF-7, RNF-8 · ~15 min
   Migración `seed tools and files defaults` con `jira_max_results`, `jira_timeout_seconds`, `mcp_timeout_seconds`,
   `file_max_mb`, `file_max_chars` y `file_response_timeout_seconds` (`ON CONFLICT DO NOTHING`; sin secretos).
   Hecho cuando: tras `upgrade head`, `SELECT count(*) FROM property WHERE key IN (…)` devuelve 6 y `downgrade -1`

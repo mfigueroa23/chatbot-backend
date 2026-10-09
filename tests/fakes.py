@@ -39,9 +39,10 @@ class PropertySession:
         return [SimpleNamespace(key=key, value=value) for key, value in self.values.items()]
 
 
-def answer(found: bool, content: str = "") -> AIMessage:
+def answer(found: bool, content: str = "", interpretations: list[str] | None = None) -> AIMessage:
     """Lo que devuelve un sub-agente al terminar: la llamada a `responder`."""
-    return tool_call(ANSWER_TOOL, {"encontrado": found, "contenido": content}, "answer")
+    return tool_call(ANSWER_TOOL, {"encontrado": found, "contenido": content,
+                                   "interpretaciones": interpretations or []}, "answer")
 
 
 def tool_call(name: str, args: dict[str, Any], call_id: str = "call-1") -> AIMessage:
@@ -116,10 +117,15 @@ class FakeKnowledge(KnowledgeSource):
     def __init__(self, faqs: Mapping[int, list[FaqHit]] | None = None):
         self.faqs = dict(faqs or {})
         self.searches: list[tuple[list[Subtask], int]] = []
+        self.area_searches: list[tuple[int, str, int]] = []
 
     async def search(self, subtasks: Sequence[Subtask], k: int) -> dict[int, list[FaqHit]]:
         self.searches.append((list(subtasks), k))
         return {subtask.area_id: self.faqs.get(subtask.area_id, [])[:k] for subtask in subtasks}
+
+    async def search_area(self, area_id: int, query: str, k: int) -> list[FaqHit]:
+        self.area_searches.append((area_id, query, k))
+        return self.faqs.get(area_id, [])[:k]
 
 
 class FakeConversationStore(ConversationStore):

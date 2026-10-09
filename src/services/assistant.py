@@ -61,7 +61,7 @@ def pg_deps(session: AsyncSession) -> AssistantDeps:
         conversations=PgConversationStore(session),
         catalog=lambda scope: load_catalog(session, scope),
         models=lambda properties: to_models(gemini_models(properties)),
-        knowledge=lambda embedder: PgKnowledge(session, embedder),
+        knowledge=lambda embedder: PgKnowledge(session, embedder, SessionLocal),
         prompt=lambda key: load_prompt(session, key),
         session_factory=SessionLocal)
 

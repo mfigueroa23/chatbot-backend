@@ -16,6 +16,7 @@ from src.agents.llm import (AreaResult, Catalog, CoordinatorModel, FaqHit, Knowl
                             SubAgentModel, Subtask)
 from src.agents.sub_agent import run_sub_agent
 from src.agents.tools.access import can_use_tools, restricted_note
+from src.agents.tools.faq_search import faq_search_tool
 from src.agents.tools.registry import TOOLS, AreaTool, ToolContext, tools_for
 from src.services.property import Properties
 
@@ -97,7 +98,9 @@ async def sub_agent_node(state: SubAgentInput, runtime: Runtime[AgentContext]) -
     area_tools = tools_for(area.name, area.tools, context.registry)
     # Acceso decidido antes de llamar al modelo: lo que no recibe, no lo puede ejecutar (spec 002, RF-4 a RF-7).
     allowed = can_use_tools(area, context.requester)
-    tools = area_tools if allowed else []
+    # buscar_faq la reciben todos, en ambos canales y habilitados o no (spec 002, RF-25).
+    faq_search = faq_search_tool(area.id, context.knowledge, context.limits.faqs_per_search)
+    tools = [faq_search, *area_tools] if allowed else [faq_search]
     note = restricted_note(area_tools) if area_tools and not allowed else None
     tool_context = ToolContext(context.requester, context.properties, context.session_factory)
     result = await run_sub_agent(context.sub_agent, context.catalog, area, state.faqs, subtask, tools,

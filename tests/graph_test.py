@@ -157,7 +157,7 @@ async def test_access_un_habilitado_recibe_las_herramientas_del_area():
 
     await run_graph(projects_context(sub_agent, "jp@autofin.cl"), [], "¿en qué está DAIA-52?")
 
-    assert sub_agent.calls[0].tools == ["leer_ticket"]
+    assert sub_agent.calls[0].tools == ["buscar_faq", "leer_ticket"]
     assert "no está habilitada" not in str(sub_agent.calls[0].messages[0].content)
 
 
@@ -169,7 +169,8 @@ async def test_access_un_no_habilitado_no_las_recibe_y_ve_la_nota(requester):
     await run_graph(projects_context(sub_agent, requester), [], "¿en qué está DAIA-52?")
 
     system = str(sub_agent.calls[0].messages[0].content)
-    assert sub_agent.calls[0].tools == [] and "no está habilitada" in system and "Lee un ticket de Jira" in system
+    assert sub_agent.calls[0].tools == ["buscar_faq"]
+    assert "no está habilitada" in system and "Lee un ticket de Jira" in system
 
 
 @pytest.mark.anyio
@@ -181,4 +182,17 @@ async def test_access_un_cambio_de_miembros_se_aplica_en_el_siguiente_mensaje():
     await run_graph(projects_context(sub_agent, "otra@autofin.cl"), [], "x")
     await run_graph(projects_context(sub_agent, "otra@autofin.cl", enabled_later), [], "x")
 
-    assert [call.tools for call in sub_agent.calls] == [[], ["leer_ticket"]]
+    assert [call.tools for call in sub_agent.calls] == [["buscar_faq"], ["buscar_faq", "leer_ticket"]]
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("catalog, requester", [(EXTERNAL, None), (INTERNAL, "cualquiera@autofin.cl")])
+async def test_buscar_faq_la_reciben_todos_los_sub_agentes(catalog, requester):
+    area = catalog.areas[0]
+    sub_agent = FakeSubAgentModel()
+    context = AgentContext(catalog, FakeCoordinatorModel(RoutingDecision("areas", (Subtask(area.id, "x"),))),
+                           sub_agent, FakeKnowledge(), LIMITS, requester=requester)
+
+    await run_graph(context, [], "x")
+
+    assert sub_agent.calls[0].tools == ["buscar_faq"]

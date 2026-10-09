@@ -114,3 +114,19 @@ async def test_error_del_modelo_devuelve_found_false_como_un_timeout(caplog):
         result = await run(model)
 
     assert result.found is False and "LlmUnavailableError" in caplog.text and "cuota excedida" not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_interpretaciones_distintas_llegan_como_opciones():
+    reply = answer(True, "Hay dos formas de pago.", ["pagar la cuota del mes", " pagar todo el crédito (prepago) ", ""])
+
+    result = await run(FakeSubAgentModel({QUERY: [reply]}))
+
+    assert result.options == ("pagar la cuota del mes", "pagar todo el crédito (prepago)")
+
+
+@pytest.mark.anyio
+async def test_interpretaciones_una_sola_no_es_ambiguedad():
+    result = await run(FakeSubAgentModel({QUERY: [answer(True, "Pague en la web.", ["pagar la cuota"])]}))
+
+    assert result.options == ()

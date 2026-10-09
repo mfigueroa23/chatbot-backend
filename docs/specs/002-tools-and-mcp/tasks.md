@@ -1,6 +1,6 @@
 # Tareas 002 — Herramientas y MCP por área, archivos en Google Chat y el área Proyectos consultando Jira
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 11/34 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 14/34 hechas
 
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
@@ -69,16 +69,17 @@ comportamiento de la 2.0.0 hasta que se conectan en el grafo o en `assistant`.
   mensajes se aplica en el segundo.
 
 ## Fase 4 — Búsqueda de FAQ y ambigüedad
-- [ ] **T-12 — Búsqueda acotada a un área con sesión propia** · RF-26 · ~20 min
+- [x] **T-12 — Búsqueda acotada a un área con sesión propia** · RF-26 · ~20 min
   `KnowledgeSource.search_area(area_id, query, k)` y `PgKnowledge.search_area`, que abre y cierra su sesión con el
   `session_factory`; `FakeKnowledge.search_area` en los dobles.
   Hecho cuando: `uv run pytest -q tests/knowledge_test.py -k search_area` pasa con una fábrica de sesiones falsa: abre
   una sesión por búsqueda, filtra por el `area_id` recibido y no resincroniza embeddings.
-- [ ] **T-13 — Herramienta `buscar_faq` para todos los sub-agentes** · RF-25, RF-26, RF-27, RF-30, RNF-6 · ~20 min
+- [x] **T-13 — Herramienta `buscar_faq` para todos los sub-agentes** · RF-25, RF-26, RF-27, RF-30, RNF-6 · ~20 min
   `src/agents/tools/faq_search.py`; `sub_agent_node` la agrega siempre; el prompt del sub-agente dice cuándo usarla.
-  Hecho cuando: `uv run pytest -q tests/faq_search_test.py tests/graph_test.py -k buscar_faq` pasa: busca solo en su
+  Hecho cuando: `uv run pytest -q tests/faq_search_test.py` y `uv run pytest -q tests/graph_test.py -k buscar_faq`
+  pasan: busca solo en su
   área, la reciben habilitados y no habilitados, y cuenta en `sub_agent_max_steps`.
-- [ ] **T-14 — Interpretaciones y pregunta de aclaración** · RF-28, RF-29 · ~25 min
+- [x] **T-14 — Interpretaciones y pregunta de aclaración** · RF-28, RF-29 · ~25 min
   `Answer.interpretaciones`, `AreaResult.options`, `responder` con el campo nuevo en `tool_specs`, `describe_results`
   las muestra y `SYNTHESIZE_STEP` pide preguntar a cuál se refiere.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py tests/prompts_test.py tests/gemini_test.py -k interpretaciones`

@@ -1,7 +1,7 @@
 """Contenido de las áreas: catálogo del canal, búsqueda de FAQ (pgvector) y embeddings pendientes. Todo se lee sin
 caché en cada mensaje, así que un cambio en la BD se aplica desde el siguiente (RF-23)."""
 import logging
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
@@ -78,9 +78,11 @@ def embedding_text(row: FaqRow) -> str:
     return f"{row.question}\n{row.answer}"
 
 class PgKnowledge(KnowledgeSource):
-    def __init__(self, session: AsyncSession, embedder: Embedder):
+    def __init__(self, session: AsyncSession, embedder: Embedder,
+                 session_factory: Callable[[], AsyncSession] | None = None):
         self._session = session
         self._embedder = embedder
+        self._session_factory = session_factory
 
     async def search(self, subtasks: Sequence[Subtask], k: int) -> dict[int, list[FaqHit]]:
         area_ids = sorted({subtask.area_id for subtask in subtasks})
@@ -88,8 +90,20 @@ class PgKnowledge(KnowledgeSource):
             await self._sync_embeddings(area_ids)
             vectors = await self._embedder.embed([subtask.query for subtask in subtasks])
             # Consultas en serie sobre la sesión del mensaje: AsyncSession no admite consultas concurrentes (D6).
-            return {subtask.area_id: await self._nearest(subtask.area_id, vector, k)
+            return {subtask.area_id: await self._nearest(self._session, subtask.area_id, vector, k)
                     for subtask, vector in zip(subtasks, vectors, strict=True)}
+        except (SQLAlchemyError, OSError) as exc:
+            raise DatabaseUnavailableError(str(exc)) from exc
+
+    async def search_area(self, area_id: int, query: str, k: int) -> list[FaqHit]:
+        # Sesión propia: los sub-agentes corren en paralelo y AsyncSession no admite consultas concurrentes (plan 002,
+        # D11). Sin resincronizar embeddings: retrieve ya lo hizo para esta área en el mismo mensaje.
+        if self._session_factory is None:
+            raise DatabaseUnavailableError("No hay fábrica de sesiones para buscar desde un sub-agente")
+        vector = (await self._embedder.embed([query]))[0]
+        try:
+            async with self._session_factory() as session:
+                return await self._nearest(session, area_id, vector, k)
         except (SQLAlchemyError, OSError) as exc:
             raise DatabaseUnavailableError(str(exc)) from exc
 
@@ -109,8 +123,8 @@ class PgKnowledge(KnowledgeSource):
                                         .values(embedding=vector, embedded_hash=row.content_hash))
         await self._session.commit()
 
-    async def _nearest(self, area_id: int, vector: list[float], k: int) -> list[FaqHit]:
-        result = await self._session.execute(
+    async def _nearest(self, session: AsyncSession, area_id: int, vector: list[float], k: int) -> list[FaqHit]:
+        result = await session.execute(
             select(Faq.id, FaqCategory.name, Faq.question, Faq.answer)
             .join(FaqCategory, FaqCategory.id == Faq.category_id)
             .where(FaqCategory.area_id == area_id, Faq.active, Faq.embedding.is_not(None))

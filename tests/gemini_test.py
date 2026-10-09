@@ -72,7 +72,7 @@ def test_tool_specs_siempre_incluye_responder():
     names = [spec["name"] for spec in tool_specs([TOOL])]
 
     assert names == [ANSWER_TOOL, "estado_cuota"] and [s["name"] for s in tool_specs([])] == [ANSWER_TOOL]
-    assert set(tool_specs([])[0]["parameters"]["properties"]) == {"encontrado", "contenido"}
+    assert set(tool_specs([])[0]["parameters"]["properties"]) == {"encontrado", "contenido", "interpretaciones"}
 
 
 @pytest.mark.anyio
@@ -104,3 +104,9 @@ def test_falta_configuracion_obligatoria(missing):
         gemini_models(Properties(values))
 
     assert error.value.key == missing
+
+
+def test_responder_incluye_interpretaciones_como_lista():
+    schema = tool_specs([])[0]["parameters"]["properties"]["interpretaciones"]
+
+    assert schema["type"] == "array" and schema["items"]["type"] == "string"

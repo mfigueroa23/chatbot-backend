@@ -127,3 +127,35 @@ def test_catalog_mcp_solo_servidores_activos_y_asignados():
     assert list(catalog.mcp_servers) == ["atlassian"]
     assert catalog.mcp_servers["atlassian"].allowed_tools == ("getJiraIssue",)
     assert catalog.areas[0].mcp_servers == ("atlassian", "apagado")
+
+
+class FactorySession:
+    """Sesión que abre la fábrica: registra cada consulta y si se cerró."""
+
+    def __init__(self, log: list[str]):
+        self.log = log
+
+    async def __aenter__(self):
+        self.log.append("abre sesión")
+        return self
+
+    async def __aexit__(self, *exc_info):
+        self.log.append("cierra sesión")
+
+    async def execute(self, statement):
+        compiled = statement.compile(dialect=postgresql.dialect())
+        self.log.append(f"consulta área={compiled.params.get('area_id_1')} sync={'IS DISTINCT FROM' in str(compiled)}")
+        return [SimpleNamespace(id=9, name="Prepagos", question="¿Qué es un prepago?", answer="Pagar todo el crédito.")]
+
+
+@pytest.mark.anyio
+async def test_search_area_abre_su_propia_sesion_y_filtra_por_el_area_recibida():
+    log: list[str] = []
+    request_session = cast(AsyncSession, cast(Any, RecordingSession([])))
+    factory = cast(Any, lambda: FactorySession(log))
+    knowledge = PgKnowledge(request_session, RecordingEmbedder(log), factory)
+
+    hits = await knowledge.search_area(4, "pagar todo el crédito", 3)
+
+    assert log == ["embed ['pagar todo el crédito']", "abre sesión", "consulta área=4 sync=False", "cierra sesión"]
+    assert hits == [FaqHit(9, "Prepagos", "¿Qué es un prepago?", "Pagar todo el crédito.")]

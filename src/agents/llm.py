@@ -66,6 +66,9 @@ class AreaResult:
     query: str
     found: bool
     content: str = ""
+    # Interpretaciones distintas de la consulta que responden sus FAQ: el coordinador pregunta a cuál se refiere
+    # (spec 002, RF-28, RF-29).
+    options: tuple[str, ...] = ()
 
 ANSWER_TOOL = "responder"
 
@@ -73,6 +76,9 @@ class Answer(BaseModel):
     """Entrega al coordinador el resultado de la subtarea."""
     encontrado: bool = Field(description="true si las preguntas frecuentes o las herramientas responden la consulta")
     contenido: str = Field(description="El contenido que responde la consulta; vacío si no se encontró información")
+    interpretaciones: list[str] = Field(default_factory=list, description=(
+        "Si las preguntas frecuentes responden interpretaciones distintas de la consulta, una frase corta por "
+        "interpretación, sin elegir una; vacía si la consulta no es ambigua"))
 
 class CoordinatorModel(Protocol):
     async def route(self, messages: list[BaseMessage]) -> RoutingDecision: ...
@@ -89,4 +95,8 @@ class Embedder(Protocol):
 class KnowledgeSource(Protocol):
     async def search(self, subtasks: Sequence[Subtask], k: int) -> dict[int, list[FaqHit]]:
         """FAQ activas más parecidas a cada subtarea, solo de su área, por area_id (RF-8, RF-24)."""
+        ...
+
+    async def search_area(self, area_id: int, query: str, k: int) -> list[FaqHit]:
+        """Otra búsqueda en las FAQ de un área, desde un sub-agente en paralelo (spec 002, RF-25, RF-26)."""
         ...

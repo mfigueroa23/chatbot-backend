@@ -39,7 +39,9 @@ async def solve(model: SubAgentModel, messages: list[BaseMessage], area: AreaInf
                 logger.warning("El sub-agente del área %s respondió con un formato inválido", area.name)
                 return not_found
             found = answer.encontrado and bool(answer.contenido.strip())
-            return AreaResult(area.id, area.name, subtask.query, found, answer.contenido.strip() if found else "")
+            options = tuple(option.strip() for option in answer.interpretaciones if option.strip())
+            return AreaResult(area.id, area.name, subtask.query, found, answer.contenido.strip() if found else "",
+                              options if len(options) > 1 else ())
         if not reply.tool_calls:
             logger.warning("El sub-agente del área %s terminó sin responder", area.name)
             return not_found

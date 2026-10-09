@@ -5,6 +5,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from src.agents.llm import Catalog, RoutingDecision, Subtask
 from src.models.business_area import AreaScope
 from src.models.conversation import Channel
+from src.services import assistant as assistant_module
 from src.services.assistant import UNAVAILABLE, answer
 from src.services.message_validation import EMPTY_MESSAGE
 from src.utils.exceptions.llm import LlmUnavailableError
@@ -119,3 +120,21 @@ async def test_respuesta_con_areas_no_registra_el_texto_del_usuario(caplog):
 
     assert reply.reply == "En la web."
     assert "4455" not in caplog.text and "Paso route" in caplog.text and "Paso synthesize" in caplog.text
+
+
+@pytest.mark.anyio
+async def test_requester_llega_al_contexto_del_grafo(monkeypatch):
+    seen: dict = {}
+
+    async def fake_run_graph(context, history, question):
+        seen.update(requester=context.requester, has_properties="gemini_api_key" in context.properties.values)
+        return "ok"
+
+    monkeypatch.setattr(assistant_module, "run_graph", fake_run_graph)
+
+    await answer(AssistantHarness().deps(), Channel.google_chat, "spaces/A/threads/1", "hola", requester="jp@autofin.cl")
+    from_chat = dict(seen)
+    await answer(AssistantHarness().deps(), Channel.web, None, "hola")
+
+    assert from_chat == {"requester": "jp@autofin.cl", "has_properties": True}
+    assert seen["requester"] is None

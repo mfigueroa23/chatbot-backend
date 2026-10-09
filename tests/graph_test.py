@@ -1,10 +1,11 @@
 import asyncio
 from collections.abc import Sequence
 import pytest
+from pydantic import BaseModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from src.agents.graph import AgentContext, Limits, run_graph
 from src.agents.llm import AreaInfo, Catalog, FaqHit, RoutingDecision, SubAgentModel, Subtask
-from src.agents.tools.registry import AreaTool
+from src.agents.tools.registry import AreaTool, ToolContext, code_tool
 from src.models.business_area import AreaScope
 from src.utils.exceptions.llm import LlmUnavailableError
 from tests.fakes import FakeCoordinatorModel, FakeKnowledge, FakeSubAgentModel, answer
@@ -128,3 +129,56 @@ async def test_el_historial_llega_al_coordinador_y_no_a_los_sub_agentes():
 
     assert coordinator.route_calls[0][1:3] == history and coordinator.synthesize_calls[0][1:3] == history
     assert all(len(call.messages) == 2 for call in sub_agent.calls)
+
+
+class Clave(BaseModel):
+    clave: str
+
+
+async def read_ticket(args: Clave, context: ToolContext) -> str:
+    return f"{args.clave} en curso"
+
+
+TICKET = code_tool("leer_ticket", "Lee un ticket de Jira.", Clave, read_ticket)
+PROJECTS = AreaInfo(3, "Proyectos", "Jira y EDR", "Eres Proyectos.", ("EDR",), ("leer_ticket",),
+                    members=frozenset({"jp@autofin.cl"}))
+PROJECTS_ROUTE = RoutingDecision("areas", (Subtask(3, "estado de DAIA-52"),))
+
+
+def projects_context(sub_agent, requester, area=PROJECTS) -> AgentContext:
+    catalog = Catalog(AreaScope.internal, "Coordinador interno.", "Reglas.", (area,))
+    return AgentContext(catalog, FakeCoordinatorModel(PROJECTS_ROUTE), sub_agent, FakeKnowledge(), LIMITS,
+                        {"leer_ticket": TICKET}, requester=requester)
+
+
+@pytest.mark.anyio
+async def test_access_un_habilitado_recibe_las_herramientas_del_area():
+    sub_agent = FakeSubAgentModel()
+
+    await run_graph(projects_context(sub_agent, "jp@autofin.cl"), [], "¿en qué está DAIA-52?")
+
+    assert sub_agent.calls[0].tools == ["leer_ticket"]
+    assert "no está habilitada" not in str(sub_agent.calls[0].messages[0].content)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("requester", ["otra@autofin.cl", None])
+async def test_access_un_no_habilitado_no_las_recibe_y_ve_la_nota(requester):
+    sub_agent = FakeSubAgentModel()
+
+    await run_graph(projects_context(sub_agent, requester), [], "¿en qué está DAIA-52?")
+
+    system = str(sub_agent.calls[0].messages[0].content)
+    assert sub_agent.calls[0].tools == [] and "no está habilitada" in system and "Lee un ticket de Jira" in system
+
+
+@pytest.mark.anyio
+async def test_access_un_cambio_de_miembros_se_aplica_en_el_siguiente_mensaje():
+    sub_agent = FakeSubAgentModel()
+    enabled_later = AreaInfo(3, "Proyectos", "Jira y EDR", "Eres Proyectos.", ("EDR",), ("leer_ticket",),
+                             members=frozenset({"jp@autofin.cl", "otra@autofin.cl"}))
+
+    await run_graph(projects_context(sub_agent, "otra@autofin.cl"), [], "x")
+    await run_graph(projects_context(sub_agent, "otra@autofin.cl", enabled_later), [], "x")
+
+    assert [call.tools for call in sub_agent.calls] == [[], ["leer_ticket"]]

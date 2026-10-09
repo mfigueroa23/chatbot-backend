@@ -32,8 +32,8 @@ def to_decision(output: RouteOutput) -> RoutingDecision:
 def tool_specs(tools: Sequence[AreaTool]) -> list[dict[str, Any]]:
     """`responder` siempre está; las del área solo si puede seguir usándolas (D7)."""
     answer = {"name": ANSWER_TOOL, "description": Answer.__doc__ or "", "parameters": Answer.model_json_schema()}
-    return [answer, *({"name": tool.name, "description": tool.description,
-                       "parameters": tool.args_schema.model_json_schema()} for tool in tools)]
+    return [answer, *({"name": tool.name, "description": tool.description, "parameters": tool.parameters}
+                      for tool in tools)]
 
 async def guarded[T](call: Callable[[], Awaitable[T]]) -> T:
     try:

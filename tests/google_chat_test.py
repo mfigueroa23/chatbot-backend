@@ -1,12 +1,14 @@
+from types import SimpleNamespace
 import pytest
 import httpx
 from fastapi.testclient import TestClient
 from main import app
 from src.interfaces.google_chat import AddonEvent
+from src.routers import google_chat as google_chat_router
 from src.routers.dependencies import get_assistant_deps, get_token_verifier
 from src.services.google import chat_auth
 from src.services.google.chat_auth import verify_addon_token
-from src.services.google.chat_events import conversation_key, message_text
+from src.services.google.chat_events import conversation_key, message_text, requester_of
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from tests.fakes import AssistantHarness
 
@@ -133,3 +135,23 @@ def test_endpoint_sin_token_responde_401_antes_de_leer_la_configuracion():
         app.dependency_overrides.clear()
 
     assert response.status_code == 401
+
+
+def test_requester_del_evento_llega_a_answer_en_minusculas(monkeypatch):
+    seen: dict = {}
+
+    async def fake_answer(deps, channel, conversation, text, requester=None, **kwargs):
+        seen.update(requester=requester, text=text)
+        return SimpleNamespace(reply="ok")
+
+    monkeypatch.setattr(google_chat_router, "answer", fake_answer)
+    event = space_event()
+    event["chat"]["user"] = {"email": " JP@Autofin.cl ", "displayName": "Jefa de Proyecto"}
+
+    response = post(AssistantHarness(), event)
+
+    assert response.status_code == 200 and seen == {"requester": "jp@autofin.cl", "text": " ¿cómo pago?"}
+
+
+def test_requester_ausente_en_el_evento_es_none():
+    assert requester_of(AddonEvent.model_validate(space_event())) is None

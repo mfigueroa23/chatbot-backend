@@ -7,25 +7,25 @@ from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
 from pydantic import ValidationError
 from src.agents.llm import ANSWER_TOOL, Answer, AreaInfo, AreaResult, Catalog, FaqHit, SubAgentModel, Subtask
 from src.agents.prompts import sub_agent_messages
-from src.agents.tools.registry import AreaTool
+from src.agents.tools.registry import AreaTool, ToolContext
 
 logger = logging.getLogger(__name__)
 
 TOOL_FAILED = "La herramienta no está disponible en este momento."
 
-async def run_tool(tools: Sequence[AreaTool], call: ToolCall) -> str:
+async def run_tool(tools: Sequence[AreaTool], call: ToolCall, context: ToolContext) -> str:
     tool = next((tool for tool in tools if tool.name == call["name"]), None)
     if tool is None:
         return f"La herramienta {call['name']} no existe."
     try:
-        return await tool.run(tool.args_schema.model_validate(call["args"]))
+        return await tool.run(call["args"], context)
     except Exception as exc:
         # Sin detalles al modelo ni al usuario (RF-30); el tipo basta para diagnosticar.
         logger.warning("La herramienta %s falló: %s", tool.name, type(exc).__name__)
         return TOOL_FAILED
 
 async def solve(model: SubAgentModel, messages: list[BaseMessage], area: AreaInfo, subtask: Subtask,
-                tools: Sequence[AreaTool], max_steps: int) -> AreaResult:
+                tools: Sequence[AreaTool], max_steps: int, context: ToolContext) -> AreaResult:
     not_found = AreaResult(area.id, area.name, subtask.query, False)
     for step in range(max(max_steps, 1)):
         # Sin herramientas, o en el último paso, solo puede responder: el número de llamadas queda acotado (RNF-6).
@@ -43,16 +43,18 @@ async def solve(model: SubAgentModel, messages: list[BaseMessage], area: AreaInf
         if not reply.tool_calls:
             logger.warning("El sub-agente del área %s terminó sin responder", area.name)
             return not_found
-        outputs = [ToolMessage(await run_tool(tools, call), tool_call_id=call["id"] or "") for call in reply.tool_calls]
+        outputs = [ToolMessage(await run_tool(tools, call, context), tool_call_id=call["id"] or "")
+                   for call in reply.tool_calls]
         messages = [*messages, reply, *outputs]
     return not_found
 
 async def run_sub_agent(model: SubAgentModel, catalog: Catalog, area: AreaInfo, faqs: Sequence[FaqHit],
-                        subtask: Subtask, tools: Sequence[AreaTool], max_steps: int, timeout: float) -> AreaResult:
-    messages = sub_agent_messages(catalog, area, faqs, subtask)
+                        subtask: Subtask, tools: Sequence[AreaTool], max_steps: int, timeout: float,
+                        context: ToolContext | None = None, note: str | None = None) -> AreaResult:
+    messages = sub_agent_messages(catalog, area, faqs, subtask, note)
     try:
         async with asyncio.timeout(timeout):
-            return await solve(model, messages, area, subtask, tools, max_steps)
+            return await solve(model, messages, area, subtask, tools, max_steps, context or ToolContext())
     except TimeoutError:
         logger.warning("El sub-agente del área %s superó los %s s", area.name, timeout)
     except Exception as exc:

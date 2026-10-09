@@ -1,6 +1,6 @@
 """Interfaces tipadas de los agentes (constitución, punto 3): el grafo solo conoce estos contratos."""
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
 from typing import Literal, Protocol
 from langchain_core.messages import AIMessage, BaseMessage
 from pydantic import BaseModel, Field
@@ -15,6 +15,17 @@ class AreaInfo:
     system_prompt: str
     categories: tuple[str, ...] = ()
     tools: tuple[str, ...] = ()
+    # Correos habilitados para sus herramientas (en minúsculas); None = el área no tiene lista (spec 002, RF-4, RF-5).
+    members: frozenset[str] | None = None
+    mcp_servers: tuple[str, ...] = ()
+
+@dataclass(frozen=True)
+class McpServerConfig:
+    """Servidor MCP activo (spec 002, RF-9): la credencial se busca en property por credential_key (RF-12)."""
+    name: str
+    url: str
+    credential_key: str | None = None
+    allowed_tools: tuple[str, ...] = ()
 
 @dataclass(frozen=True)
 class Catalog:
@@ -23,6 +34,8 @@ class Catalog:
     coordinator_prompt: str
     sub_agent_rules: str
     areas: tuple[AreaInfo, ...]
+    # Servidores MCP activos asignados a alguna área del catálogo, por nombre (spec 002, RF-9, RF-10).
+    mcp_servers: Mapping[str, McpServerConfig] = field(default_factory=dict)
 
     def area(self, area_id: int) -> AreaInfo | None:
         return next((area for area in self.areas if area.id == area_id), None)

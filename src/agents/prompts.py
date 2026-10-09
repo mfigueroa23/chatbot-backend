@@ -49,12 +49,13 @@ def route_messages(catalog: Catalog, history: Sequence[BaseMessage], question: s
     system = "\n\n".join([catalog.coordinator_prompt, describe_catalog(catalog), ROUTE_STEP, NO_PROMISES])
     return [SystemMessage(system), *history, HumanMessage(question)]
 
-def sub_agent_messages(catalog: Catalog, area: AreaInfo, faqs: Sequence[FaqHit], subtask: Subtask) -> list[BaseMessage]:
+def sub_agent_messages(catalog: Catalog, area: AreaInfo, faqs: Sequence[FaqHit], subtask: Subtask,
+                       note: str | None = None) -> list[BaseMessage]:
     # Sin historial ni datos de otras áreas: solo su subtarea, su prompt y sus FAQ (RNF-7).
     faq_text = "\n\n".join(f"[{faq.category}] Pregunta: {faq.question}\nRespuesta: {faq.answer}" for faq in faqs)
     system = "\n\n".join([catalog.sub_agent_rules, f"Área: {area.name}\n{area.system_prompt}",
                           information("preguntas frecuentes", faq_text or "No se encontraron preguntas frecuentes."),
-                          SUB_AGENT_STEP])
+                          *([note] if note else []), SUB_AGENT_STEP])
     return [SystemMessage(system), HumanMessage(subtask.query)]
 
 def describe_results(results: Sequence[AreaResult]) -> str:

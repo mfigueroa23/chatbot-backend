@@ -16,3 +16,8 @@ def message_text(event: AddonEvent) -> str:
     is_dm = payload.space is not None and payload.space.space_type == "DIRECT_MESSAGE"
     # En un space solo cuenta el texto que acompaña a la mención; en un mensaje directo, el texto completo.
     return (payload.message.text if is_dm else payload.message.argument_text) or ""
+
+def requester_of(event: AddonEvent) -> str | None:
+    """Correo de la cuenta de Google Chat que escribe, en minúsculas (spec 002, RF-1)."""
+    email = event.chat.user.email if event.chat and event.chat.user else None
+    return email.strip().lower() if email and email.strip() else None

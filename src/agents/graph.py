@@ -3,18 +3,21 @@ synthesize. Un mensaje directo hace 1 llamada al modelo; uno con N áreas, 2 + N
 import logging
 import operator
 import time
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Annotated, Any
 from langchain_core.messages import BaseMessage
 from langgraph.graph import END, START, StateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import Send
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.coordinator import route, synthesize
 from src.agents.llm import (AreaResult, Catalog, CoordinatorModel, FaqHit, KnowledgeSource, RoutingDecision,
                             SubAgentModel, Subtask)
 from src.agents.sub_agent import run_sub_agent
-from src.agents.tools.registry import TOOLS, AreaTool, tools_for
+from src.agents.tools.access import can_use_tools, restricted_note
+from src.agents.tools.registry import TOOLS, AreaTool, ToolContext, tools_for
+from src.services.property import Properties
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +41,10 @@ class AgentContext:
     knowledge: KnowledgeSource
     limits: Limits
     registry: Mapping[str, AreaTool] = field(default_factory=lambda: TOOLS)
+    # Quién escribe (None en el web), la configuración del mensaje y cómo abrir sesiones propias (spec 002).
+    requester: str | None = None
+    properties: Properties = field(default_factory=lambda: Properties({}))
+    session_factory: Callable[[], AsyncSession] | None = None
 
 @dataclass
 class AgentState:
@@ -86,9 +93,16 @@ async def sub_agent_node(state: SubAgentInput, runtime: Runtime[AgentContext]) -
     area = context.catalog.area(subtask.area_id)
     if area is None:  # route ya lo descartó; se mantiene por si el catálogo cambia de forma
         return {"results": [AreaResult(subtask.area_id, "", subtask.query, False)]}
-    tools, started = tools_for(area.name, area.tools, context.registry), time.perf_counter()
+    started = time.perf_counter()
+    area_tools = tools_for(area.name, area.tools, context.registry)
+    # Acceso decidido antes de llamar al modelo: lo que no recibe, no lo puede ejecutar (spec 002, RF-4 a RF-7).
+    allowed = can_use_tools(area, context.requester)
+    tools = area_tools if allowed else []
+    note = restricted_note(area_tools) if area_tools and not allowed else None
+    tool_context = ToolContext(context.requester, context.properties, context.session_factory)
     result = await run_sub_agent(context.sub_agent, context.catalog, area, state.faqs, subtask, tools,
-                                 context.limits.sub_agent_max_steps, context.limits.sub_agent_timeout)
+                                 context.limits.sub_agent_max_steps, context.limits.sub_agent_timeout,
+                                 tool_context, note)
     log_step(f"sub_agent {area.name}", started)
     return {"results": [result]}
 

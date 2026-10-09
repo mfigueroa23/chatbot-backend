@@ -1,6 +1,6 @@
 # Tareas 002 — Herramientas y MCP por área, archivos en Google Chat y el área Proyectos consultando Jira
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 6/34 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 11/34 hechas
 
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
@@ -41,27 +41,27 @@ comportamiento de la 2.0.0 hasta que se conectan en el grafo o en `assistant`.
   borra solo esas filas.
 
 ## Fase 3 — Contrato de herramientas, identidad y acceso
-- [ ] **T-7 — `AreaTool` con JSON Schema y `ToolContext`** · RF-2, RF-10 · ~30 min
+- [x] **T-7 — `AreaTool` con JSON Schema y `ToolContext`** · RF-2, RF-10 · ~30 min
   `AreaTool(name, description, parameters, run(args, context))`, `ToolContext(requester, properties, session_factory)`
   y `code_tool(name, description, schema, fn)`, que valida con Pydantic. `sub_agent.run_tool` y `gemini.tool_specs` se
   adaptan.
   Hecho cuando: `uv run pytest -q tests/tools_test.py tests/sub_agent_test.py tests/gemini_test.py` pasa: el JSON
   Schema sale del modelo, los argumentos inválidos dan `TOOL_FAILED` y `run` recibe el `ToolContext` con el correo.
-- [ ] **T-8 — Reglas de acceso** · RF-3, RF-4, RF-5, RF-6, RF-7 · ~20 min [P]
+- [x] **T-8 — Reglas de acceso** · RF-3, RF-4, RF-5, RF-6, RF-7 · ~20 min [P]
   `src/agents/tools/access.py`: `can_use_tools(area, requester)` y `restricted_note(area, names)`.
   Hecho cuando: `uv run pytest -q tests/access_test.py` pasa: área sin lista → todos; con lista → solo los listados,
   sin distinguir mayúsculas; anónimo nunca en un área con lista; la nota nombra las funciones retiradas.
-- [ ] **T-9 — Identidad del colaborador** · RF-1, RF-3, RF-42 · ~25 min
+- [x] **T-9 — Identidad del colaborador** · RF-1, RF-3, RF-42 · ~25 min
   `ChatUser` en el evento, `chat_events.requester_of` (correo en minúsculas), el router pasa `requester` a `answer`, y
   `AgentContext` lo recibe. El web pasa `None`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py tests/web_chat_test.py tests/assistant_test.py -k requester`
   pasa: el correo del evento llega al contexto del grafo y el web llega como anónimo y sin adjuntos.
-- [ ] **T-10 — Catálogo con miembros y servidores MCP** · RF-8, RF-9, RF-14 · ~25 min
+- [x] **T-10 — Catálogo con miembros y servidores MCP** · RF-8, RF-9, RF-14 · ~25 min
   `AreaInfo.members` (`None` si el área no tiene lista) y `AreaInfo.mcp_servers`; `Catalog.mcp_servers` con los activos.
   `load_catalog` lee `area_member` y `mcp_server` sin caché y `build_catalog` los arma.
   Hecho cuando: `uv run pytest -q tests/knowledge_test.py -k "members or mcp"` pasa: solo servidores activos y
   asignados, miembros en minúsculas y `None` sin lista.
-- [ ] **T-11 — Herramientas por sub-agente según el acceso** · RF-4, RF-5, RF-6, RF-7, RF-10 · ~25 min
+- [x] **T-11 — Herramientas por sub-agente según el acceso** · RF-4, RF-5, RF-6, RF-7, RF-10 · ~25 min
   `sub_agent_node` arma la lista (registro del área) solo si `can_use_tools`; si no, agrega `restricted_note` al prompt
   del sub-agente. `AgentContext` suma `properties` y `session_factory`.
   Hecho cuando: `uv run pytest -q tests/graph_test.py -k access` pasa: un usuario habilitado recibe las herramientas

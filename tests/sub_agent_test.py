@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel
 from src.agents.llm import AreaInfo, AreaResult, Catalog, FaqHit, Subtask
 from src.agents.sub_agent import TOOL_FAILED, run_sub_agent
-from src.agents.tools.registry import AreaTool
+from src.agents.tools.registry import ToolContext, code_tool
 from src.models.business_area import AreaScope
 from src.utils.exceptions.llm import LlmUnavailableError
 from tests.fakes import FakeSubAgentModel, answer, tool_call
@@ -19,16 +19,16 @@ class Rut(BaseModel):
     rut: str
 
 
-async def lookup(args: BaseModel) -> str:
+async def lookup(args: Rut, context: ToolContext) -> str:
     return "Cuota al día"
 
 
-async def broken(args: BaseModel) -> str:
+async def broken(args: Rut, context: ToolContext) -> str:
     raise ConnectionError("detalle interno")
 
 
-LOOKUP = AreaTool("estado_cuota", "Estado de la cuota", Rut, lookup)
-BROKEN = AreaTool("estado_cuota", "Estado de la cuota", Rut, broken)
+LOOKUP = code_tool("estado_cuota", "Estado de la cuota", Rut, lookup)
+BROKEN = code_tool("estado_cuota", "Estado de la cuota", Rut, broken)
 
 
 async def run(model, tools=(), max_steps=3, timeout=5.0):

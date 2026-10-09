@@ -25,7 +25,13 @@ class MessagePayload(ChatModel):
 class SpacePayload(ChatModel):
     space: ChatSpace | None = None
 
+class ChatUser(ChatModel):
+    email: str | None = None
+    display_name: str | None = None
+
 class AddonChat(ChatModel):
+    # Quién escribe: la identidad sale del evento firmado por Google, nunca del texto (spec 002, RF-1).
+    user: ChatUser | None = None
     message_payload: MessagePayload | None = None
     added_to_space_payload: SpacePayload | None = None
 

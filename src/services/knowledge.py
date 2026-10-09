@@ -6,11 +6,13 @@ from dataclasses import dataclass
 from sqlalchemy import select, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agents.llm import AreaInfo, Catalog, Embedder, FaqHit, KnowledgeSource, Subtask
+from src.agents.llm import AreaInfo, Catalog, Embedder, FaqHit, KnowledgeSource, McpServerConfig, Subtask
 from src.models.agent_prompt import AgentPrompt
+from src.models.area_member import AreaMember
 from src.models.business_area import AreaScope, BusinessArea
 from src.models.faq import Faq
 from src.models.faq_category import FaqCategory
+from src.models.mcp_server import McpServer
 from src.utils.exceptions.database import DatabaseUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -26,18 +28,29 @@ class FaqRow:
     embedded_hash: str | None
 
 def build_catalog(areas: Sequence[BusinessArea], categories: Sequence[FaqCategory], prompts: Mapping[str, str],
-                  scope: AreaScope) -> Catalog:
-    """Solo las áreas activas del canal (RF-3, RF-4), con sus categorías para «qué puedo consultar» (RF-16)."""
+                  scope: AreaScope, members: Sequence[AreaMember] = (),
+                  servers: Sequence[McpServer] = ()) -> Catalog:
+    """Solo las áreas activas del canal (RF-3, RF-4), con sus categorías para «qué puedo consultar» (RF-16), sus
+    colaboradores habilitados y sus servidores MCP activos (spec 002, RF-4, RF-9)."""
     for key in (f"{scope}_coordinator", SUB_AGENT_RULES):
         if key not in prompts:
             logger.warning("Falta el prompt %s en agent_prompt", key)
     names_by_area: dict[int, list[str]] = {}
     for category in categories:
         names_by_area.setdefault(category.area_id, []).append(category.name)
+    emails_by_area: dict[int, set[str]] = {}
+    for member in members:
+        emails_by_area.setdefault(member.area_id, set()).add(member.email.strip().lower())
     infos = tuple(AreaInfo(area.id, area.name, area.description, area.system_prompt or "",
-                           tuple(sorted(names_by_area.get(area.id, []))), tuple(area.tools or ()))
+                           tuple(sorted(names_by_area.get(area.id, []))), tuple(area.tools or ()),
+                           frozenset(emails_by_area[area.id]) if area.id in emails_by_area else None,
+                           tuple(area.mcp_servers or ()))
                   for area in sorted(areas, key=lambda area: area.id) if area.active and area.scope == scope)
-    return Catalog(scope, prompts.get(f"{scope}_coordinator", ""), prompts.get(SUB_AGENT_RULES, ""), infos)
+    assigned = {name for info in infos for name in info.mcp_servers}
+    configs = {server.name: McpServerConfig(server.name, server.url, server.credential_key,
+                                            tuple(server.allowed_tools or ()))
+               for server in servers if server.active and server.name in assigned}
+    return Catalog(scope, prompts.get(f"{scope}_coordinator", ""), prompts.get(SUB_AGENT_RULES, ""), infos, configs)
 
 async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
     logger.debug("Cargando el catálogo del canal %s", scope)
@@ -45,9 +58,11 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
         areas = (await session.scalars(select(BusinessArea))).all()
         categories = (await session.scalars(select(FaqCategory))).all()
         prompts = {row.key: row.content for row in await session.execute(select(AgentPrompt.key, AgentPrompt.content))}
+        members = (await session.scalars(select(AreaMember))).all()
+        servers = (await session.scalars(select(McpServer))).all()
     except (SQLAlchemyError, OSError) as exc:
         raise DatabaseUnavailableError(str(exc)) from exc
-    return build_catalog(areas, categories, prompts, scope)
+    return build_catalog(areas, categories, prompts, scope, members, servers)
 
 async def load_prompt(session: AsyncSession, key: str) -> str | None:
     try:

@@ -4,8 +4,9 @@ from fastapi.testclient import TestClient
 from main import app
 from src.interfaces.google_chat import AddonEvent
 from src.routers.dependencies import get_assistant_deps, get_token_verifier
-from src.services import google_chat
-from src.services.google_chat import conversation_key, message_text, verify_addon_token
+from src.services.google import chat_auth
+from src.services.google.chat_auth import verify_addon_token
+from src.services.google.chat_events import conversation_key, message_text
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from tests.fakes import AssistantHarness
 
@@ -39,8 +40,8 @@ def claims(monkeypatch):
             raise ValueError("audiencia incorrecta")
         return decoded
 
-    monkeypatch.setattr(google_chat, "get_google_certs", certs)
-    monkeypatch.setattr(google_chat.jwt, "decode", decode)
+    monkeypatch.setattr(chat_auth, "get_google_certs", certs)
+    monkeypatch.setattr(chat_auth.jwt, "decode", decode)
     return decoded
 
 

@@ -4,7 +4,7 @@ from langchain_core.runnables import RunnableLambda
 from pydantic import BaseModel
 from src.agents.gemini import GeminiCoordinator, GeminiSubAgent, RouteOutput, SubtaskOutput, gemini_models, tool_specs
 from src.agents.llm import ANSWER_TOOL, RoutingDecision, Subtask
-from src.agents.tools import AreaTool
+from src.agents.tools.registry import AreaTool
 from src.services.property import Properties
 from src.utils.exceptions.llm import LlmUnavailableError
 from src.utils.exceptions.property import PropertyNotFoundError

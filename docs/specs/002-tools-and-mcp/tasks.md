@@ -1,6 +1,6 @@
 # Tareas 002 — Herramientas y MCP por área, archivos en Google Chat y el área Proyectos consultando Jira
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 0/34 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 3/34 hechas
 
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
@@ -9,14 +9,14 @@ un servidor `FastMCP` en memoria y los dobles de `tests/fakes.py`. Las piezas nu
 comportamiento de la 2.0.0 hasta que se conectan en el grafo o en `assistant`.
 
 ## Fase 1 — Base y reorganización (D16)
-- [ ] **T-1 — Agregar las dependencias aprobadas** · (habilita RF-9 a RF-15 y RF-31) · ~10 min
+- [x] **T-1 — Agregar las dependencias aprobadas** · (habilita RF-9 a RF-15 y RF-31) · ~10 min
   `uv add mcp python-docx openpyxl python-pptx`. Requiere la aprobación de la sección 8 del plan.
   Hecho cuando: `uv run python -c "import mcp, docx, openpyxl, pptx"` termina con 0 y la suite sigue verde.
-- [ ] **T-2 — Mover el registro de herramientas a `src/agents/tools/`** · (D16) · ~15 min
+- [x] **T-2 — Mover el registro de herramientas a `src/agents/tools/`** · (D16) · ~15 min
   `src/agents/tools.py` → `src/agents/tools/registry.py`, sin cambiar el comportamiento; se actualizan los imports de
   `graph.py`, `sub_agent.py`, `gemini.py`, `llm.py` y los tests.
   Hecho cuando: `test ! -e src/agents/tools.py` y la suite sigue verde con los mismos tests.
-- [ ] **T-3 — Separar Google en `src/services/google/`** · (D16) · ~15 min [P]
+- [x] **T-3 — Separar Google en `src/services/google/`** · (D16) · ~15 min [P]
   `src/services/google_chat.py` → `google/chat_auth.py` (`verify_addon_token`, certificados) y
   `google/chat_events.py` (`conversation_key`, `message_text`); se actualizan `routers/dependencies.py`,
   `routers/google_chat.py` y el `monkeypatch` de `google_chat_test.py`.

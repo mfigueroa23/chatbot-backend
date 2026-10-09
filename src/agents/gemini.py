@@ -9,7 +9,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmb
 from pydantic import BaseModel, Field, SecretStr
 from src.agents.llm import (ANSWER_TOOL, Answer, CoordinatorModel, Embedder, RoutingDecision, SubAgentModel,
                             Subtask)
-from src.agents.tools import AreaTool
+from src.agents.tools.registry import AreaTool
 from src.models.faq import EMBEDDING_DIMENSIONS
 from src.services.property import Properties
 from src.utils.exceptions.llm import LlmUnavailableError

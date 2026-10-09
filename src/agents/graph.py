@@ -14,7 +14,7 @@ from src.agents.coordinator import route, synthesize
 from src.agents.llm import (AreaResult, Catalog, CoordinatorModel, FaqHit, KnowledgeSource, RoutingDecision,
                             SubAgentModel, Subtask)
 from src.agents.sub_agent import run_sub_agent
-from src.agents.tools import TOOLS, AreaTool, tools_for
+from src.agents.tools.registry import TOOLS, AreaTool, tools_for
 
 logger = logging.getLogger(__name__)
 

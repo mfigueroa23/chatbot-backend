@@ -6,7 +6,7 @@ from src.interfaces.google_chat import AddonEvent, chat_reply
 from src.models.conversation import Channel
 from src.routers.dependencies import AssistantDepsDep, TokenVerifierDep
 from src.services.assistant import answer, welcome
-from src.services.google_chat import conversation_key, message_text
+from src.services.google.chat_events import conversation_key, message_text
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from src.utils.exceptions.property import PropertyNotFoundError

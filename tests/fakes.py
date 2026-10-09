@@ -8,7 +8,7 @@ from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from src.agents.llm import (ANSWER_TOOL, AreaInfo, Catalog, CoordinatorModel, Embedder, FaqHit, KnowledgeSource,
                             RoutingDecision, SubAgentModel, Subtask)
-from src.agents.tools import AreaTool
+from src.agents.tools.registry import AreaTool
 from src.models.business_area import AreaScope
 from src.services.assistant import AssistantDeps, Models
 from src.services.conversation import ConversationStore

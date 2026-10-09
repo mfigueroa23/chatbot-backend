@@ -4,7 +4,7 @@ import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from src.agents.graph import AgentContext, Limits, run_graph
 from src.agents.llm import AreaInfo, Catalog, FaqHit, RoutingDecision, SubAgentModel, Subtask
-from src.agents.tools import AreaTool
+from src.agents.tools.registry import AreaTool
 from src.models.business_area import AreaScope
 from src.utils.exceptions.llm import LlmUnavailableError
 from tests.fakes import FakeCoordinatorModel, FakeKnowledge, FakeSubAgentModel, answer

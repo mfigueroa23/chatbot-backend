@@ -137,7 +137,7 @@ Para desactivar un área o una FAQ, `UPDATE … SET active = false`.
 
 ### Herramientas de un área
 
-Las herramientas se programan en código, en el registro `TOOLS` de `src/agents/tools.py` (nombre, descripción, esquema
+Las herramientas se programan en código, en el registro `TOOLS` de `src/agents/tools/registry.py` (nombre, descripción, esquema
 Pydantic de sus argumentos y función `async`). En la 2.0.0 el registro está vacío. Para habilitar una en un área:
 
 ```sql

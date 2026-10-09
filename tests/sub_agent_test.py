@@ -4,7 +4,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from pydantic import BaseModel
 from src.agents.llm import AreaInfo, AreaResult, Catalog, FaqHit, Subtask
 from src.agents.sub_agent import TOOL_FAILED, run_sub_agent
-from src.agents.tools import AreaTool
+from src.agents.tools.registry import AreaTool
 from src.models.business_area import AreaScope
 from src.utils.exceptions.llm import LlmUnavailableError
 from tests.fakes import FakeSubAgentModel, answer, tool_call

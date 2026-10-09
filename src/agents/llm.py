@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 from langchain_core.messages import AIMessage, BaseMessage
 from pydantic import BaseModel, Field
-from src.agents.tools import AreaTool
+from src.agents.tools.registry import AreaTool
 from src.models.business_area import AreaScope
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
 from pydantic import ValidationError
 from src.agents.llm import ANSWER_TOOL, Answer, AreaInfo, AreaResult, Catalog, FaqHit, SubAgentModel, Subtask
 from src.agents.prompts import sub_agent_messages
-from src.agents.tools import AreaTool
+from src.agents.tools.registry import AreaTool
 
 logger = logging.getLogger(__name__)
 

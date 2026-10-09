@@ -1,6 +1,6 @@
 import logging
 from pydantic import BaseModel
-from src.agents.tools import TOOLS, AreaTool, tools_for
+from src.agents.tools.registry import TOOLS, AreaTool, tools_for
 
 
 class NoArgs(BaseModel):

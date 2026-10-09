@@ -7,10 +7,10 @@ from types import SimpleNamespace
 from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from src.agents.llm import (ANSWER_TOOL, AreaInfo, Catalog, CoordinatorModel, Embedder, FaqHit, KnowledgeSource,
-                            RoutingDecision, SubAgentModel, Subtask)
+                            RoutingDecision, SubAgentModel, Subtask, Transcriber)
 from src.agents.tools.registry import AreaTool
 from src.models.business_area import AreaScope
-from src.services.assistant import AssistantDeps, Models
+from src.services.assistant import AssistantDeps, FileReader, Models
 from src.services.conversation import ConversationStore
 from src.services.property import Properties
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -104,6 +104,19 @@ class FakeSubAgentModel(SubAgentModel):
         return result
 
 
+class FakeTranscriber(Transcriber):
+    def __init__(self, text: str = "Texto transcrito", error: Exception | None = None):
+        self.text = text
+        self.error = error
+        self.calls: list[str] = []
+
+    async def transcribe(self, data: bytes, mime_type: str) -> str:
+        self.calls.append(mime_type)
+        if self.error is not None:
+            raise self.error
+        return self.text
+
+
 class FakeEmbedder(Embedder):
     def __init__(self):
         self.batches: list[list[str]] = []
@@ -182,7 +195,8 @@ class AssistantHarness:
     """Arma AssistantDeps con dobles y deja a mano lo que cada test quiere cambiar o mirar."""
 
     def __init__(self, coordinator: FakeCoordinatorModel | None = None, properties: dict[str, str] | None = None,
-                 db_down: bool = False):
+                 db_down: bool = False, read_files: FileReader | None = None):
+        self.read_files = read_files
         self.coordinator = coordinator or FakeCoordinatorModel(RoutingDecision("direct", reply="¡Hola!"))
         self.properties = dict(PROPERTIES if properties is None else properties)
         self.store = FakeConversationStore(down=db_down)
@@ -200,9 +214,10 @@ class AssistantHarness:
 
         def models(properties: Properties) -> Models:
             properties.required("gemini_api_key")
-            return Models(self.coordinator, FakeSubAgentModel(), FakeEmbedder())
+            return Models(self.coordinator, FakeSubAgentModel(), FakeEmbedder(), FakeTranscriber())
 
         async def prompt(key: str) -> str | None:
             return self.prompts.get(key)
 
-        return AssistantDeps(properties, self.store, catalog, models, lambda embedder: FakeKnowledge(), prompt)
+        return AssistantDeps(properties, self.store, catalog, models, lambda embedder: FakeKnowledge(), prompt,
+                             read_files=self.read_files)

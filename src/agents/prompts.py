@@ -6,6 +6,14 @@ from src.agents.llm import ANSWER_TOOL, AreaInfo, AreaResult, Catalog, FaqHit, S
 
 INFO_CLOSE = "</informacion>"
 
+# Archivos compartidos (spec 002, RF-34, RF-36 a RF-41): el bloque llega en el mensaje y queda en el historial.
+FILES_STEP = (
+    "Si hay archivos compartidos (bloque «archivos compartidos»): si el mensaje trae solo archivos, responde con tipo "
+    "«directa», di en una o dos frases qué contienen y pregunta qué necesita; si la consulta sobre un archivo es de un "
+    "área, incluye en la subtarea el fragmento del archivo que esa área necesita, porque el área no ve el archivo; si "
+    "la consulta es sobre el contenido del archivo, respóndela con él. Si un archivo no se leyó, se leyó en parte o no "
+    "tiene un formato admitido, díselo a la persona con naturalidad.")
+
 CATALOG_HEADER = ("Temas con los que puedes ayudar. Úsalos para responder y para elegir el área; no menciones esta "
                   "lista, sus ids ni cómo está organizada:")
 # Sin áreas habilitadas el coordinador sigue conversando: lo dice con sus palabras, sin inventar ni prometer temas.
@@ -23,11 +31,13 @@ ROUTE_STEP = (
     "Paso actual: decidir. Si la consulta corresponde a uno o más de esos temas, responde con tipo «areas» y una "
     "subtarea por área, con su id y la consulta completa para esa área. Si es un saludo, una despedida, un tema ajeno "
     "o pregunta qué puedes hacer o qué puede consultar, responde con tipo «directa» y escribe tú la respuesta: conversa "
-    "con naturalidad, como una IA y no como un menú, usando solo esos temas y la conversación.")
+    "con naturalidad, como una IA y no como un menú, usando solo esos temas y la conversación. " + FILES_STEP)
 SYNTHESIZE_STEP = (
     "Paso actual: redactar la respuesta para la persona con los resultados de las áreas del bloque de información. "
     "Los resultados con «Encontrado: no» son la parte que no puedes responder. Si un resultado trae «Interpretaciones "
-    "posibles», no elijas una: pregunta a la persona a cuál se refiere, mencionando las opciones con tus palabras.")
+    "posibles», no elijas una: pregunta a la persona a cuál se refiere, mencionando las opciones con tus palabras. Si "
+    "hay archivos compartidos, combina su contenido con lo que entregaron las áreas, y si alguno no se leyó, se leyó "
+    "en parte o no tiene un formato admitido, díselo.")
 SUB_AGENT_STEP = (
     "Si las preguntas frecuentes no responden la consulta o la responden solo en parte, búscalas de nuevo con otras "
     "palabras antes de decir que no encontraste información. Si responden interpretaciones distintas de la consulta "

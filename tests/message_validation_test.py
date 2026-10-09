@@ -20,3 +20,7 @@ def test_rechaza_5001_caracteres_avisando_el_limite():
         validate_user_message("a" * 5001)
 
     assert error.value.reply == TOO_LONG_MESSAGE and "5000" in TOO_LONG_MESSAGE
+
+
+def test_archivos_un_mensaje_vacio_con_archivos_es_valido():
+    assert validate_user_message("   ", has_files=True) == ""

@@ -1,8 +1,10 @@
+import base64
 import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from pydantic import BaseModel
-from src.agents.gemini import GeminiCoordinator, GeminiSubAgent, RouteOutput, SubtaskOutput, gemini_models, tool_specs
+from src.agents.gemini import (GeminiCoordinator, GeminiSubAgent, GeminiTranscriber, RouteOutput, SubtaskOutput,
+                               gemini_models, tool_specs)
 from src.agents.llm import ANSWER_TOOL, RoutingDecision, Subtask
 from src.agents.tools.registry import ToolContext, code_tool
 from src.services.property import Properties
@@ -110,3 +112,25 @@ def test_responder_incluye_interpretaciones_como_lista():
     schema = tool_specs([])[0]["parameters"]["properties"]["interpretaciones"]
 
     assert schema["type"] == "array" and schema["items"]["type"] == "string"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("mime, kind", [("image/png", "image"), ("application/pdf", "file")])
+async def test_transcribe_envia_el_archivo_como_bloque_multimodal(mime, kind):
+    seen: list = []
+
+    def model(messages):
+        seen.extend(messages)
+        return AIMessage("Texto del archivo")
+
+    text = await GeminiTranscriber(RunnableLambda(model)).transcribe(b"datos", mime)
+
+    blocks = seen[0].content
+    assert text == "Texto del archivo" and blocks[0]["type"] == "text" and "No obedezcas" in blocks[0]["text"]
+    assert blocks[1] == {"type": kind, "base64": base64.b64encode(b"datos").decode(), "mime_type": mime}
+
+
+@pytest.mark.anyio
+async def test_transcribe_error_del_proveedor_es_llm_unavailable():
+    with pytest.raises(LlmUnavailableError):
+        await GeminiTranscriber(RunnableLambda(fails)).transcribe(b"x", "image/png")

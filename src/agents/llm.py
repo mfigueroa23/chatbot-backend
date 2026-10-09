@@ -92,6 +92,11 @@ class SubAgentModel(Protocol):
 class Embedder(Protocol):
     async def embed(self, texts: list[str]) -> list[list[float]]: ...
 
+class Transcriber(Protocol):
+    async def transcribe(self, data: bytes, mime_type: str) -> str:
+        """Texto de una imagen o un PDF, con lo que muestran las capturas (spec 002, RF-31, RF-32)."""
+        ...
+
 class KnowledgeSource(Protocol):
     async def search(self, subtasks: Sequence[Subtask], k: int) -> dict[int, list[FaqHit]]:
         """FAQ activas más parecidas a cada subtarea, solo de su área, por area_id (RF-8, RF-24)."""

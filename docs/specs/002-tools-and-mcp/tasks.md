@@ -1,6 +1,6 @@
 # Tareas 002 — Herramientas y MCP por área, archivos en Google Chat y el área Proyectos consultando Jira
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 21/34 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 28/34 hechas
 
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
@@ -124,38 +124,38 @@ comportamiento de la 2.0.0 hasta que se conectan en el grafo o en `assistant`.
   las sesiones se cierran aunque el sub-agente falle; un servidor desactivado entre dos mensajes ya no se usa.
 
 ## Fase 7 — Archivos en Google Chat
-- [ ] **T-22 — Formatos y extractores** · RF-31, RF-38 · ~25 min
+- [x] **T-22 — Formatos y extractores** · RF-31, RF-38 · ~25 min
   `src/services/files/formats.py` y `extractors.py` (Word, Excel, PowerPoint y texto, portados de la 1.x).
   Hecho cuando: `uv run pytest -q tests/attachments_test.py -k "formats or extract"` pasa con archivos generados en
   memoria y texto en UTF-8 y Latin-1; un formato no admitido se reconoce como tal.
-- [ ] **T-23 — Descarga de adjuntos de Chat con tope** · RF-37, RNF-8 · ~25 min [P]
+- [x] **T-23 — Descarga de adjuntos de Chat con tope** · RF-37, RNF-8 · ~25 min [P]
   `src/services/google/service_account.py` (token `chat.bot`) y `chat_media.py` (*stream* con corte en `max_bytes`);
   `AttachmentTooLargeError`.
   Hecho cuando: `uv run pytest -q tests/chat_media_test.py` pasa con `MockTransport`: pide el token con el scope
   correcto, descarga completa por debajo del tope, corta y lanza `AttachmentTooLargeError` por encima, y el JSON de
   la cuenta no aparece en `caplog`.
-- [ ] **T-24 — Transcribir imágenes y PDF** · RF-31, RF-32 · ~20 min [P]
+- [x] **T-24 — Transcribir imágenes y PDF** · RF-31, RF-32 · ~20 min [P]
   `Transcriber` en `llm.py`, `GeminiTranscriber` en `gemini.py` (mensaje multimodal en base64 con `sub_agent_model`) y
   `FakeTranscriber`.
   Hecho cuando: `uv run pytest -q tests/gemini_test.py -k transcribe` pasa con `RunnableLambda`: imagen y PDF van como
   bloques multimodales con su `mime_type` y un error del proveedor da `LlmUnavailableError`.
-- [ ] **T-25 — Leer los adjuntos de un mensaje** · RF-31, RF-32, RF-33, RF-37, RF-38, RF-39, RF-40, RF-41, RNF-9 · ~25 min
+- [x] **T-25 — Leer los adjuntos de un mensaje** · RF-31, RF-32, RF-33, RF-37, RF-38, RF-39, RF-40, RF-41, RNF-9 · ~25 min
   `src/services/files/attachments.py`: `read_attachments` (en paralelo, un resultado por archivo) y `files_block`.
   Hecho cuando: `uv run pytest -q tests/attachments_test.py -k read` pasa: cada formato, más de 20 MB → `too_large`,
   formato no admitido, un fallo no detiene a los demás, truncado con aviso, varios archivos, el bloque va marcado como
   información y el contenido no aparece en `caplog`.
-- [ ] **T-26 — Adjuntos del evento de Google Chat** · RF-31, RF-38 · ~20 min
+- [x] **T-26 — Adjuntos del evento de Google Chat** · RF-31, RF-38 · ~20 min
   `ChatAttachment` en `interfaces/google_chat.py`, `chat_events.attachments_of` (subidos → descargables; Drive → no
   admitidos) y el router los pasa a `answer`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k adjuntos` pasa: un evento con una foto subida y un
   enlace de Drive llega a `answer` con dos adjuntos y el de Drive marcado como no admitido.
-- [ ] **T-27 — Archivos en la orquestación** · RF-34, RF-35, RNF-7 · ~25 min
+- [x] **T-27 — Archivos en la orquestación** · RF-34, RF-35, RNF-7 · ~25 min
   `answer(..., attachments)`: lee los archivos antes del grafo, `validate_user_message(text, has_files)`, guarda el
   bloque en el mensaje del usuario y usa `file_response_timeout_seconds`.
   Hecho cuando: `uv run pytest -q tests/assistant_test.py tests/message_validation_test.py -k archivos` pasa: un
   mensaje solo con archivos es válido; el bloque queda en el historial y llega en el mensaje siguiente; con archivos
   rige el tope de 27 s; sin archivos, el de siempre.
-- [ ] **T-28 — Prompts con archivos** · RF-34, RF-36, RF-41 · ~15 min
+- [x] **T-28 — Prompts con archivos** · RF-34, RF-36, RF-41 · ~15 min
   `ROUTE_STEP`: si hay archivos, incluir en la subtarea el fragmento relevante y, si solo hay archivos, responder
   directo resumiendo y preguntando qué necesita.
   Hecho cuando: `uv run pytest -q tests/prompts_test.py -k archivos` pasa: con un bloque de archivos, el prompt de

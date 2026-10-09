@@ -1,6 +1,8 @@
 """Grafo del patrón coordinador (plan, D1): route → (fin si es directa) → retrieve → sub_agent × N en paralelo →
 synthesize. Un mensaje directo hace 1 llamada al modelo; uno con N áreas, 2 + N (RNF-6)."""
+import logging
 import operator
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Annotated, Any
@@ -13,6 +15,12 @@ from src.agents.llm import (AreaResult, Catalog, CoordinatorModel, FaqHit, Knowl
                             SubAgentModel, Subtask)
 from src.agents.sub_agent import run_sub_agent
 from src.agents.tools import TOOLS, AreaTool, tools_for
+
+logger = logging.getLogger(__name__)
+
+def log_step(step: str, started: float) -> None:
+    # Duración de cada paso, sin textos (RNF-3), para medir el presupuesto de latencia (plan, sección 7).
+    logger.info("Paso %s: %.2f s", step, time.perf_counter() - started)
 
 @dataclass(frozen=True)
 class Limits:
@@ -47,9 +55,10 @@ class SubAgentInput:
     faqs: list[FaqHit]
 
 async def route_node(state: AgentState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
-    context = runtime.context
+    context, started = runtime.context, time.perf_counter()
     decision = await route(context.coordinator, context.catalog, state.history, state.question,
                            context.limits.max_areas)
+    log_step("route", started)
     return {"decision": decision, "reply": decision.reply}
 
 def after_route(state: AgentState) -> str:
@@ -59,7 +68,10 @@ async def retrieve_node(state: AgentState, runtime: Runtime[AgentContext]) -> di
     subtasks = state.decision.subtasks
     if not subtasks:
         return {"faqs": {}}
-    return {"faqs": await runtime.context.knowledge.search(subtasks, runtime.context.limits.faqs_per_search)}
+    started = time.perf_counter()
+    faqs = await runtime.context.knowledge.search(subtasks, runtime.context.limits.faqs_per_search)
+    log_step("retrieve", started)
+    return {"faqs": faqs}
 
 def fan_out(state: AgentState) -> list[Send] | str:
     subtasks = state.decision.subtasks
@@ -74,17 +86,19 @@ async def sub_agent_node(state: SubAgentInput, runtime: Runtime[AgentContext]) -
     area = context.catalog.area(subtask.area_id)
     if area is None:  # route ya lo descartó; se mantiene por si el catálogo cambia de forma
         return {"results": [AreaResult(subtask.area_id, "", subtask.query, False)]}
-    tools = tools_for(area.name, area.tools, context.registry)
+    tools, started = tools_for(area.name, area.tools, context.registry), time.perf_counter()
     result = await run_sub_agent(context.sub_agent, context.catalog, area, state.faqs, subtask, tools,
                                  context.limits.sub_agent_max_steps, context.limits.sub_agent_timeout)
+    log_step(f"sub_agent {area.name}", started)
     return {"results": [result]}
 
 async def synthesize_node(state: AgentState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
-    context = runtime.context
+    context, started = runtime.context, time.perf_counter()
     # Los sub-agentes terminan en cualquier orden: se presentan en el orden de las subtareas.
     order = {subtask.area_id: index for index, subtask in enumerate(state.decision.subtasks)}
     results = sorted(state.results, key=lambda result: order.get(result.area_id, len(order)))
     reply = await synthesize(context.coordinator, context.catalog, state.history, state.question, results)
+    log_step("synthesize", started)
     return {"reply": reply}
 
 def build_graph():

@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 15/29 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 20/29 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
@@ -98,39 +98,40 @@ BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/
   sub-agente caído no impide la respuesta; un área agregada al catálogo falso funciona sin código.
 
 ## Fase 5 — Servicios con BD y Gemini
-- [ ] **T-16 — Cargar el catálogo del canal** · RF-3, RF-4, RF-16, RF-22, RF-23 · ~25 min
+- [x] **T-16 — Cargar el catálogo del canal** · RF-3, RF-4, RF-16, RF-22, RF-23 · ~25 min
   `load_catalog(session, scope)` en `src/services/knowledge.py`: lee sin caché las áreas, las categorías y
   `agent_prompt` (pocas filas) y delega en la función pura `build_catalog(areas, categories, prompts, scope)`, que
   filtra por canal y por `active` y agrupa las categorías por área.
   Hecho cuando: `uv run pytest -q tests/knowledge_test.py -k catalog` pasa: excluye las áreas de otro canal y las
   inactivas, agrupa las categorías y toma el prompt del coordinador del canal.
-- [ ] **T-17 — Buscar FAQ y sincronizar embeddings** · RF-8, RF-24 · ~25 min
+- [x] **T-17 — Buscar FAQ y sincronizar embeddings** · RF-8, RF-24 · ~25 min
   `search_faqs(session, area_id, embedding, k)` (coseno, FAQ activas del área) y `sync_embeddings(session, area_ids,
   embedder)` (`embedded_hash` distinto de `content_hash`, un solo lote). La función pura `pending_faqs` decide qué se
   re-embebe.
   Hecho cuando: `uv run pytest -q tests/knowledge_test.py -k pending` pasa con FAQ nueva, editada y sin cambios (solo
   las dos primeras se re-embeben, en un solo lote del `FakeEmbedder`). El SQL se verifica en T-27.
-- [ ] **T-18 — Implementación de Gemini** · RF-25, RF-33 · ~30 min [P]
+- [x] **T-18 — Implementación de Gemini** · RF-25, RF-33 · ~30 min [P]
   `src/agents/gemini.py`: `route` con salida estructurada, sub-agente con *tool choice* obligatorio, `synthesize` con
   texto, embeddings de 768 dimensiones y *thinking budget* 0 en `route` y en los sub-agentes (D17). Cualquier error del
   proveedor se convierte en `LlmUnavailableError`.
   Hecho cuando: `uv run pytest -q tests/gemini_test.py` pasa con un `BaseChatModel` de prueba: el mapeo de errores, el
   parseo de `RoutingDecision` y la extracción de `responder` funcionan, y `uv run pyright` da 0 errores.
-- [ ] **T-19 — Guardar y leer las conversaciones** · RF-18, RF-19, RF-20, RF-21 · ~25 min
+- [x] **T-19 — Guardar y leer las conversaciones** · RF-18, RF-19, RF-20, RF-21 · ~25 min
   `src/services/conversation.py`: `get_or_create_web(session_id | None)`, `get_or_create_chat(key)`, `history(n)`,
   `append_turn` y `delete_expired(cutoff)`, detrás del `Protocol` `ConversationStore`; `FakeConversationStore` en
   `tests/fakes.py`.
   Hecho cuando: `uv run pyright` da 0 errores con la implementación SQL y `FakeConversationStore` tipadas contra
   `ConversationStore` (sin `cast`). El SQL se verifica con la BD local en T-21.
-- [ ] **T-20 — Orquestar un mensaje** · RF-18, RF-19, RF-20, RF-23, RF-24, RF-25, RF-26, RF-33, RNF-3 · ~30 min
+- [x] **T-20 — Orquestar un mensaje** · RF-18, RF-19, RF-20, RF-23, RF-24, RF-25, RF-26, RF-33, RNF-3 · ~30 min
   `src/services/assistant.py`: `answer(session, channel, key, text)`. Valida, carga `load_properties`, la conversación
   y el historial, carga el catálogo, ejecuta el grafo con `asyncio.timeout(response_timeout_seconds)`, guarda el turno
   y registra la duración de cada paso sin el texto.
   Hecho cuando: `uv run pytest -q tests/assistant_test.py` pasa: sesión inexistente crea otra; el historial se limita a
   `history_messages` y no mezcla conversaciones; un cambio del catálogo falso entre dos mensajes se aplica en el
-  segundo; la sincronización ocurre antes de buscar; si faltan el modelo o la key responde servicio no disponible y
+  segundo; si faltan el modelo o la key responde servicio no disponible y
   el log no contiene la key; error o *timeout* del modelo responde servicio no disponible; `caplog` no contiene el
-  texto del usuario.
+  texto del usuario. Además `uv run pytest -q tests/knowledge_test.py -k sync` pasa: los embeddings pendientes se
+  generan y guardan antes de buscar (RF-24).
 
 ## Fase 6 — Canales
 - [ ] **T-21 — Endpoint del chat web** · RF-1, RF-18, RF-32, RF-34 · ~25 min

@@ -1,12 +1,15 @@
 import asyncio
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from src.agents.llm import (ANSWER_TOOL, CoordinatorModel, Embedder, FaqHit, KnowledgeSource, RoutingDecision,
                             SubAgentModel, Subtask)
 from src.agents.tools import AreaTool
+from src.services.conversation import ConversationStore
 
 
 class PropertySession:
@@ -113,3 +116,41 @@ class FakeKnowledge(KnowledgeSource):
     async def search(self, subtasks: Sequence[Subtask], k: int) -> dict[int, list[FaqHit]]:
         self.searches.append((list(subtasks), k))
         return {subtask.area_id: self.faqs.get(subtask.area_id, [])[:k] for subtask in subtasks}
+
+
+class FakeConversationStore(ConversationStore):
+    """En memoria: guarda (rol, texto) por conversación, como la tabla message."""
+
+    def __init__(self):
+        self.messages: dict[uuid.UUID, list[BaseMessage]] = {}
+        self.keys: dict[str, uuid.UUID] = {}
+        self.last_message_at: dict[uuid.UUID, datetime] = {}
+
+    async def web_conversation(self, session_id: uuid.UUID | None, now: datetime) -> uuid.UUID:
+        if session_id is not None and session_id in self.messages:
+            return session_id
+        return self._create(now)
+
+    async def chat_conversation(self, key: str, now: datetime) -> uuid.UUID:
+        if key not in self.keys:
+            self.keys[key] = self._create(now)
+        return self.keys[key]
+
+    async def history(self, conversation_id: uuid.UUID, limit: int) -> list[BaseMessage]:
+        return self.messages[conversation_id][-limit:] if limit > 0 else []
+
+    async def append_turn(self, conversation_id: uuid.UUID, question: str, reply: str, now: datetime) -> None:
+        self.messages[conversation_id] += [HumanMessage(question), AIMessage(reply)]
+        self.last_message_at[conversation_id] = now
+
+    async def delete_expired(self, cutoff: datetime) -> int:
+        expired = [cid for cid, last in self.last_message_at.items() if last < cutoff]
+        for cid in expired:
+            del self.messages[cid], self.last_message_at[cid]
+        return len(expired)
+
+    def _create(self, now: datetime) -> uuid.UUID:
+        conversation_id = uuid.uuid4()
+        self.messages[conversation_id] = []
+        self.last_message_at[conversation_id] = now
+        return conversation_id

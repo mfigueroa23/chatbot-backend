@@ -1,6 +1,6 @@
 # Tareas 002 — Herramientas y MCP por área, archivos en Google Chat y el área Proyectos consultando Jira
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 28/34 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 33/34 hechas
 
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
@@ -162,32 +162,41 @@ comportamiento de la 2.0.0 hasta que se conectan en el grafo o en `assistant`.
   `route` contiene las dos instrucciones y el contenido sigue dentro del bloque de información.
 
 ## Fase 8 — Datos, documentación y demos
-- [ ] **T-29 — Documentar en el README** · RF-9, RF-12, RF-23, RNF-5, RNF-8 · ~20 min
+- [x] **T-29 — Documentar en el README** · RF-9, RF-12, RF-23, RNF-5, RNF-8 · ~20 min
   Tablas nuevas (alta de un miembro, un tablero y un servidor MCP con SQL de ejemplo), properties nuevas, herramientas
   de Proyectos, formatos de archivo y la estructura de paquetes.
   Hecho cuando: cada property que lee `src/` y cada tabla nueva aparecen en el README (`grep` de cada clave y cada
   tabla las encuentra).
-- [ ] **T-30 — Cargar el área Proyectos en local** · RF-16, RF-21, RF-23 · ~25 min
+- [x] **T-30 — Cargar el área Proyectos en local** · RF-16, RF-21, RF-23 · ~25 min
   Script de carga: área interna «Proyectos» (prompt de solo lectura), FAQ de la guía de secciones del EDR,
   `tools = {buscar_tickets, leer_ticket}`, tableros, miembros y credenciales de Jira (con confirmación del usuario).
   Hecho cuando: en la BD local el catálogo interno muestra Proyectos con sus categorías, y en proceso «¿qué va en
   validaciones de cartera?» responde con la FAQ.
-- [ ] **T-31 — Demo local: Jira, MCP y ambigüedad** · RF-9 a RF-15, RF-17 a RF-22, RF-25 a RF-29, RNF-1 · ~30 min
+  Hecho (2026-10-09): CLI idempotente `src/cli/load_projects_area.py` (20 FAQ en 3 categorías); credenciales de Jira,
+  cuenta de servicio de Chat y 2 colaboradores copiados de la 1.x con confirmación del usuario.
+- [x] **T-31 — Demo local: Jira, MCP y ambigüedad** · RF-9 a RF-15, RF-17 a RF-22, RF-25 a RF-29, RNF-1 · ~30 min
   En proceso con Gemini y Jira reales: épica, búsqueda, tablero no permitido, «cierra el ticket» y la misma consulta
   como no habilitado; un `FastMCP` de prueba por HTTP asignado a un área (permitida y no permitida); en el web, una
   pregunta ambigua.
   Hecho cuando: todos los guiones dan el resultado esperado y el p95 de la demo de la spec 001 sigue en 10 s o menos.
-- [ ] **T-32 — Cargar la base remota** · RF-16, RF-23, RNF-3 · ~20 min
+  Hecho (2026-10-09): `DAIA-52` real, tablero no permitido sin llamar a Jira, «cierra el ticket» → solo consulta, no
+  habilitado → función no habilitada, MCP de prueba por HTTP (solo la herramienta permitida) y «Quiero pagar» →
+  pregunta cuota o prepago. p95 de la demo de la spec 001: 6,6 s. Observación: con 6 s el sub-agente no alcanzaba a
+  buscar en Jira; con `sub_agent_timeout_seconds = 8` funciona, pero una búsqueda tarda 10-11,5 s (sobre el objetivo
+  de RNF-1 para mensajes con herramientas).
+- [x] **T-32 — Cargar la base remota** · RF-16, RF-23, RNF-3 · ~20 min
   Migraciones y script de carga contra la BD remota de la 2.0.0, y credenciales de Jira y de la cuenta de servicio de
   Chat en `property`; la cuenta de Jira es de solo lectura (RNF-3). Requiere la confirmación del usuario antes de
   escribir en el servidor remoto.
   Hecho cuando: `alembic current` remoto está en la última revisión y el catálogo interno remoto muestra Proyectos
   con sus herramientas, tableros y miembros.
-- [ ] **T-33 — Demo en Google Chat** · RF-1, RF-7, RF-17 a RF-22, RF-31 a RF-40, RNF-7 · ~30 min
+  Hecho (2026-10-09): remoto en `181653739733`; Proyectos con 20 FAQ, 2 herramientas, 2 colaboradores y `DAIA`;
+  `sub_agent_timeout_seconds = 8`. El pod de la 2.0.0 siguió sano tras la migración.
+- [ ] **T-33 — Demo en Google Chat** · RF-1, RF-7, RF-17 a RF-22, RF-31 a RF-40, RNF-7 · ~30 min (pendiente del despliegue)
   Con la app real, después del despliegue: los guiones de Jira de la spec y los de archivos (foto, PDF, Word, más de
   20 MB, formato no admitido y una pregunta de seguimiento sobre un archivo ya leído).
   Hecho cuando: todos los guiones dan el resultado esperado y ningún mensaje con archivos pasa de 27 s en los logs de
   duración.
-- [ ] **T-34 — Versión 2.1.0** · — · ~5 min
+- [x] **T-34 — Versión 2.1.0** · — · ~5 min
   `version = "2.1.0"` en `pyproject.toml` y `uv lock`, en un commit `chore(release): Version 2.1.0`.
   Hecho cuando: `pyproject.toml` dice `2.1.0` y la suite está verde.

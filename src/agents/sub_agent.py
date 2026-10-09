@@ -2,6 +2,7 @@
 al coordinador. No habla con el usuario ni delega en otros sub-agentes (RF-11)."""
 import asyncio
 import logging
+import time
 from collections.abc import Sequence
 from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
 from pydantic import ValidationError
@@ -17,12 +18,16 @@ async def run_tool(tools: Sequence[AreaTool], call: ToolCall, context: ToolConte
     tool = next((tool for tool in tools if tool.name == call["name"]), None)
     if tool is None:
         return f"La herramienta {call['name']} no existe."
+    started = time.perf_counter()
     try:
         return await tool.run(call["args"], context)
     except Exception as exc:
         # Sin detalles al modelo ni al usuario (RF-30); el tipo basta para diagnosticar.
         logger.warning("La herramienta %s falló: %s", tool.name, type(exc).__name__)
         return TOOL_FAILED
+    finally:
+        # Solo el nombre y la duración, sin argumentos ni resultado (spec 001, RNF-3; plan 002, sección 7).
+        logger.info("Herramienta %s: %.2f s", tool.name, time.perf_counter() - started)
 
 async def solve(model: SubAgentModel, messages: list[BaseMessage], area: AreaInfo, subtask: Subtask,
                 tools: Sequence[AreaTool], max_steps: int, context: ToolContext) -> AreaResult:

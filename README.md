@@ -11,10 +11,16 @@ El asistente sigue el [patrón de coordinador](https://docs.cloud.google.com/arc
 - Cada subtarea va al **sub-agente** de su área, en paralelo. El sub-agente responde solo con las FAQ de su área
   (búsqueda por similitud en pgvector) y sus herramientas.
 - El coordinador redacta una sola respuesta con los resultados. Si un área no tiene información, lo dice y no inventa.
+- Cada sub-agente puede **volver a buscar** en las FAQ de su área con otras palabras (`buscar_faq`) y, si la consulta es
+  ambigua, devuelve las interpretaciones posibles para que el coordinador pregunte a cuál se refiere la persona.
+- Un área puede tener **herramientas en código** (por ejemplo, Jira en solo lectura para Proyectos) y herramientas de
+  **servidores MCP**, restringidas si hace falta a una lista de colaboradores habilitados.
+- En Google Chat el asistente **lee los archivos subidos** (fotos, PDF, Word, Excel, PowerPoint y texto, hasta 20 MB).
 
 Un saludo hace 1 llamada al modelo; una consulta a N áreas, 2 + N. Áreas, FAQ, prompts y configuración viven en la base
 de datos y se leen sin caché en cada mensaje: un cambio se aplica desde el siguiente. La especificación está en
-[docs/specs/001-virtual-assistant](docs/specs/001-virtual-assistant/spec.md).
+[docs/specs/001-virtual-assistant](docs/specs/001-virtual-assistant/spec.md) y
+[docs/specs/002-tools-and-mcp](docs/specs/002-tools-and-mcp/spec.md).
 
 ## Requisitos
 
@@ -68,6 +74,16 @@ las obligatorias se cargan a mano:
 | `sub_agent_max_steps` | Llamadas al modelo de un sub-agente con herramientas antes de forzar la respuesta | `3` |
 | `google_chat_audience` | URL pública de `POST /api/v1/google-chat/events` (audiencia del ID token de Google) | — |
 | `google_chat_addon_service_account` | Cuenta de servicio del complemento de Google Workspace que firma los eventos (`service-…@gcp-sa-gsuiteaddons.iam.gserviceaccount.com`) | — |
+| `google_chat_service_account_json` | JSON de la cuenta de servicio con scope `chat.bot`, para descargar los archivos subidos a Google Chat (secreto: ver SECURITY.md). Sin ella, cada archivo se responde como «no se pudo leer» | — |
+| `file_max_mb` | Tamaño máximo de un archivo; la descarga se corta al pasarlo | `20` |
+| `file_max_chars` | Texto que se usa de cada archivo; si es más largo, se lee una parte y se avisa | `30000` |
+| `file_response_timeout_seconds` | Tiempo máximo de un mensaje con archivos; debe ser menor que los 30 s de Google Chat | `27` |
+| `jira_base_url` | URL de Jira Cloud, p. ej. `https://autofin.atlassian.net` | — |
+| `jira_email` | Cuenta de Jira del asistente, de solo lectura | — |
+| `jira_api_token` | Token de API de esa cuenta (secreto: ver SECURITY.md) | — |
+| `jira_max_results` | Tickets por búsqueda o por lista de hijos | `20` |
+| `jira_timeout_seconds` | Tiempo máximo de cada llamada a Jira | `5` |
+| `mcp_timeout_seconds` | Tiempo máximo para conectar, listar o llamar a un servidor MCP | `5` |
 
 Si falta `gemini_api_key` o un modelo, el asistente responde «no disponible» y registra qué clave falta, nunca su valor.
 
@@ -103,7 +119,7 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 | `GET` | `/` | Liveness: responde `true` si el proceso está vivo, sin consultar la base de datos |
 | `GET` | `/health` | Verifica la base de datos. `200` si está disponible, `503` si no |
 | `POST` | `/api/v1/chat` | Chat web (agente externo). Cuerpo `{session_id?, message}` → `{session_id, reply}`. Sin `session_id`, o con uno que no existe, crea una sesión nueva. Mensaje vacío, de más de 5000 caracteres o modelo caído: `200` con el aviso en `reply`. `503` si la base de datos no responde |
-| `POST` | `/api/v1/google-chat/events` | Eventos de la app de Google Chat (complemento de Google Workspace, agente interno). Exige `Authorization: Bearer <ID token>` de la cuenta de servicio del complemento (`401` si falta o no es válido). Responde en el hilo del mensaje; al agregar el asistente a un space o DM responde la bienvenida `internal_welcome` |
+| `POST` | `/api/v1/google-chat/events` | Eventos de la app de Google Chat (complemento de Google Workspace, agente interno). Exige `Authorization: Bearer <ID token>` de la cuenta de servicio del complemento (`401` si falta o no es válido). Identifica al colaborador por el correo del evento y lee los archivos subidos al mensaje. Responde en el hilo del mensaje; al agregar el asistente a un space o DM responde la bienvenida `internal_welcome` |
 
 ## Datos de negocio
 
@@ -111,7 +127,10 @@ El contenido se carga directamente en la base de datos y se aplica desde el sigu
 
 | Tabla | Contenido |
 |---|---|
-| `business_area` | Un sub-agente por fila activa: `name`, `description` (la usa el coordinador para enrutar), `scope` (`external` = chat web, `internal` = Google Chat), `system_prompt` del área, `tools` y `active` |
+| `business_area` | Un sub-agente por fila activa: `name`, `description` (la usa el coordinador para enrutar), `scope` (`external` = chat web, `internal` = Google Chat), `system_prompt` del área, `tools` (herramientas en código), `mcp_servers` (servidores MCP) y `active` |
+| `area_member` | Colaboradores habilitados para las herramientas de un área (`area_id`, `email` en minúsculas). Un área sin filas ofrece sus herramientas a todo su canal; sus FAQ siempre son para todos |
+| `jira_board` | Tableros de Jira permitidos (`key`, `active`): las búsquedas y lecturas se acotan a ellos |
+| `mcp_server` | Servidores MCP remotos (*streamable HTTP*): `name`, `url`, `credential_key` (nombre de la property con el token Bearer), `allowed_tools` (solo esas herramientas llegan al sub-agente; vacía = ninguna) y `active` |
 | `faq_category` | Categorías de FAQ de cada área; se muestran cuando preguntan «¿qué puedo consultar?» |
 | `faq` | Preguntas y respuestas (`active`). El embedding se genera solo la primera vez que se busca en su área después de crearla o editarla |
 | `agent_prompt` | `external_coordinator`, `internal_coordinator` (rol, tono y reglas de cada coordinador), `sub_agent_rules` (reglas comunes de los sub-agentes) e `internal_welcome` (presentación en Google Chat) |
@@ -137,14 +156,39 @@ Para desactivar un área o una FAQ, `UPDATE … SET active = false`.
 
 ### Herramientas de un área
 
-Las herramientas se programan en código, en el registro `TOOLS` de `src/agents/tools/registry.py` (nombre, descripción, esquema
-Pydantic de sus argumentos y función `async`). En la 2.0.0 el registro está vacío. Para habilitar una en un área:
+Todos los sub-agentes tienen `buscar_faq`, que vuelve a buscar en las FAQ de su propia área. Las demás herramientas se
+programan en código con `code_tool` (`src/agents/tools/registry.py`) y se registran por nombre en
+`src/agents/tools/available.py`. Hoy hay dos, ambas de solo lectura sobre Jira: `leer_ticket` y `buscar_tickets`.
 
 ```sql
-UPDATE business_area SET tools = ARRAY['nombre_de_la_herramienta'] WHERE name = 'Servicio al Cliente';
+-- Herramientas de Jira para el área Proyectos, solo para dos JP, sobre el tablero DAIA
+UPDATE business_area SET tools = ARRAY['leer_ticket', 'buscar_tickets'] WHERE name = 'Proyectos';
+INSERT INTO area_member (area_id, email)
+SELECT id, unnest(ARRAY['jp1@autofin.cl', 'jp2@autofin.cl']) FROM business_area WHERE name = 'Proyectos';
+INSERT INTO jira_board (key) VALUES ('DAIA');
 ```
 
-Un nombre que no está en el registro se ignora con un *warning* en el log.
+Un nombre que no está en el registro se ignora con un *warning* en el log. A un colaborador no habilitado el sub-agente
+no le entrega las herramientas: le dice que esa función no está habilitada para él.
+
+### Servidores MCP de un área
+
+```sql
+INSERT INTO mcp_server (name, url, credential_key, allowed_tools)
+VALUES ('atlassian', 'https://mcp.example.com/mcp', 'atlassian_mcp_token', ARRAY['getJiraIssue']);
+UPDATE business_area SET mcp_servers = ARRAY['atlassian'] WHERE name = 'Proyectos';
+-- y la credencial en property: atlassian_mcp_token = <token> (ver SECURITY.md)
+```
+
+Solo las herramientas de `allowed_tools` llegan al sub-agente, aunque el servidor exponga otras. Si el servidor no
+responde o excede `mcp_timeout_seconds`, el área sigue con sus FAQ y sus herramientas en código.
+
+### Archivos en Google Chat
+
+El asistente lee los archivos **subidos** al mensaje (no los enlaces de Drive): JPG, PNG, WebP y PDF los transcribe
+Gemini; Word, Excel, PowerPoint, texto, Markdown, CSV y JSON se extraen en código. El texto entra al mensaje marcado como
+información, queda en el historial de la conversación y sirve para las preguntas siguientes. Un archivo de más de
+`file_max_mb`, en otro formato o que falla al leerse se le avisa al colaborador.
 
 ## Migraciones
 
@@ -191,11 +235,16 @@ entrypoint.sh               Entrypoint del contenedor: aplica migraciones y arra
 src/
 ├── config.py               Settings leídos del .env
 ├── database/session.py     Engine y sesión por request (SessionDep)
-├── agents/                 Coordinador, sub-agentes, grafo de LangGraph, prompts por paso, Gemini y herramientas
+├── agents/                 Coordinador, sub-agentes, grafo de LangGraph, prompts por paso y Gemini
+│   └── tools/              Registro de herramientas, acceso, buscar_faq, Jira y adaptador MCP
 ├── models/                 Modelos ORM de SQLAlchemy
 ├── interfaces/             Modelos Pydantic de petición y respuesta
 ├── routers/                Endpoints HTTP
 ├── services/               Lógica de negocio y acceso a datos
+│   ├── google/             Token del complemento, evento, cuenta de servicio y descarga de adjuntos
+│   ├── files/              Formatos, extractores de Office y texto, y lectura de adjuntos
+│   ├── jira/               Cliente de solo lectura, JQL acotado y tableros permitidos
+│   └── mcp/                Cliente de servidores MCP
 └── utils/exceptions/       Excepciones propias del proyecto
 alembic/                    Migraciones de la base de datos
 tests/                      Tests con pytest

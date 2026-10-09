@@ -105,3 +105,8 @@ class KnowledgeSource(Protocol):
     async def search_area(self, area_id: int, query: str, k: int) -> list[FaqHit]:
         """Otra búsqueda en las FAQ de un área, desde un sub-agente en paralelo (spec 002, RF-25, RF-26)."""
         ...
+
+class EdrWriter(Protocol):
+    async def write(self, messages: list[BaseMessage]) -> str:
+        """El EDR completo como JSON en texto (spec 003, RF-8; plan D5)."""
+        ...

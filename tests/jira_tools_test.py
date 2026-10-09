@@ -3,7 +3,7 @@ import httpx
 import pytest
 from langchain_core.messages import ToolCall
 from src.agents.sub_agent import run_tool
-from src.agents.tools.available import TOOLS
+from src.agents.tools.available import JIRA, TOOLS
 from src.agents.tools.jira import INVALID_SEARCH, JIRA_DOWN, NO_RESULTS, NOT_FOUND, jira_tools
 from src.agents.tools.registry import ToolContext
 from src.services.property import Properties
@@ -114,5 +114,5 @@ async def test_buscar_tickets_jql_invalido_o_sin_resultados():
 
 
 def test_registro_solo_tiene_herramientas_de_lectura_de_jira():
-    assert set(TOOLS) == {"leer_ticket", "buscar_tickets"}
-    assert not any(word in name for name in TOOLS for word in ("crear", "actualizar", "comentar", "transicionar", "vincular"))
+    assert set(JIRA) == {"leer_ticket", "buscar_tickets"} and set(TOOLS) == {*JIRA, "generar_edr", "leer_edr"}
+    assert not any(word in name for name in JIRA for word in ("crear", "actualizar", "comentar", "transicionar", "vincular"))

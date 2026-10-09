@@ -1,4 +1,5 @@
 import logging
+import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -15,6 +16,11 @@ class ToolContext:
     requester: str | None = None
     properties: Properties = field(default_factory=lambda: Properties({}))
     session_factory: Callable[[], AsyncSession] | None = None
+    # La conversación, su hilo de Google Chat (None en el web) y el mensaje del usuario, con los archivos leídos: para las
+    # herramientas que trabajan después del mensaje, como el EDR (spec 003, plan D4).
+    conversation_id: uuid.UUID | None = None
+    chat_key: str | None = None
+    message: str = ""
 
 ToolRun = Callable[[dict[str, Any], ToolContext], Awaitable[str]]
 

@@ -6,12 +6,13 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from src.agents.llm import (ANSWER_TOOL, AreaInfo, Catalog, CoordinatorModel, Embedder, FaqHit, KnowledgeSource,
-                            RoutingDecision, SubAgentModel, Subtask, Transcriber)
+from src.agents.llm import (ANSWER_TOOL, AreaInfo, Catalog, CoordinatorModel, EdrWriter, Embedder, FaqHit,
+                            KnowledgeSource, RoutingDecision, SubAgentModel, Subtask, Transcriber)
 from src.agents.tools.registry import AreaTool
 from src.models.business_area import AreaScope
 from src.services.assistant import AssistantDeps, FileReader, Models
 from src.services.conversation import ConversationStore
+from src.services.edr.store import EdrRecord, EdrRepository
 from src.services.property import Properties
 from src.utils.exceptions.database import DatabaseUnavailableError
 
@@ -221,3 +222,44 @@ class AssistantHarness:
 
         return AssistantDeps(properties, self.store, catalog, models, lambda embedder: FakeKnowledge(), prompt,
                              read_files=self.read_files)
+
+
+class FakeEdrRepository(EdrRepository):
+    """En memoria: el EDR de cada conversación, su historial y los prompts."""
+
+    def __init__(self, history: list[BaseMessage] | None = None, prompts: dict[str, str] | None = None):
+        self.records: dict[uuid.UUID, list[EdrRecord]] = {}
+        self.messages = list(history or [])
+        self.replies: list[str] = []
+        self.prompts = dict(prompts or {"edr_writer": "Eres el redactor de EDR."})
+
+    async def latest(self, conversation_id: uuid.UUID) -> EdrRecord | None:
+        records = self.records.get(conversation_id, [])
+        return records[-1] if records else None
+
+    async def save(self, conversation_id: uuid.UUID, record: EdrRecord) -> None:
+        records = [kept for kept in self.records.get(conversation_id, []) if kept.drive_file_id != record.drive_file_id]
+        self.records[conversation_id] = [*records, record]
+
+    async def history(self, conversation_id: uuid.UUID, limit: int) -> list[BaseMessage]:
+        return self.messages[-limit:]
+
+    async def append_reply(self, conversation_id: uuid.UUID, reply: str, now: datetime) -> None:
+        self.replies.append(reply)
+
+    async def prompt(self, key: str) -> str | None:
+        return self.prompts.get(key)
+
+
+class FakeEdrWriter(EdrWriter):
+    """Devuelve las respuestas en orden (la última se repite) y guarda los mensajes de cada llamada."""
+
+    def __init__(self, *replies: str, delay: float = 0.0):
+        self.replies = list(replies) or ['{"titulo": "EDR de prueba"}']
+        self.delay = delay
+        self.calls: list[list[BaseMessage]] = []
+
+    async def write(self, messages: list[BaseMessage]) -> str:
+        self.calls.append(messages)
+        await asyncio.sleep(self.delay)
+        return self.replies.pop(0) if len(self.replies) > 1 else self.replies[0]

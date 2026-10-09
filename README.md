@@ -16,11 +16,16 @@ El asistente sigue el [patrón de coordinador](https://docs.cloud.google.com/arc
 - Un área puede tener **herramientas en código** (por ejemplo, Jira en solo lectura para Proyectos) y herramientas de
   **servidores MCP**, restringidas si hace falta a una lista de colaboradores habilitados.
 - En Google Chat el asistente **lee los archivos subidos** (fotos, PDF, Word, Excel, PowerPoint y texto, hasta 20 MB).
+- En cada mensaje el coordinador recibe, junto a la pregunta, los **temas vigentes** y, en Google Chat, el **nombre** de
+  quien escribe: si se suman áreas durante la conversación, lo cuenta en vez de repetir lo que dijo antes.
+- El área Proyectos **genera el EDR** como Google Doc con la plantilla institucional, en segundo plano: responde al
+  momento y publica el enlace en el mismo hilo cuando el documento está listo.
 
 Un saludo hace 1 llamada al modelo; una consulta a N áreas, 2 + N. Áreas, FAQ, prompts y configuración viven en la base
 de datos y se leen sin caché en cada mensaje: un cambio se aplica desde el siguiente. La especificación está en
 [docs/specs/001-virtual-assistant](docs/specs/001-virtual-assistant/spec.md) y
-[docs/specs/002-tools-and-mcp](docs/specs/002-tools-and-mcp/spec.md).
+[docs/specs/002-tools-and-mcp](docs/specs/002-tools-and-mcp/spec.md) y
+[docs/specs/003-current-topics-and-edr](docs/specs/003-current-topics-and-edr/spec.md).
 
 ## Requisitos
 
@@ -74,7 +79,7 @@ las obligatorias se cargan a mano:
 | `sub_agent_max_steps` | Llamadas al modelo de un sub-agente con herramientas antes de forzar la respuesta | `3` |
 | `google_chat_audience` | URL pública de `POST /api/v1/google-chat/events` (audiencia del ID token de Google) | — |
 | `google_chat_addon_service_account` | Cuenta de servicio del complemento de Google Workspace que firma los eventos (`service-…@gcp-sa-gsuiteaddons.iam.gserviceaccount.com`) | — |
-| `google_chat_service_account_json` | JSON de la cuenta de servicio con scope `chat.bot`, para descargar los archivos subidos a Google Chat (secreto: ver SECURITY.md). Sin ella, cada archivo se responde como «no se pudo leer» | — |
+| `google_chat_service_account_json` | JSON de la cuenta de servicio de la app de Chat (secreto: ver SECURITY.md). Descarga los archivos subidos a Google Chat (scope `chat.bot`), publica el enlace del EDR en el hilo (`chat.bot`) y guarda el EDR en Drive (`drive`). Sin ella, cada archivo se responde como «no se pudo leer» y no se generan EDR | — |
 | `file_max_mb` | Tamaño máximo de un archivo; la descarga se corta al pasarlo | `20` |
 | `file_max_chars` | Texto que se usa de cada archivo; si es más largo, se lee una parte y se avisa | `30000` |
 | `file_response_timeout_seconds` | Tiempo máximo de un mensaje con archivos; debe ser menor que los 30 s de Google Chat | `27` |
@@ -84,6 +89,11 @@ las obligatorias se cargan a mano:
 | `jira_max_results` | Tickets por búsqueda o por lista de hijos | `20` |
 | `jira_timeout_seconds` | Tiempo máximo de cada llamada a Jira | `5` |
 | `mcp_timeout_seconds` | Tiempo máximo para conectar, listar o llamar a un servidor MCP | `5` |
+| `edr_template_base64` | Plantilla HTML (Jinja2) del EDR en base64; se copia de la base anterior (ver «EDR del área Proyectos») | — |
+| `edr_drive_folder_id` | Carpeta de Drive donde se crean los EDR, compartida con la cuenta de servicio | — |
+| `edr_model` | Modelo que redacta el EDR; si no está, se usa `sub_agent_model` | — |
+| `edr_job_timeout_seconds` | Tiempo máximo para redactar y guardar un EDR en segundo plano | `180` |
+| `edr_history_messages` | Mensajes de la conversación que ve el redactor del EDR | `30` |
 
 Si falta `gemini_api_key` o un modelo, el asistente responde «no disponible» y registra qué clave falta, nunca su valor.
 
@@ -158,11 +168,12 @@ Para desactivar un área o una FAQ, `UPDATE … SET active = false`.
 
 Todos los sub-agentes tienen `buscar_faq`, que vuelve a buscar en las FAQ de su propia área. Las demás herramientas se
 programan en código con `code_tool` (`src/agents/tools/registry.py`) y se registran por nombre en
-`src/agents/tools/available.py`. Hoy hay dos, ambas de solo lectura sobre Jira: `leer_ticket` y `buscar_tickets`.
+`src/agents/tools/available.py`. Hoy hay cuatro: `leer_ticket` y `buscar_tickets` (Jira en solo lectura), y
+`generar_edr` y `leer_edr` (EDR en Google Docs).
 
 ```sql
--- Herramientas de Jira para el área Proyectos, solo para dos JP, sobre el tablero DAIA
-UPDATE business_area SET tools = ARRAY['leer_ticket', 'buscar_tickets'] WHERE name = 'Proyectos';
+-- Herramientas de Jira y del EDR para el área Proyectos, solo para dos JP, sobre el tablero DAIA
+UPDATE business_area SET tools = ARRAY['leer_ticket', 'buscar_tickets', 'generar_edr', 'leer_edr'] WHERE name = 'Proyectos';
 INSERT INTO area_member (area_id, email)
 SELECT id, unnest(ARRAY['jp1@autofin.cl', 'jp2@autofin.cl']) FROM business_area WHERE name = 'Proyectos';
 INSERT INTO jira_board (key) VALUES ('DAIA');
@@ -189,6 +200,19 @@ El asistente lee los archivos **subidos** al mensaje (no los enlaces de Drive): 
 Gemini; Word, Excel, PowerPoint, texto, Markdown, CSV y JSON se extraen en código. El texto entra al mensaje marcado como
 información, queda en el historial de la conversación y sirve para las preguntas siguientes. Un archivo de más de
 `file_max_mb`, en otro formato o que falla al leerse se le avisa al colaborador.
+
+### EDR del área Proyectos
+
+`generar_edr` revisa la configuración, agenda un trabajo en segundo plano y responde al momento. El trabajo redacta el
+EDR con la conversación (incluidos los archivos), la épica de Jira y el EDR actual, usando el prompt `edr_writer` de
+`agent_prompt`. Después lo renderiza con `edr_template_base64`, crea o actualiza el Google Doc en `edr_drive_folder_id`,
+lo guarda en `edr_document` y publica el enlace en el hilo. `leer_edr` entrega el título, el enlace y las secciones
+pendientes. Hay un solo EDR en curso por conversación, y si el pod se reinicia, el trabajo se pierde y hay que volver
+a pedirlo.
+
+La plantilla y la carpeta son las de la 1.x. Se copian una vez desde la base anterior (`chatbot_autofin`) con un
+upsert de esas dos filas de `property`, sin mostrar sus valores. Para cambiar la plantilla, se codifica el HTML en
+base64 y se actualiza la fila; no hace falta desplegar.
 
 ## Migraciones
 
@@ -236,12 +260,13 @@ src/
 ├── config.py               Settings leídos del .env
 ├── database/session.py     Engine y sesión por request (SessionDep)
 ├── agents/                 Coordinador, sub-agentes, grafo de LangGraph, prompts por paso y Gemini
-│   └── tools/              Registro de herramientas, acceso, buscar_faq, Jira y adaptador MCP
+│   └── tools/              Registro de herramientas, acceso, buscar_faq, Jira, EDR y adaptador MCP
 ├── models/                 Modelos ORM de SQLAlchemy
 ├── interfaces/             Modelos Pydantic de petición y respuesta
 ├── routers/                Endpoints HTTP
 ├── services/               Lógica de negocio y acceso a datos
-│   ├── google/             Token del complemento, evento, cuenta de servicio y descarga de adjuntos
+│   ├── google/             Token del complemento, evento, cuenta de servicio, adjuntos, Drive y mensajes de Chat
+│   ├── edr/                EDR: documento y plantilla, repositorio y trabajo en segundo plano
 │   ├── files/              Formatos, extractores de Office y texto, y lectura de adjuntos
 │   ├── jira/               Cliente de solo lectura, JQL acotado y tableros permitidos
 │   └── mcp/                Cliente de servidores MCP

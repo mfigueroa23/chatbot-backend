@@ -8,8 +8,8 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import Runnable
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from pydantic import BaseModel, Field, SecretStr
-from src.agents.llm import (ANSWER_TOOL, Answer, CoordinatorModel, Embedder, RoutingDecision, SubAgentModel,
-                            Subtask, Transcriber)
+from src.agents.llm import (ANSWER_TOOL, Answer, CoordinatorModel, EdrWriter, Embedder, RoutingDecision,
+                            SubAgentModel, Subtask, Transcriber)
 from src.agents.tools.registry import AreaTool
 from src.models.faq import EMBEDDING_DIMENSIONS
 from src.services.property import Properties
@@ -92,6 +92,14 @@ class GeminiEmbedder(Embedder):
     async def embed(self, texts: list[str]) -> list[list[float]]:
         return await guarded(lambda: self._embeddings.aembed_documents(texts))
 
+class GeminiEdrWriter(EdrWriter):
+    def __init__(self, model: Runnable[list[BaseMessage], Any]):
+        self._model = model
+
+    async def write(self, messages: list[BaseMessage]) -> str:
+        reply = await guarded(lambda: self._model.ainvoke(messages))
+        return reply.text if isinstance(reply, AIMessage) else str(reply)
+
 @dataclass(frozen=True)
 class GeminiModels:
     coordinator: GeminiCoordinator
@@ -119,3 +127,12 @@ def gemini_models(properties: Properties) -> GeminiModels:
         GeminiSubAgent(lambda specs: sub_agent_chat.bind_tools(specs, tool_choice="any")),
         GeminiEmbedder(embeddings),
         GeminiTranscriber(sub_agent_chat))
+
+def gemini_edr_writer(properties: Properties) -> GeminiEdrWriter:
+    """Modelo que redacta el EDR en segundo plano (spec 003): edr_model si está, si no sub_agent_model. Su tope es el
+    del trabajo del EDR, no el de una respuesta del chat."""
+    model = properties.values.get("edr_model") or properties.required("sub_agent_model")
+    return GeminiEdrWriter(ChatGoogleGenerativeAI(
+        model=model, api_key=SecretStr(properties.required("gemini_api_key")),
+        timeout=properties.get_int("edr_job_timeout_seconds", 180), max_retries=1,
+        response_mime_type="application/json"))

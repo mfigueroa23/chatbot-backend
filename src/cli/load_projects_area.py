@@ -1,6 +1,7 @@
-"""Carga o actualiza el área interna Proyectos (spec 002, RF-16, RF-21, RF-23): su prompt, sus FAQ sobre el EDR, sus
-herramientas de Jira, los tableros permitidos y los colaboradores habilitados. Es idempotente: se puede volver a correr
-para actualizar el contenido. Las credenciales de Jira no pasan por aquí: van a mano en property (SECURITY.md).
+"""Carga o actualiza el área interna Proyectos (spec 002, RF-16, RF-21, RF-23; spec 003, RF-7): su prompt, sus FAQ sobre
+el EDR, sus herramientas de Jira y del EDR, los tableros permitidos y los colaboradores habilitados. Es idempotente: se
+puede volver a correr para actualizar el contenido. Las credenciales de Jira no pasan por aquí: van a mano en property
+(SECURITY.md).
 
     uv run python -m src.cli.load_projects_area --boards DAIA --members jp1@autofin.cl,jp2@autofin.cl
 
@@ -19,14 +20,19 @@ from src.models.jira_board import JiraBoard
 
 NAME = "Proyectos"
 DESCRIPTION = ("Jefes de Proyecto de TI: cómo redactar una EDR (especificación de requerimientos de desarrollo) y qué va "
-               "en cada sección, y consulta del estado de tickets y épicas en Jira.")
+               "en cada sección, generar o cambiar el EDR de un proyecto como Google Doc, y consulta del estado de "
+               "tickets y épicas en Jira.")
 SYSTEM_PROMPT = (
-    "Eres el especialista del área Proyectos de TI: orientas sobre cómo redactar una EDR y consultas Jira en solo "
-    "lectura. Para el estado de un ticket o una épica, léelo; para encontrar tickets, búscalos con una condición sin "
-    "indicar el proyecto. Entrega el estado, el tipo, el responsable, la descripción y las subtareas tal como vienen, "
-    "sin inventar datos. Si piden crear, modificar, comentar, cambiar de estado o vincular un ticket, responde que por "
-    "ahora solo puedes consultar Jira.")
-TOOLS = ["leer_ticket", "buscar_tickets"]
+    "Eres el especialista del área Proyectos de TI: orientas sobre cómo redactar una EDR, generas el EDR como Google Doc "
+    "y consultas Jira en solo lectura. Para el estado de un ticket o una épica, léelo; para encontrar tickets, búscalos "
+    "con una condición sin indicar el proyecto. Entrega el estado, el tipo, el responsable, la descripción y las "
+    "subtareas tal como vienen, sin inventar datos. Si piden crear, modificar, comentar, cambiar de estado o vincular un "
+    "ticket, responde que por ahora solo puedes consultar Jira.\n\n"
+    "Si piden generar, redactar o armar un EDR, o cambiar el de la conversación, genéralo con el pedido completo y la "
+    "clave de la épica si la indicaron; no lo redactes tú en la respuesta. Se genera en segundo plano: responde que el "
+    "enlace se publicará en la conversación en unos minutos. Si preguntan por el enlace o el contenido del EDR, léelo "
+    "en vez de generarlo de nuevo.")
+TOOLS = ["leer_ticket", "buscar_tickets", "generar_edr", "leer_edr"]
 
 SECTIONS = [
     ("objetivo general", "El porqué del desarrollo en una frase, para quien lea solo esa sección."),
@@ -69,6 +75,11 @@ FAQS: dict[str, list[tuple[str, str]]] = {
          "Metadata, historial, objetivo general, visión general, product owner, equipo de desarrollo, aplicaciones "
          "afectadas, usuarios afectados, requerimientos, especificaciones de cada RF, roles y permisos, impacto, "
          "infraestructura, seguridad, criterios de aceptación, validaciones de cartera y glosario."),
+        ("¿El asistente puede generar la EDR?",
+         "Sí, si estás habilitado para el área Proyectos: pídele el EDR de un proyecto, idealmente con la clave de su "
+         "épica en Jira, y lo redacta con la conversación, los archivos que compartiste y la épica. Lo guarda como "
+         "Google Doc con la plantilla institucional y publica el enlace en la conversación en unos minutos. Después "
+         "puedes pedirle cambios y actualiza el mismo documento."),
         ("¿Qué hago si me falta un dato de la EDR?",
          "Si nadie entregó el dato, se deja como «[PENDIENTE DEFINIR]»; nunca se inventa un nombre, una fecha o una "
          "cifra. Si el JP evaluó y confirmó que la sección no aplica, se escribe «NA.» (típico en roles y permisos y en "

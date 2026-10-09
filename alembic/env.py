@@ -16,6 +16,7 @@ from src.models.message import Message
 from src.models.area_member import AreaMember
 from src.models.jira_board import JiraBoard
 from src.models.mcp_server import McpServer
+from src.models.edr_document import EdrDocumentRecord
 
 config = context.config
 

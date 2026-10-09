@@ -1,5 +1,4 @@
 import pytest
-from langchain_core.messages import HumanMessage
 from src.agents.coordinator import route, sanitize, synthesize
 from src.agents.llm import AreaInfo, AreaResult, Catalog, RoutingDecision, Subtask
 from src.models.business_area import AreaScope
@@ -53,7 +52,7 @@ async def test_route_envia_al_modelo_el_catalogo_y_sanea_su_decision():
 
     assert areas(decision) == [2]
     assert "[2] Ventas" in str(model.route_calls[0][0].content)
-    assert model.route_calls[0][-1] == HumanMessage("¿Qué crédito me conviene?")
+    assert str(model.route_calls[0][-1].content).startswith("¿Qué crédito me conviene?")
 
 
 @pytest.mark.anyio

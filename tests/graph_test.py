@@ -4,9 +4,10 @@ import pytest
 from pydantic import BaseModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from src.agents.graph import AgentContext, Limits, run_graph
-from src.agents.llm import AreaInfo, Catalog, FaqHit, RoutingDecision, SubAgentModel, Subtask
+from src.agents.llm import AreaInfo, Catalog, FaqHit, McpServerConfig, RoutingDecision, SubAgentModel, Subtask
 from src.agents.tools.registry import AreaTool, ToolContext, code_tool
 from src.models.business_area import AreaScope
+from src.services.mcp.client import McpClient
 from src.utils.exceptions.llm import LlmUnavailableError
 from tests.fakes import FakeCoordinatorModel, FakeKnowledge, FakeSubAgentModel, answer
 
@@ -196,3 +197,83 @@ async def test_buscar_faq_la_reciben_todos_los_sub_agentes(catalog, requester):
     await run_graph(context, [], "x")
 
     assert sub_agent.calls[0].tools == ["buscar_faq"]
+
+
+class TrackedClient(McpClient):
+    closed: list[str] = []
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        await super().__aexit__(*exc_info)
+        TrackedClient.closed.append(self.name)
+
+
+def mcp_area_context(sub_agent, servers: dict, requester="jp@autofin.cl") -> AgentContext:
+    area = AreaInfo(3, "Proyectos", "Jira", "Eres Proyectos.", ("EDR",), ("leer_ticket",),
+                    members=frozenset({"jp@autofin.cl"}), mcp_servers=("jira-demo",))
+    catalog = Catalog(AreaScope.internal, "Coordinador interno.", "Reglas.", (area,), servers)
+
+    def connect(server, credential, timeout):
+        return TrackedClient(server.name, mcp_demo_server(), timeout)
+
+    return AgentContext(catalog, FakeCoordinatorModel(PROJECTS_ROUTE), sub_agent, FakeKnowledge(), LIMITS,
+                        {"leer_ticket": TICKET}, requester=requester, mcp_connect=connect)
+
+
+def mcp_demo_server():
+    from mcp.server.mcpserver import MCPServer
+    server = MCPServer("jira-demo")
+
+    @server.tool()
+    def leer_estado(clave: str) -> str:
+        """Lee el estado de un ticket."""
+        return "en curso"
+
+    @server.tool()
+    def borrar_ticket(clave: str) -> str:
+        """Borra un ticket."""
+        return "borrado"
+
+    return server
+
+
+MCP_CONFIG = {"jira-demo": McpServerConfig("jira-demo", "https://mcp.example/mcp", None, ("leer_estado",))}
+
+
+@pytest.mark.anyio
+async def test_mcp_el_sub_agente_recibe_registro_mcp_y_buscar_faq():
+    sub_agent = FakeSubAgentModel()
+
+    await run_graph(mcp_area_context(sub_agent, MCP_CONFIG), [], "x")
+
+    assert sub_agent.calls[0].tools == ["buscar_faq", "leer_ticket", "leer_estado"]
+
+
+@pytest.mark.anyio
+async def test_mcp_un_no_habilitado_no_abre_servidores():
+    sub_agent = FakeSubAgentModel()
+    TrackedClient.closed = []
+
+    await run_graph(mcp_area_context(sub_agent, MCP_CONFIG, requester="otra@autofin.cl"), [], "x")
+
+    assert sub_agent.calls[0].tools == ["buscar_faq"] and TrackedClient.closed == []
+
+
+@pytest.mark.anyio
+async def test_mcp_las_sesiones_se_cierran_aunque_el_sub_agente_falle():
+    TrackedClient.closed = []
+    sub_agent = FakeSubAgentModel({"estado de DAIA-52": [LlmUnavailableError("caído")]})
+
+    await run_graph(mcp_area_context(sub_agent, MCP_CONFIG), [], "x")
+
+    assert TrackedClient.closed == ["jira-demo"]
+
+
+@pytest.mark.anyio
+async def test_mcp_un_servidor_desactivado_ya_no_se_usa_en_el_siguiente_mensaje():
+    sub_agent = FakeSubAgentModel()
+
+    await run_graph(mcp_area_context(sub_agent, MCP_CONFIG), [], "x")
+    await run_graph(mcp_area_context(sub_agent, {}), [], "x")  # el catálogo ya no lo trae: inactivo
+
+    assert [call.tools for call in sub_agent.calls] == [["buscar_faq", "leer_ticket", "leer_estado"],
+                                                        ["buscar_faq", "leer_ticket"]]

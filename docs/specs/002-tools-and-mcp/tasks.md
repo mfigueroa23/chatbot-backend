@@ -1,6 +1,6 @@
 # Tareas 002 — Herramientas y MCP por área, archivos en Google Chat y el área Proyectos consultando Jira
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 18/34 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 21/34 hechas
 
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
@@ -107,17 +107,17 @@ comportamiento de la 2.0.0 hasta que se conectan en el grafo o en `assistant`.
   `project in (…)`, JQL inválido → «no pude buscar», y el registro no tiene herramientas que escriban en Jira.
 
 ## Fase 6 — Servidores MCP
-- [ ] **T-19 — Cliente MCP** · RF-9, RF-12, RF-13 · ~25 min
+- [x] **T-19 — Cliente MCP** · RF-9, RF-12, RF-13 · ~25 min
   `src/services/mcp/client.py` (`McpClient`: sesión *streamable HTTP*, credencial como header, `list_tools` y
   `call_tool` con timeout) y `McpUnavailableError`. La sesión se inyecta para poder usar el servidor en memoria.
   Hecho cuando: `uv run pytest -q tests/mcp_test.py -k client` pasa con un `FastMCP` en memoria: lista y llama
   herramientas; un servidor que falla o se demora da `McpUnavailableError`; la credencial no aparece en `caplog`.
-- [ ] **T-20 — `McpToolset`: solo herramientas permitidas** · RF-10, RF-11, RF-13, RF-15 · ~25 min
+- [x] **T-20 — `McpToolset`: solo herramientas permitidas** · RF-10, RF-11, RF-13, RF-15 · ~25 min
   `src/agents/tools/mcp.py`: filtra por `allowed_tools`, adapta a `AreaTool` (con el JSON Schema del servidor), omite
   servidores caídos y marca el resultado como información.
   Hecho cuando: `uv run pytest -q tests/mcp_test.py -k toolset` pasa: la herramienta de escritura no permitida no
   llega; con `allowed_tools` vacío no aporta ninguna; un servidor caído se omite con un *warning* y el otro sigue.
-- [ ] **T-21 — MCP en el grafo** · RF-10, RF-12, RF-14 · ~20 min
+- [x] **T-21 — MCP en el grafo** · RF-10, RF-12, RF-14 · ~20 min
   `sub_agent_node` abre el `McpToolset` del área (si el usuario puede usar herramientas), lo cierra al terminar y toma
   la credencial de `properties[credential_key]`.
   Hecho cuando: `uv run pytest -q tests/graph_test.py -k mcp` pasa: el sub-agente recibe registro + MCP + `buscar_faq`;

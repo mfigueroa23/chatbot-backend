@@ -17,6 +17,7 @@ from src.agents.llm import (AreaResult, Catalog, CoordinatorModel, FaqHit, Knowl
 from src.agents.sub_agent import run_sub_agent
 from src.agents.tools.access import can_use_tools, restricted_note
 from src.agents.tools.faq_search import faq_search_tool
+from src.agents.tools.mcp import McpConnector, McpToolset, connect_http
 from src.agents.tools.available import TOOLS
 from src.agents.tools.registry import AreaTool, ToolContext, tools_for
 from src.services.property import Properties
@@ -47,6 +48,7 @@ class AgentContext:
     requester: str | None = None
     properties: Properties = field(default_factory=lambda: Properties({}))
     session_factory: Callable[[], AsyncSession] | None = None
+    mcp_connect: McpConnector = connect_http
 
 @dataclass
 class AgentState:
@@ -104,9 +106,13 @@ async def sub_agent_node(state: SubAgentInput, runtime: Runtime[AgentContext]) -
     tools = [faq_search, *area_tools] if allowed else [faq_search]
     note = restricted_note(area_tools) if area_tools and not allowed else None
     tool_context = ToolContext(context.requester, context.properties, context.session_factory)
-    result = await run_sub_agent(context.sub_agent, context.catalog, area, state.faqs, subtask, tools,
-                                 context.limits.sub_agent_max_steps, context.limits.sub_agent_timeout,
-                                 tool_context, note)
+    # Servidores MCP del área, solo si puede usar sus herramientas; las sesiones se cierran al salir (RF-10, RF-14).
+    servers = [context.catalog.mcp_servers[name] for name in area.mcp_servers
+               if name in context.catalog.mcp_servers] if allowed else []
+    async with McpToolset(servers, context.properties, {tool.name for tool in tools}, context.mcp_connect) as mcp_tools:
+        result = await run_sub_agent(context.sub_agent, context.catalog, area, state.faqs, subtask,
+                                     [*tools, *mcp_tools], context.limits.sub_agent_max_steps,
+                                     context.limits.sub_agent_timeout, tool_context, note)
     log_step(f"sub_agent {area.name}", started)
     return {"results": [result]}
 

@@ -3,6 +3,7 @@ synthesize. Un mensaje directo hace 1 llamada al modelo; uno con N áreas, 2 + N
 import logging
 import operator
 import time
+import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Annotated, Any
@@ -49,6 +50,11 @@ class AgentContext:
     properties: Properties = field(default_factory=lambda: Properties({}))
     session_factory: Callable[[], AsyncSession] | None = None
     mcp_connect: McpConnector = connect_http
+    # Nombre de la cuenta de Google Chat, solo para el coordinador (spec 003, RF-4, RF-6); la conversación y su hilo
+    # de Google Chat (None en el web), para las herramientas que publican después en él (spec 003, RF-11).
+    requester_name: str | None = None
+    conversation_id: uuid.UUID | None = None
+    chat_key: str | None = None
 
 @dataclass
 class AgentState:
@@ -64,11 +70,13 @@ class AgentState:
 class SubAgentInput:
     subtask: Subtask
     faqs: list[FaqHit]
+    # El mensaje del usuario no llega al modelo del sub-agente (spec 001, RNF-7): solo a sus herramientas en código.
+    message: str = ""
 
 async def route_node(state: AgentState, runtime: Runtime[AgentContext]) -> dict[str, Any]:
     context, started = runtime.context, time.perf_counter()
     decision = await route(context.coordinator, context.catalog, state.history, state.question,
-                           context.limits.max_areas)
+                           context.limits.max_areas, context.requester_name)
     log_step("route", started)
     return {"decision": decision, "reply": decision.reply}
 
@@ -89,7 +97,7 @@ def fan_out(state: AgentState) -> list[Send] | str:
     if not subtasks:
         return "synthesize"
     # Cada sub-agente recibe solo su subtarea y las FAQ de su área (RF-7, RNF-7).
-    return [Send("sub_agent", SubAgentInput(subtask, state.faqs.get(subtask.area_id, [])))
+    return [Send("sub_agent", SubAgentInput(subtask, state.faqs.get(subtask.area_id, []), state.question))
             for subtask in subtasks]
 
 async def sub_agent_node(state: SubAgentInput, runtime: Runtime[AgentContext]) -> dict[str, Any]:
@@ -105,7 +113,8 @@ async def sub_agent_node(state: SubAgentInput, runtime: Runtime[AgentContext]) -
     faq_search = faq_search_tool(area.id, context.knowledge, context.limits.faqs_per_search)
     tools = [faq_search, *area_tools] if allowed else [faq_search]
     note = restricted_note(area_tools) if area_tools and not allowed else None
-    tool_context = ToolContext(context.requester, context.properties, context.session_factory)
+    tool_context = ToolContext(context.requester, context.properties, context.session_factory,
+                               context.conversation_id, context.chat_key, state.message)
     # Servidores MCP del área, solo si puede usar sus herramientas; las sesiones se cierran al salir (RF-10, RF-14).
     servers = [context.catalog.mcp_servers[name] for name in area.mcp_servers
                if name in context.catalog.mcp_servers] if allowed else []
@@ -121,7 +130,8 @@ async def synthesize_node(state: AgentState, runtime: Runtime[AgentContext]) -> 
     # Los sub-agentes terminan en cualquier orden: se presentan en el orden de las subtareas.
     order = {subtask.area_id: index for index, subtask in enumerate(state.decision.subtasks)}
     results = sorted(state.results, key=lambda result: order.get(result.area_id, len(order)))
-    reply = await synthesize(context.coordinator, context.catalog, state.history, state.question, results)
+    reply = await synthesize(context.coordinator, context.catalog, state.history, state.question, results,
+                             context.requester_name)
     log_step("synthesize", started)
     return {"reply": reply}
 

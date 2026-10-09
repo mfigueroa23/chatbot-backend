@@ -141,6 +141,36 @@ async def test_requester_llega_al_contexto_del_grafo(monkeypatch):
     assert seen["requester"] is None
 
 
+@pytest.mark.anyio
+async def test_nombre_conversacion_e_hilo_llegan_al_contexto_y_el_web_sigue_anonimo(monkeypatch):
+    seen: list = []
+
+    async def fake_run_graph(context, history, question):
+        seen.append((context.requester_name, context.conversation_id, context.chat_key))
+        return "ok"
+
+    monkeypatch.setattr(assistant_module, "run_graph", fake_run_graph)
+
+    chat = await answer(AssistantHarness().deps(), Channel.google_chat, "spaces/A/threads/1", "hola",
+                        requester_name="Marco")
+    web = await answer(AssistantHarness().deps(), Channel.web, None, "hola")
+
+    assert seen == [("Marco", chat.conversation_id, "spaces/A/threads/1"), (None, web.conversation_id, None)]
+
+
+@pytest.mark.anyio
+async def test_el_historial_guarda_la_pregunta_sin_los_temas_vigentes():
+    harness = AssistantHarness()
+    harness.catalogs[AreaScope.internal] = Catalog(AreaScope.internal, "Coordinador interno.", "Reglas.", (SAC,))
+
+    result = await answer(harness.deps(), Channel.google_chat, "spaces/A/threads/1", "¿novedades?",
+                          requester_name="Marco")
+
+    sent = str(harness.coordinator.route_calls[0][-1].content)
+    assert "Temas vigentes: Servicio al Cliente" in sent and "Persona que escribe: Marco" in sent
+    assert harness.store.messages[result.conversation_id][0] == HumanMessage("¿novedades?")
+
+
 def file_reader(status: AttachmentStatus = "read", text: str = "Contrato: prepago con 1% de comisión", calls: list | None = None):
     async def read(attachments, properties, transcriber):
         if calls is not None:

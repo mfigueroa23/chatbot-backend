@@ -23,10 +23,10 @@ def sanitize(decision: RoutingDecision, catalog: Catalog, max_areas: int) -> Rou
     return RoutingDecision("areas", tuple(subtasks[:max_areas]))
 
 async def route(model: CoordinatorModel, catalog: Catalog, history: Sequence[BaseMessage], question: str,
-                max_areas: int) -> RoutingDecision:
-    decision = await model.route(route_messages(catalog, history, question))
+                max_areas: int, person: str | None = None) -> RoutingDecision:
+    decision = await model.route(route_messages(catalog, history, question, person))
     return sanitize(decision, catalog, max_areas)
 
 async def synthesize(model: CoordinatorModel, catalog: Catalog, history: Sequence[BaseMessage], question: str,
-                     results: Sequence[AreaResult]) -> str:
-    return await model.synthesize(synthesize_messages(catalog, history, question, results))
+                     results: Sequence[AreaResult], person: str | None = None) -> str:
+    return await model.synthesize(synthesize_messages(catalog, history, question, results, person))

@@ -23,6 +23,11 @@ def requester_of(event: AddonEvent) -> str | None:
     email = event.chat.user.email if event.chat and event.chat.user else None
     return email.strip().lower() if email and email.strip() else None
 
+def requester_name_of(event: AddonEvent) -> str | None:
+    """Nombre visible de la cuenta que escribe, solo para el coordinador (spec 003, RF-4)."""
+    name = event.chat.user.display_name if event.chat and event.chat.user else None
+    return name.strip() if name and name.strip() else None
+
 def attachments_of(event: AddonEvent) -> list[Attachment]:
     """Adjuntos del mensaje (spec 002, RF-31). Solo se descargan los subidos al chat; un enlace de Drive llega sin
     resource_name y se responde como formato no admitido (RF-38)."""

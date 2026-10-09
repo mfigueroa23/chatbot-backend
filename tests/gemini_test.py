@@ -3,8 +3,8 @@ import pytest
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langchain_core.runnables import RunnableLambda
 from pydantic import BaseModel
-from src.agents.gemini import (GeminiCoordinator, GeminiSubAgent, GeminiTranscriber, RouteOutput, SubtaskOutput,
-                               gemini_models, tool_specs)
+from src.agents.gemini import (GeminiCoordinator, GeminiEdrWriter, GeminiSubAgent, GeminiTranscriber, RouteOutput,
+                               SubtaskOutput, gemini_edr_writer, gemini_models, tool_specs)
 from src.agents.llm import ANSWER_TOOL, RoutingDecision, Subtask
 from src.agents.tools.registry import ToolContext, code_tool
 from src.services.property import Properties
@@ -134,3 +134,20 @@ async def test_transcribe_envia_el_archivo_como_bloque_multimodal(mime, kind):
 async def test_transcribe_error_del_proveedor_es_llm_unavailable():
     with pytest.raises(LlmUnavailableError):
         await GeminiTranscriber(RunnableLambda(fails)).transcribe(b"x", "image/png")
+
+
+@pytest.mark.anyio
+async def test_redactor_del_edr_devuelve_el_texto_y_los_errores_son_llm_unavailable():
+    assert await GeminiEdrWriter(RunnableLambda(lambda _: AIMessage('{"titulo": "x"}'))).write(MESSAGES) == '{"titulo": "x"}'
+    with pytest.raises(LlmUnavailableError):
+        await GeminiEdrWriter(RunnableLambda(fails)).write(MESSAGES)
+
+
+def test_redactor_del_edr_usa_edr_model_o_el_del_sub_agente_con_el_tope_del_trabajo():
+    base = {"gemini_api_key": "clave", "sub_agent_model": "sub", "edr_job_timeout_seconds": "120"}
+
+    fallback = gemini_edr_writer(Properties(base))._model
+    chosen = gemini_edr_writer(Properties({**base, "edr_model": "pro"}))._model
+
+    assert getattr(fallback, "model").endswith("sub") and getattr(chosen, "model").endswith("pro")
+    assert getattr(fallback, "timeout") == 120 and getattr(fallback, "response_mime_type") == "application/json"

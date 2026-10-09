@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from collections.abc import Sequence
 import pytest
 from pydantic import BaseModel
@@ -9,7 +10,7 @@ from src.agents.tools.registry import AreaTool, ToolContext, code_tool
 from src.models.business_area import AreaScope
 from src.services.mcp.client import McpClient
 from src.utils.exceptions.llm import LlmUnavailableError
-from tests.fakes import FakeCoordinatorModel, FakeKnowledge, FakeSubAgentModel, answer
+from tests.fakes import FakeCoordinatorModel, FakeKnowledge, FakeSubAgentModel, answer, tool_call
 
 SAC = AreaInfo(1, "Servicio al Cliente", "Pagos", "Eres SAC.", ("Pagos",))
 SALES = AreaInfo(2, "Ventas", "Créditos", "Eres Ventas.", ("Créditos",))
@@ -160,6 +161,29 @@ async def test_access_un_habilitado_recibe_las_herramientas_del_area():
 
     assert sub_agent.calls[0].tools == ["buscar_faq", "leer_ticket"]
     assert "no está habilitada" not in str(sub_agent.calls[0].messages[0].content)
+
+
+@pytest.mark.anyio
+async def test_la_herramienta_recibe_conversacion_hilo_y_mensaje_pero_el_modelo_no():
+    seen: list[ToolContext] = []
+
+    async def spy(args: Clave, context: ToolContext) -> str:
+        seen.append(context)
+        return "ok"
+
+    conversation = uuid.uuid4()
+    sub_agent = FakeSubAgentModel({"estado de DAIA-52": [tool_call("leer_ticket", {"clave": "DAIA-52"}), answer(True, "x")]})
+    catalog = Catalog(AreaScope.internal, "Coordinador interno.", "Reglas.", (PROJECTS,))
+    agent_context = AgentContext(catalog, FakeCoordinatorModel(PROJECTS_ROUTE), sub_agent, FakeKnowledge(), LIMITS,
+                                 {"leer_ticket": code_tool("leer_ticket", "Lee un ticket de Jira.", Clave, spy)},
+                                 requester="jp@autofin.cl", requester_name="Marco", conversation_id=conversation,
+                                 chat_key="spaces/A/threads/1")
+
+    await run_graph(agent_context, [], "¿en qué está DAIA-52? y mi archivo")
+
+    assert [(c.conversation_id, c.chat_key, c.message) for c in seen] == [
+        (conversation, "spaces/A/threads/1", "¿en qué está DAIA-52? y mi archivo")]
+    assert "mi archivo" not in str(sub_agent.calls[0].messages) and "Marco" not in str(sub_agent.calls[0].messages)
 
 
 @pytest.mark.anyio

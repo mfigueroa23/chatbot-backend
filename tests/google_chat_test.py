@@ -9,7 +9,7 @@ from src.routers.dependencies import get_assistant_deps, get_token_verifier
 from src.services.files.attachments import Attachment
 from src.services.google import chat_auth
 from src.services.google.chat_auth import verify_addon_token
-from src.services.google.chat_events import conversation_key, message_text, requester_of
+from src.services.google.chat_events import conversation_key, message_text, requester_name_of, requester_of
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 from tests.fakes import AssistantHarness
 
@@ -158,10 +158,31 @@ def test_requester_ausente_en_el_evento_es_none():
     assert requester_of(AddonEvent.model_validate(space_event())) is None
 
 
+def test_nombre_del_evento_llega_a_answer(monkeypatch):
+    seen: dict = {}
+
+    async def fake_answer(deps, channel, conversation, text, requester=None, attachments=(), requester_name=None):
+        seen.update(requester_name=requester_name)
+        return SimpleNamespace(reply="ok")
+
+    monkeypatch.setattr(google_chat_router, "answer", fake_answer)
+    event = space_event()
+    event["chat"]["user"] = {"email": "jp@autofin.cl", "displayName": " Marco Figueroa "}
+
+    assert post(AssistantHarness(), event).status_code == 200 and seen == {"requester_name": "Marco Figueroa"}
+
+
+def test_nombre_ausente_o_vacio_es_none():
+    event = space_event()
+    assert requester_name_of(AddonEvent.model_validate(event)) is None
+    event["chat"]["user"] = {"email": "jp@autofin.cl", "displayName": "  "}
+    assert requester_name_of(AddonEvent.model_validate(event)) is None
+
+
 def test_adjuntos_subidos_y_de_drive_llegan_a_answer(monkeypatch):
     seen: dict = {}
 
-    async def fake_answer(deps, channel, conversation, text, requester=None, attachments=()):
+    async def fake_answer(deps, channel, conversation, text, requester=None, attachments=(), requester_name=None):
         seen["attachments"] = list(attachments)
         return SimpleNamespace(reply="ok")
 

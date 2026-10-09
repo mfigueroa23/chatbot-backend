@@ -106,7 +106,7 @@ async def read_files(deps: AssistantDeps, attachments: Sequence[Attachment], pro
 
 async def answer(deps: AssistantDeps, channel: Channel, conversation: uuid.UUID | str | None,
                  text: str, requester: str | None = None,
-                 attachments: Sequence[Attachment] = ()) -> AssistantReply:
+                 attachments: Sequence[Attachment] = (), requester_name: str | None = None) -> AssistantReply:
     """DatabaseUnavailableError se propaga: el router la traduce a 503 (RF-34)."""
     started = time.perf_counter()
     now = deps.now()
@@ -127,9 +127,12 @@ async def answer(deps: AssistantDeps, channel: Channel, conversation: uuid.UUID 
         return AssistantReply(conversation_id, UNAVAILABLE)
     history = trim_history(await deps.conversations.history(conversation_id,
                                                             properties.get_int("history_messages", 10)))
+    # En Google Chat la clave es el hilo o el DM donde se publica después, por ejemplo el EDR (spec 003, RF-11).
     context = AgentContext(await deps.catalog(SCOPES[channel]), models.coordinator, models.sub_agent,
                            deps.knowledge(models.embedder), limits(properties), requester=requester,
-                           properties=properties, session_factory=deps.session_factory)
+                           properties=properties, session_factory=deps.session_factory,
+                           requester_name=requester_name, conversation_id=conversation_id,
+                           chat_key=conversation if isinstance(conversation, str) else None)
     # Con archivos el tope es otro: leerlos suma segundos y Google Chat espera hasta 30 s (spec 002, RNF-7; plan D3).
     timeout = (properties.get_int("file_response_timeout_seconds", 27) if attachments
                else properties.get_int("response_timeout_seconds", 20))

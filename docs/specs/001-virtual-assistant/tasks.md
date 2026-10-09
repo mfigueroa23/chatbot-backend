@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 6/29 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 10/29 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
@@ -46,22 +46,22 @@ BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/
   devuelve 7, `SELECT count(*) FROM agent_prompt` devuelve 4 y el `downgrade -1` borra solo esas filas.
 
 ## Fase 3 — Contratos y piezas puras
-- [ ] **T-7 — Validar el mensaje del usuario** · RF-31, RF-32 · ~15 min
+- [x] **T-7 — Validar el mensaje del usuario** · RF-31, RF-32 · ~15 min
   `src/services/message_validation.py` con los textos fijos en español para mensaje vacío y mensaje largo.
   Hecho cuando: `uv run pytest -q tests/message_validation_test.py` pasa con vacío, solo espacios, 5000 caracteres
   (válido) y 5001 caracteres (rechazado).
-- [ ] **T-8 — Definir las interfaces de los agentes y sus dobles** · RF-5, RF-12, RF-33 · ~25 min [P]
+- [x] **T-8 — Definir las interfaces de los agentes y sus dobles** · RF-5, RF-12, RF-33 · ~25 min [P]
   `src/agents/llm.py`: `Protocol` `CoordinatorModel`, `SubAgentModel` y `Embedder`; dataclasses `Catalog`, `AreaInfo`,
   `Subtask`, `FaqHit`, `AreaResult`, `RoutingDecision`. `src/utils/exceptions/llm.py` (`LlmUnavailableError`) y
   `src/utils/exceptions/google_chat.py` (`InvalidGoogleTokenError`). `tests/fakes.py` con los modelos y el embedder
   guionados, que registran cada llamada y pueden fallar o demorarse.
   Hecho cuando: `uv run pyright` da 0 errores con los dobles tipados contra los `Protocol` (sin `cast`).
-- [ ] **T-9 — Crear el registro de herramientas** · RF-27, RF-28, RF-29 · ~20 min
+- [x] **T-9 — Crear el registro de herramientas** · RF-27, RF-28, RF-29 · ~20 min
   `src/agents/tools.py`: `AreaTool` (nombre, descripción, esquema Pydantic, `async run`), `TOOLS` vacío y
   `tools_for(area, registry)`.
   Hecho cuando: `uv run pytest -q tests/tools_test.py` pasa con un registro de prueba: entrega solo las asignadas e
   ignora un nombre desconocido con un *warning* verificado con `caplog`.
-- [ ] **T-10 — Armar los prompts de cada paso** · RF-16, RF-22, RF-38, RF-39 · ~25 min
+- [x] **T-10 — Armar los prompts de cada paso** · RF-16, RF-22, RF-38, RF-39 · ~25 min
   `src/agents/prompts.py`: mensajes de `route` (prompt del canal y catálogo de áreas con sus categorías), del
   sub-agente (reglas comunes, prompt del área y FAQ marcadas como información) y de `synthesize` (resultados marcados
   como información).

@@ -1,0 +1,74 @@
+"""Interfaces tipadas de los agentes (constitución, punto 3): el grafo solo conoce estos contratos."""
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Literal, Protocol
+from langchain_core.messages import AIMessage, BaseMessage
+from pydantic import BaseModel, Field
+from src.agents.tools import AreaTool
+from src.models.business_area import AreaScope
+
+@dataclass(frozen=True)
+class AreaInfo:
+    id: int
+    name: str
+    description: str
+    system_prompt: str
+    categories: tuple[str, ...] = ()
+    tools: tuple[str, ...] = ()
+
+@dataclass(frozen=True)
+class Catalog:
+    """Lo que un coordinador puede usar en este mensaje: solo las áreas activas de su canal (RF-3)."""
+    scope: AreaScope
+    coordinator_prompt: str
+    sub_agent_rules: str
+    areas: tuple[AreaInfo, ...]
+
+    def area(self, area_id: int) -> AreaInfo | None:
+        return next((area for area in self.areas if area.id == area_id), None)
+
+@dataclass(frozen=True)
+class Subtask:
+    area_id: int
+    query: str
+
+@dataclass(frozen=True)
+class RoutingDecision:
+    """direct: el coordinador responde solo (saludo, tema ajeno, catálogo); areas: subtareas para los sub-agentes."""
+    kind: Literal["areas", "direct"]
+    subtasks: tuple[Subtask, ...] = ()
+    reply: str = ""
+
+@dataclass(frozen=True)
+class FaqHit:
+    id: int
+    category: str
+    question: str
+    answer: str
+
+@dataclass(frozen=True)
+class AreaResult:
+    area_id: int
+    area_name: str
+    query: str
+    found: bool
+    content: str = ""
+
+ANSWER_TOOL = "responder"
+
+class Answer(BaseModel):
+    """Entrega al coordinador el resultado de la subtarea."""
+    encontrado: bool = Field(description="true si las preguntas frecuentes o las herramientas responden la consulta")
+    contenido: str = Field(description="El contenido que responde la consulta; vacío si no se encontró información")
+
+class CoordinatorModel(Protocol):
+    async def route(self, messages: list[BaseMessage]) -> RoutingDecision: ...
+    async def synthesize(self, messages: list[BaseMessage]) -> str: ...
+
+class SubAgentModel(Protocol):
+    async def step(self, messages: list[BaseMessage], tools: Sequence[AreaTool], answer_only: bool) -> AIMessage:
+        """Una llamada: el AIMessage trae llamadas a herramientas, entre ellas la de `responder` (D7)."""
+        ...
+
+class Embedder(Protocol):
+    async def embed(self, texts: list[str]) -> list[list[float]]: ...

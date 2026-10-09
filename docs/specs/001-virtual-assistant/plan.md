@@ -53,6 +53,7 @@ tipadas (punto 3).
 | `src/agents/graph.py` | `StateGraph`: `route` → (`END` si es directa) → `retrieve` → `Send` a `sub_agent` × N → `synthesize`; estado con *reducer* de lista para los resultados | RF-5, RF-6, RF-7, RF-11, RF-12 |
 | `src/agents/tools.py` | Registro `TOOLS: dict[str, AreaTool]` (nombre, descripción, esquema Pydantic, `async run`) y `tools_for(area)`, que ignora los nombres desconocidos con un *warning*; sin herramientas concretas | RF-27, RF-28, RF-29 |
 | `src/models/*.py` | ORM de la sección 3 | RF-4, RF-8, RF-18, RF-22, RF-24 |
+| `src/utils/exceptions/message.py` | `InvalidMessageError`, con el texto que se responde al usuario | RF-31, RF-32 |
 | `src/utils/exceptions/llm.py` | `LlmUnavailableError` | RF-33 |
 | `src/utils/exceptions/google_chat.py` | `InvalidGoogleTokenError` | RF-35 |
 | `main.py` | Registra los routers nuevos y arranca o detiene la tarea de retención en el `lifespan` | RF-21 |

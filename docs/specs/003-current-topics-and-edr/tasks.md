@@ -1,6 +1,6 @@
 # Tareas 003 — Temas vigentes, nombre del colaborador y EDR en Google Docs
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 8/9 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 9/10 hechas
 
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a
 Drive, a la API de Chat, a Jira ni a Gemini (RNF-3).
@@ -34,3 +34,5 @@ Drive, a la API de Chat, a Jira ni a Gemini (RNF-3).
   finalización). Hecho: README, migración en la base remota, copia de las 2 properties (idénticas a las de
   `chatbot_autofin`) y CLI de Proyectos (4 herramientas, 21 FAQ; se mantienen 2 colaboradores y el tablero DAIA).
   Falta: desplegar y la demo en Google Chat.
+- [x] **T-10 — Versión 2.2.0** · `version = "2.2.0"` en `pyproject.toml` y `uv lock`, en un commit
+  `chore(release): Version 2.2.0`. Hecho cuando: `pyproject.toml` dice `2.2.0` y la suite está verde.

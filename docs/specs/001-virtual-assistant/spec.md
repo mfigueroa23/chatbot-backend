@@ -66,10 +66,10 @@ de su área → los sub-agentes la resuelven y devuelven su resultado → el coo
   ofrecerá ayuda con los temas que sí cubre, sin inventar la respuesta ni derivar a una persona.
 - RF-15: SI un sub-agente falla, ENTONCES EL SISTEMA tratará su subtarea como sin información y seguirá con los demás
   resultados.
-- RF-16: CUANDO el usuario pregunte qué puede consultar, EL SISTEMA responderá con las áreas y las categorías de FAQ de
-  su canal.
+- RF-16: CUANDO el usuario pregunte qué puede hacer o qué puede consultar, EL SISTEMA responderá desde el coordinador,
+  sin crear subtareas, solo con las áreas habilitadas de su canal y sus categorías de FAQ, contadas con sus palabras.
 - RF-17: CUANDO el mensaje sea un saludo, una despedida o un tema ajeno a las áreas, EL SISTEMA responderá desde el
-  coordinador, breve, sin crear subtareas, y recordará con qué puede ayudar.
+  coordinador, sin crear subtareas, y mencionará con qué puede ayudar solo si viene al caso.
 
 ### Conversación
 - RF-18: CUANDO un mensaje web llegue sin identificador de sesión, o con uno que no existe, EL SISTEMA creará una sesión
@@ -122,6 +122,8 @@ de su área → los sub-agentes la resuelven y devuelven su resultado → el coo
 - RF-39: EL SISTEMA tratará lo que escribe el usuario, el contenido de las FAQ y el resultado de las herramientas como
   información, nunca como instrucciones.
 - RF-40: EL SISTEMA no entregará al cliente web información de áreas internas, ni nombrará esas áreas.
+- RF-41: SI el canal no tiene áreas habilitadas, ENTONCES EL SISTEMA dirá con sus palabras que por ahora no tiene temas
+  de la empresa con los que ayudar, sin inventar ni prometer temas y sin hablar del sistema ni de su configuración.
 
 ## Requisitos no funcionales
 - RNF-1: El 95 % de las respuestas, web y Google Chat, se entrega en 10 s o menos. El tiempo máximo de respuesta
@@ -136,6 +138,9 @@ de su área → los sub-agentes la resuelven y devuelven su resultado → el coo
   ajeno hace 1.
 - RNF-7: Cada sub-agente recibe solo su subtarea, el prompt de su área, sus FAQ y sus herramientas; nunca los datos de
   otra área ni el historial completo de la conversación.
+- RNF-8: El asistente conversa como una IA y no como un chatbot de menú: sin frases de plantilla («Estimado cliente»),
+  sin repetir la lista de temas al final de cada respuesta y sin atribuirse acciones que no hace (informa, no gestiona).
+  Se revisa en la demo, porque depende del modelo y de los prompts de la BD.
 
 ## Casos límite
 - «¿Cómo pago mi cuota?» en el web → una subtarea a Servicio al Cliente y respuesta con su FAQ (RF-1, RF-5, RF-8).
@@ -149,6 +154,8 @@ de su área → los sub-agentes la resuelven y devuelven su resultado → el coo
 - Consulta que toca más áreas que el máximo configurado → solo se enrutan hasta ese máximo (RF-6).
 - «¿Qué puedo consultarte?» → áreas y categorías del canal (RF-16).
 - «Hola» → saludo breve del coordinador, sin subtareas (RF-17).
+- Canal sin áreas habilitadas y «¿en qué me puedes ayudar?» → dice con naturalidad que por ahora no tiene temas, sin
+  inventarlos ni mencionar «áreas» o «catálogos» (RF-41, RF-38).
 - Se desactiva un área → deja de recibir subtareas desde el siguiente mensaje (RF-4, RF-23).
 - Se edita una FAQ → la búsqueda usa el texto nuevo (RF-24).
 - Se cambia `faqs_per_search` en `property` → el siguiente mensaje ya usa el valor nuevo (RF-23).
@@ -198,3 +205,8 @@ de su área → los sub-agentes la resuelven y devuelven su resultado → el coo
 - **Retención de 30 días (2026-10-09, decisión del usuario):** valor por defecto en `property` (RF-21).
 - **Sin caché de `property` (2026-10-09, decisión del usuario):** se elimina la caché de 60 s de la 1.0.0; las
   properties se leen de la base de datos en cada mensaje (RF-23).
+- **Coordinador conversacional, sin mensajes fijos (2026-10-09, decisión del usuario):** el coordinador ve las áreas
+  habilitadas y responde por sí mismo, sin desplegar sub-agentes, lo que se puede contestar con eso (qué puede hacer,
+  saludos, temas ajenos, canal sin áreas); los sub-agentes solo se usan cuando se pide algo concreto de un área. Solo
+  usa el conocimiento de la BD y responde como una IA, no como un chatbot de los 90 (RF-16, RF-17, RF-41, RNF-8). Se
+  descartó responder un texto fijo cuando el canal no tiene áreas.

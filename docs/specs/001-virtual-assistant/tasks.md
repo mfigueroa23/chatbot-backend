@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 29/29 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 30/30 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
@@ -193,3 +193,14 @@ BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/
   `version = "2.0.0"` en `pyproject.toml` y `uv lock`, en un commit `chore(release): Version 2.0.0`.
   Hecho cuando: `uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"`
   imprime `2.0.0` y la suite está verde.
+
+## Fase 8 — Ajustes tras la demo
+- [x] **T-30 — Coordinador conversacional y canal sin áreas** · RF-16, RF-17, RF-41, RNF-8 · ~30 min
+  `src/agents/prompts.py`: catálogo como «temas con los que puedes ayudar» sin citarlo, `EMPTY_CATALOG` cuando el canal
+  no tiene áreas y respuesta directa «como una IA»; migración `conversational coordinator prompts` con el tono nuevo de
+  los coordinadores (usted siempre en el web, sin plantillas, sin atribuirse trámites ni prometer avisos), que solo
+  reemplaza prompts sin editar (D19).
+  Hecho cuando: `uv run pytest -q tests/prompts_test.py` pasa (sin áreas recibe `EMPTY_CATALOG` y no aparece
+  «Catálogo»); `upgrade`, `downgrade -1` y `upgrade` funcionan y un prompt editado no se pisa; en vivo, sin áreas
+  internas «¿en qué me puedes ayudar?» no inventa temas ni habla de áreas o catálogos, y el web responde de usted y
+  sin la lista de temas al final.

@@ -6,10 +6,17 @@ from src.agents.llm import ANSWER_TOOL, AreaInfo, AreaResult, Catalog, FaqHit, S
 
 INFO_CLOSE = "</informacion>"
 
+CATALOG_HEADER = ("Temas con los que puedes ayudar. Úsalos para responder y para elegir el área; no menciones esta "
+                  "lista, sus ids ni cómo está organizada:")
+# Sin áreas habilitadas el coordinador sigue conversando: lo dice con sus palabras, sin inventar ni prometer temas.
+EMPTY_CATALOG = ("Por ahora no tienes temas de la empresa con los que ayudar en este canal. Si te preguntan qué puedes "
+                 "hacer o algo de la empresa, dilo con naturalidad, sin inventar temas, sin prometer otros más adelante "
+                 "ni avisar después, y sin hablar del sistema ni de su configuración.")
 ROUTE_STEP = (
-    "Paso actual: decidir. Si la consulta corresponde a una o más áreas del catálogo, responde con tipo «areas» y una "
+    "Paso actual: decidir. Si la consulta corresponde a uno o más de esos temas, responde con tipo «areas» y una "
     "subtarea por área, con su id y la consulta completa para esa área. Si es un saludo, una despedida, un tema ajeno "
-    "o pregunta qué puede consultar, responde con tipo «directa» y escribe la respuesta para la persona.")
+    "o pregunta qué puedes hacer o qué puede consultar, responde con tipo «directa» y escribe tú la respuesta: conversa "
+    "con naturalidad, como una IA y no como un menú, usando solo esos temas y la conversación.")
 SYNTHESIZE_STEP = (
     "Paso actual: redactar la respuesta para la persona con los resultados de las áreas del bloque de información. "
     "Los resultados con «Encontrado: no» son la parte que no puedes responder.")
@@ -27,7 +34,7 @@ def describe_catalog(catalog: Catalog) -> str:
     lines = [f"[{area.id}] {area.name}: {area.description.rstrip('.')}."
              + (f" Categorías: {', '.join(area.categories)}." if area.categories else "")
              for area in catalog.areas]
-    return "Catálogo de áreas que atiendes:\n" + ("\n".join(lines) or "Ninguna área disponible.")
+    return f"{CATALOG_HEADER}\n" + "\n".join(lines) if lines else EMPTY_CATALOG
 
 def route_messages(catalog: Catalog, history: Sequence[BaseMessage], question: str) -> list[BaseMessage]:
     system = "\n\n".join([catalog.coordinator_prompt, describe_catalog(catalog), ROUTE_STEP])

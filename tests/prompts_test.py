@@ -1,6 +1,7 @@
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from src.agents.llm import AreaInfo, AreaResult, Catalog, FaqHit, Subtask
-from src.agents.prompts import route_messages, sub_agent_messages, synthesize_messages
+from src.agents.prompts import (CATALOG_HEADER, EMPTY_CATALOG, route_messages, sub_agent_messages,
+                                synthesize_messages)
 from src.models.business_area import AreaScope
 
 SAC = AreaInfo(1, "Servicio al Cliente", "Pagos y seguros", "Eres SAC.", ("Pagos", "Seguros"))
@@ -53,3 +54,18 @@ def test_synthesize_pone_los_resultados_en_el_bloque_de_informacion():
     assert "El seguro de desgravamen." in block(system)
     assert "Encontrado: sí" in block(system) and "Encontrado: no" in block(system)
     assert messages[-1] == HumanMessage("¿y el seguro?") and "¿y el seguro?" not in system
+
+
+def test_sin_areas_habilitadas_el_coordinador_lo_dice_sin_inventar_ni_citar_el_catalogo():
+    empty = Catalog(AreaScope.internal, "Coordinador interno.", "Reglas.", ())
+
+    system = str(route_messages(empty, [], "¿En qué me puedes ayudar?")[0].content)
+
+    assert EMPTY_CATALOG in system and CATALOG_HEADER not in system
+    assert "Ninguna área" not in system and "Catálogo" not in system
+
+
+def test_el_catalogo_pide_no_citarlo():
+    system = str(route_messages(CATALOG, [], "hola")[0].content)
+
+    assert CATALOG_HEADER in system and "no menciones esta lista" in system

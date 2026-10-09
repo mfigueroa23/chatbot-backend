@@ -49,6 +49,12 @@ async def load_catalog(session: AsyncSession, scope: AreaScope) -> Catalog:
         raise DatabaseUnavailableError(str(exc)) from exc
     return build_catalog(areas, categories, prompts, scope)
 
+async def load_prompt(session: AsyncSession, key: str) -> str | None:
+    try:
+        return await session.scalar(select(AgentPrompt.content).where(AgentPrompt.key == key))
+    except (SQLAlchemyError, OSError) as exc:
+        raise DatabaseUnavailableError(str(exc)) from exc
+
 def pending_faqs(rows: Sequence[FaqRow]) -> list[FaqRow]:
     """FAQ nuevas o editadas: su contenido cambió desde el último embedding (RF-24)."""
     return [row for row in rows if row.embedded_hash != row.content_hash]

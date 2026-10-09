@@ -14,7 +14,7 @@ from src.agents.llm import Catalog, CoordinatorModel, Embedder, KnowledgeSource,
 from src.models.business_area import AreaScope
 from src.models.conversation import Channel
 from src.services.conversation import ConversationStore, PgConversationStore
-from src.services.knowledge import PgKnowledge, load_catalog
+from src.services.knowledge import PgKnowledge, load_catalog, load_prompt
 from src.services.message_validation import validate_user_message
 from src.services.property import Properties, load_properties
 from src.utils.exceptions.llm import LlmUnavailableError
@@ -24,6 +24,7 @@ from src.utils.exceptions.property import PropertyNotFoundError
 logger = logging.getLogger(__name__)
 
 UNAVAILABLE = "El asistente no está disponible en este momento. La consulta se puede repetir en unos minutos."
+DEFAULT_WELCOME = "¡Hola! Soy el asistente virtual. Pregúntame «¿qué puedo consultar?» para ver los temas."
 SCOPES = {Channel.web: AreaScope.external, Channel.google_chat: AreaScope.internal}
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class AssistantDeps:
     catalog: Callable[[AreaScope], Awaitable[Catalog]]
     models: Callable[[Properties], Models]
     knowledge: Callable[[Embedder], KnowledgeSource]
+    prompt: Callable[[str], Awaitable[str | None]]
     now: Callable[[], datetime] = lambda: datetime.now(UTC)
 
 @dataclass(frozen=True)
@@ -56,7 +58,8 @@ def pg_deps(session: AsyncSession) -> AssistantDeps:
         conversations=PgConversationStore(session),
         catalog=lambda scope: load_catalog(session, scope),
         models=lambda properties: to_models(gemini_models(properties)),
-        knowledge=lambda embedder: PgKnowledge(session, embedder))
+        knowledge=lambda embedder: PgKnowledge(session, embedder),
+        prompt=lambda key: load_prompt(session, key))
 
 def limits(properties: Properties) -> Limits:
     return Limits(max_areas=properties.get_int("max_areas_per_message", 3),
@@ -70,6 +73,13 @@ def trim_history(history: Sequence[BaseMessage]) -> list[BaseMessage]:
     while messages and not isinstance(messages[0], HumanMessage):
         messages.pop(0)
     return messages
+
+async def welcome(deps: AssistantDeps) -> str:
+    """Presentación fija al agregar el asistente a un space o DM: sin llamar al modelo (RF-37, D13)."""
+    text = await deps.prompt("internal_welcome")
+    if not text:
+        logger.warning("Falta el prompt internal_welcome en agent_prompt; se usa el texto por defecto")
+    return text or DEFAULT_WELCOME
 
 async def answer(deps: AssistantDeps, channel: Channel, conversation: uuid.UUID | str | None,
                  text: str) -> AssistantReply:

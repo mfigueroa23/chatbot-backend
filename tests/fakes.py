@@ -6,10 +6,14 @@ from datetime import datetime
 from types import SimpleNamespace
 from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from src.agents.llm import (ANSWER_TOOL, CoordinatorModel, Embedder, FaqHit, KnowledgeSource, RoutingDecision,
-                            SubAgentModel, Subtask)
+from src.agents.llm import (ANSWER_TOOL, AreaInfo, Catalog, CoordinatorModel, Embedder, FaqHit, KnowledgeSource,
+                            RoutingDecision, SubAgentModel, Subtask)
 from src.agents.tools import AreaTool
+from src.models.business_area import AreaScope
+from src.services.assistant import AssistantDeps, Models
 from src.services.conversation import ConversationStore
+from src.services.property import Properties
+from src.utils.exceptions.database import DatabaseUnavailableError
 
 
 class PropertySession:
@@ -121,17 +125,22 @@ class FakeKnowledge(KnowledgeSource):
 class FakeConversationStore(ConversationStore):
     """En memoria: guarda (rol, texto) por conversación, como la tabla message."""
 
-    def __init__(self):
+    def __init__(self, down: bool = False):
+        self.down = down
         self.messages: dict[uuid.UUID, list[BaseMessage]] = {}
         self.keys: dict[str, uuid.UUID] = {}
         self.last_message_at: dict[uuid.UUID, datetime] = {}
 
     async def web_conversation(self, session_id: uuid.UUID | None, now: datetime) -> uuid.UUID:
+        if self.down:
+            raise DatabaseUnavailableError("conexión rechazada")
         if session_id is not None and session_id in self.messages:
             return session_id
         return self._create(now)
 
     async def chat_conversation(self, key: str, now: datetime) -> uuid.UUID:
+        if self.down:
+            raise DatabaseUnavailableError("conexión rechazada")
         if key not in self.keys:
             self.keys[key] = self._create(now)
         return self.keys[key]
@@ -154,3 +163,40 @@ class FakeConversationStore(ConversationStore):
         self.messages[conversation_id] = []
         self.last_message_at[conversation_id] = now
         return conversation_id
+
+
+SAC = AreaInfo(1, "Servicio al Cliente", "Pagos", "Eres SAC.", ("Pagos",))
+EXTERNAL = Catalog(AreaScope.external, "Coordinador externo.", "Reglas.", (SAC,))
+INTERNAL = Catalog(AreaScope.internal, "Coordinador interno.", "Reglas.", ())
+SECRET = "AIza-clave-secreta"
+PROPERTIES = {"gemini_api_key": SECRET, "history_messages": "2", "response_timeout_seconds": "5"}
+
+
+class AssistantHarness:
+    """Arma AssistantDeps con dobles y deja a mano lo que cada test quiere cambiar o mirar."""
+
+    def __init__(self, coordinator: FakeCoordinatorModel | None = None, properties: dict[str, str] | None = None,
+                 db_down: bool = False):
+        self.coordinator = coordinator or FakeCoordinatorModel(RoutingDecision("direct", reply="¡Hola!"))
+        self.properties = dict(PROPERTIES if properties is None else properties)
+        self.store = FakeConversationStore(down=db_down)
+        self.catalogs = {AreaScope.external: EXTERNAL, AreaScope.internal: INTERNAL}
+        self.prompts = {"internal_welcome": "¡Hola! Soy el asistente."}
+        self.requested_scopes: list[AreaScope] = []
+
+    def deps(self) -> AssistantDeps:
+        async def properties() -> Properties:
+            return Properties(dict(self.properties))
+
+        async def catalog(scope: AreaScope) -> Catalog:
+            self.requested_scopes.append(scope)
+            return self.catalogs[scope]
+
+        def models(properties: Properties) -> Models:
+            properties.required("gemini_api_key")
+            return Models(self.coordinator, FakeSubAgentModel(), FakeEmbedder())
+
+        async def prompt(key: str) -> str | None:
+            return self.prompts.get(key)
+
+        return AssistantDeps(properties, self.store, catalog, models, lambda embedder: FakeKnowledge(), prompt)

@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 20/29 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 24/29 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
@@ -134,25 +134,25 @@ BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/
   generan y guardan antes de buscar (RF-24).
 
 ## Fase 6 — Canales
-- [ ] **T-21 — Endpoint del chat web** · RF-1, RF-18, RF-32, RF-34 · ~25 min
+- [x] **T-21 — Endpoint del chat web** · RF-1, RF-18, RF-32, RF-34 · ~25 min
   `src/interfaces/web_chat.py` y `src/routers/web_chat.py` (`POST /api/v1/chat`), registrado en `main.py`.
   Hecho cuando: `uv run pytest -q tests/web_chat_test.py` pasa (sin `session_id` devuelve uno nuevo; con uno existente
   lo mantiene; un mensaje largo da `200` con aviso; `DatabaseUnavailableError` da `503`) y, en local,
   `curl -X POST localhost:8000/api/v1/chat -H 'Content-Type: application/json' -d '{"message":"hola"}'` devuelve
   `session_id` y `reply`, y un segundo `curl` con ese `session_id` deja 4 filas en `message` para la conversación.
-- [ ] **T-22 — Verificar el token y la conversación de Google Chat** · RF-35, RF-36 · ~25 min [P]
+- [x] **T-22 — Verificar el token y la conversación de Google Chat** · RF-35, RF-36 · ~25 min [P]
   `src/services/google_chat.py`: `verify_addon_token` (certificados de Google con `httpx`, emisor, audiencia y cuenta
   de servicio leídas de `property` sin caché), `conversation_key(event)` y `message_text(event)`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k "token or key or text"` pasa: sin token, emisor ajeno y
   cuenta ajena lanzan `InvalidGoogleTokenError`; la clave es el hilo en un space y el space en un DM; en un space se
   usa `argumentText`.
-- [ ] **T-23 — Endpoint de eventos de Google Chat** · RF-2, RF-35, RF-36, RF-37 · ~25 min
+- [x] **T-23 — Endpoint de eventos de Google Chat** · RF-2, RF-35, RF-36, RF-37 · ~25 min
   `src/interfaces/google_chat.py` y `src/routers/google_chat.py` (`POST /api/v1/google-chat/events`): `401` si el token
   es inválido, bienvenida fija al agregar al asistente, y respuesta en `createMessageAction`.
   Hecho cuando: `uv run pytest -q tests/google_chat_test.py -k endpoint` pasa con el verificador sobrescrito: `401`;
   agregar al space devuelve `internal_welcome` sin llamar al modelo; un mensaje devuelve la respuesta en el formato del
   complemento.
-- [ ] **T-24 — Borrar las conversaciones vencidas** · RF-21, RF-23 · ~20 min
+- [x] **T-24 — Borrar las conversaciones vencidas** · RF-21, RF-23 · ~20 min
   `src/services/retention.py`: tarea cada hora que lee `conversation_retention_days` y llama a `delete_expired`;
   arranca y se cancela en el `lifespan` de `main.py`.
   Hecho cuando: `uv run pytest -q tests/retention_test.py` pasa (la fecha de corte sale de la property; un error de BD

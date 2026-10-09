@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 24/29 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 29/29 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
@@ -159,28 +159,37 @@ BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/
   se registra y la tarea sigue) y `TestClient(app)` arranca y se cierra sin dejar tareas pendientes.
 
 ## Fase 7 — Cierre
-- [ ] **T-25 — Documentar en el README** · RF-18, RF-25, RF-35 · ~20 min
+- [x] **T-25 — Documentar en el README** · RF-18, RF-25, RF-35 · ~20 min
   Endpoints, properties (incluido que no hay caché), tablas, cómo dar de alta un área con sus FAQ y su prompt, y cómo
   asignar herramientas.
   Hecho cuando: cada endpoint de `main.py` y cada property que lee `src/` aparece en el README
   (`grep` de las claves de la sección 5 del plan en `README.md` las encuentra todas).
-- [ ] **T-26 — Crear la base de la 2.0.0** · RNF-5 · ~25 min
+- [x] **T-26 — Crear la base de la 2.0.0** · RNF-5 · ~25 min
   BD nueva separada en el servidor (nombre por confirmar con el usuario), `CREATE EXTENSION vector` con un usuario con
   privilegios y `uv run alembic upgrade head`. Requiere la confirmación del usuario antes de tocar el servidor remoto.
   Hecho cuando: `SELECT version_num FROM alembic_version` en la BD nueva devuelve la última revisión y la BD de la 1.x
   sigue en `d80964432e58`.
-- [ ] **T-27 — Cargar el contenido y los secretos** · RF-22, RF-25 · ~25 min
+  Hecho en local (2026-10-09, decisión del usuario): `asistente_virtual` en el contenedor `pgvector/pgvector:pg17`,
+  creada por el usuario; la extensión `vector` la creó el superusuario `postgres`. El servidor remoto no se tocó.
+- [x] **T-27 — Cargar el contenido y los secretos** · RF-22, RF-25 · ~25 min
   Áreas, categorías, FAQ y prompts de la demo; `gemini_api_key`, los modelos y las properties de Google Chat cargados a
   mano, según SECURITY.md.
   Hecho cuando: el primer `POST /api/v1/chat` contra la BD nueva responde con una FAQ y todas las FAQ quedan con
   `embedded_hash = content_hash`.
-- [ ] **T-28 — Demo manual y latencia** · RF-1 a RF-40, RNF-1 · ~30 min
+  Hecho en local (2026-10-09): key, modelos (`gemini-3.1-flash-lite`, `gemini-embedding-001`), «Servicio al Cliente» y
+  «Ayuda General» copiados de la 1.x local (37 FAQ). El primer mensaje respondió con la FAQ de pagos en 7,2 s y embebió
+  solo las FAQ del área consultada (D10); las de un área se embeben la primera vez que se la consulta.
+- [x] **T-28 — Demo manual y latencia** · RF-1 a RF-40, RNF-1 · ~30 min
   Los guiones de los criterios de finalización de la spec: en el web, una FAQ, dos áreas, sin información, «¿qué
   puedo consultar?» y un intento de ver el prompt; en Google Chat, una FAQ en un space (en el hilo) y una pregunta de
   seguimiento.
   Hecho cuando: todos los guiones dan el resultado esperado y, en los logs de duración, el p95 de 20 mensajes es de
   10 s o menos.
-- [ ] **T-29 — Versión 2.0.0** · — · ~5 min
+  Hecho en local (2026-10-09): 22 mensajes, mediana 4,5 s, p95 7,5 s, máximo 7,6 s. Web por HTTP: FAQ, seguimiento,
+  dos áreas (con un área externa temporal), sin información, catálogo, intento de ver el prompt y pregunta interna,
+  todos correctos. Canal interno en proceso (`answer` con la BD y Gemini reales): FAQ y seguimiento en el mismo hilo.
+  Pendiente al desplegar: la misma prueba con la app real de Google Chat (necesita URL pública).
+- [x] **T-29 — Versión 2.0.0** · — · ~5 min
   `version = "2.0.0"` en `pyproject.toml` y `uv lock`, en un commit `chore(release): Version 2.0.0`.
   Hecho cuando: `uv run python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])"`
   imprime `2.0.0` y la suite está verde.

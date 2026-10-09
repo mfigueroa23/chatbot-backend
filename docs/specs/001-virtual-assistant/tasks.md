@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 10/29 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 15/29 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
@@ -70,26 +70,26 @@ BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/
   instrucciones.
 
 ## Fase 4 — Agentes
-- [ ] **T-11 — Coordinador: decidir y sanear las subtareas** · RF-3, RF-5, RF-6, RF-16, RF-17, RF-40 · ~25 min
+- [x] **T-11 — Coordinador: decidir y sanear las subtareas** · RF-3, RF-5, RF-6, RF-16, RF-17, RF-40 · ~25 min
   Nodo `route` en `src/agents/coordinator.py`, que llama a `CoordinatorModel.route` y sanea la decisión (D3, D4).
   Hecho cuando: `uv run pytest -q tests/coordinator_test.py -k route` pasa: descarta ids de otro canal, inactivos e
   inventados; quita duplicados; aplica `max_areas_per_message`; una respuesta directa no crea subtareas.
-- [ ] **T-12 — Coordinador: redactar la respuesta** · RF-12, RF-13, RF-14 · ~20 min
+- [x] **T-12 — Coordinador: redactar la respuesta** · RF-12, RF-13, RF-14 · ~20 min
   Nodo `synthesize`, que recibe la pregunta, el historial y los `AreaResult` con `found`.
   Hecho cuando: `uv run pytest -q tests/coordinator_test.py -k synthesize` pasa con todas las áreas con información,
   una sin información y ninguna con información; en todos los casos el modelo falso recibe los `found` correctos.
-- [ ] **T-13 — Sub-agente con `responder`** · RF-8, RF-9, RF-10, RF-11, RF-28, RF-30, RNF-7 · ~30 min
+- [x] **T-13 — Sub-agente con `responder`** · RF-8, RF-9, RF-10, RF-11, RF-28, RF-30, RNF-7 · ~30 min
   `src/agents/sub_agent.py`: una llamada con la herramienta `responder(encontrado, contenido)` obligatoria y, si el
   área tiene herramientas, un bucle de hasta `sub_agent_max_steps` (D7).
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k "not timeout"` pasa: el modelo recibe solo su subtarea,
   su prompt y sus FAQ, sin historial; `encontrado=False` produce `found=False`; una herramienta que falla devuelve un
   aviso genérico; al llegar al tope de pasos se fuerza `responder`.
-- [ ] **T-14 — Sub-agente: fallo y tiempo máximo** · RF-15 · ~15 min
+- [x] **T-14 — Sub-agente: fallo y tiempo máximo** · RF-15 · ~15 min
   `asyncio.timeout(sub_agent_timeout_seconds)`; una excepción o el *timeout* devuelven `AreaResult(found=False)` y un
   log sin el texto del mensaje.
   Hecho cuando: `uv run pytest -q tests/sub_agent_test.py -k timeout` pasa con un modelo falso que se demora y otro que
   lanza una excepción.
-- [ ] **T-15 — Grafo del coordinador** · RF-1, RF-2, RF-4, RF-7, RF-11, RF-12, RF-15, RNF-2, RNF-6 · ~30 min
+- [x] **T-15 — Grafo del coordinador** · RF-1, RF-2, RF-4, RF-7, RF-11, RF-12, RF-15, RNF-2, RNF-6 · ~30 min
   `src/agents/graph.py`: `StateGraph` `route` → (`END` si es directa) → `retrieve` → `Send` × N → `synthesize`, con
   *reducer* de lista para los resultados. Las dependencias (modelos, `KnowledgeSource`, registro de herramientas y
   límites) se pasan en el contexto del grafo.

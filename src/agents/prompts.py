@@ -24,7 +24,7 @@ def information(source: str, body: str) -> str:
             f"{INFO_CLOSE}")
 
 def describe_catalog(catalog: Catalog) -> str:
-    lines = [f"[{area.id}] {area.name}: {area.description}"
+    lines = [f"[{area.id}] {area.name}: {area.description.rstrip('.')}."
              + (f" Categorías: {', '.join(area.categories)}." if area.categories else "")
              for area in catalog.areas]
     return "Catálogo de áreas que atiendes:\n" + ("\n".join(lines) or "Ninguna área disponible.")

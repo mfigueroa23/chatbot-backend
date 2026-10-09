@@ -1,10 +1,11 @@
 import asyncio
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
-from src.agents.llm import ANSWER_TOOL, CoordinatorModel, Embedder, RoutingDecision, SubAgentModel
+from src.agents.llm import (ANSWER_TOOL, CoordinatorModel, Embedder, FaqHit, KnowledgeSource, RoutingDecision,
+                            SubAgentModel, Subtask)
 from src.agents.tools import AreaTool
 
 
@@ -77,7 +78,7 @@ class FakeSubAgentModel(SubAgentModel):
     """Guion por subtarea: la clave es la consulta del HumanMessage; cada llamada consume el siguiente paso
     (el último se repite). Un paso que es una excepción se lanza."""
 
-    def __init__(self, scripts: dict[str, list[AIMessage | Exception]] | None = None,
+    def __init__(self, scripts: Mapping[str, Sequence[AIMessage | Exception]] | None = None,
                  default: AIMessage | None = None, delay: float = 0.0):
         self.scripts = {query: list(steps) for query, steps in (scripts or {}).items()}
         self.default = default or answer(True, "Contenido del área")
@@ -102,3 +103,13 @@ class FakeEmbedder(Embedder):
     async def embed(self, texts: list[str]) -> list[list[float]]:
         self.batches.append(texts)
         return [[float(len(text)), 1.0, 0.0] for text in texts]
+
+
+class FakeKnowledge(KnowledgeSource):
+    def __init__(self, faqs: Mapping[int, list[FaqHit]] | None = None):
+        self.faqs = dict(faqs or {})
+        self.searches: list[tuple[list[Subtask], int]] = []
+
+    async def search(self, subtasks: Sequence[Subtask], k: int) -> dict[int, list[FaqHit]]:
+        self.searches.append((list(subtasks), k))
+        return {subtask.area_id: self.faqs.get(subtask.area_id, [])[:k] for subtask in subtasks}

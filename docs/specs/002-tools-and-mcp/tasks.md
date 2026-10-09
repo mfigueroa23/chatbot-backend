@@ -1,6 +1,6 @@
 # Tareas 002 — Herramientas y MCP por área, archivos en Google Chat y el área Proyectos consultando Jira
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 14/34 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 18/34 hechas
 
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
@@ -86,22 +86,22 @@ comportamiento de la 2.0.0 hasta que se conectan en el grafo o en `assistant`.
   pasa: las opciones llegan al bloque de resultados y la instrucción de aclarar está en el prompt de `synthesize`.
 
 ## Fase 5 — Jira en solo lectura
-- [ ] **T-15 — Acotar el JQL a los tableros permitidos** · RF-18, RF-19 · ~15 min
+- [x] **T-15 — Acotar el JQL a los tableros permitidos** · RF-18, RF-19 · ~15 min
   `src/services/jira/scope.py`: `board_of(key)` y `scoped_jql(jql, boards)` (portados de la 1.x).
   Hecho cuando: `uv run pytest -q tests/jira_client_test.py -k scope` pasa: quita `ORDER BY` y lo repone, rechaza
   paréntesis desbalanceados, antepone `project in (…)` y `board_of` devuelve `None` para claves inválidas.
-- [ ] **T-16 — Cliente de Jira de solo lectura** · RF-17, RF-20, RF-22 · ~25 min [P]
+- [x] **T-16 — Cliente de Jira de solo lectura** · RF-17, RF-20, RF-22 · ~25 min [P]
   `src/services/jira/client.py` (`search`, `get_issue`, `children`, `adf_to_text`) y `JiraUnavailableError`.
   Hecho cuando: `uv run pytest -q tests/jira_client_test.py -k client` pasa con `MockTransport`: arma bien las rutas
   `/rest/api/3/…`, 404 → `None`, 5xx y timeout → `JiraUnavailableError`, y el transporte falla si recibe un método
   distinto de GET.
-- [ ] **T-17 — Herramienta `leer_ticket`** · RF-17, RF-19, RF-22, RF-23, RF-24, RNF-2 · ~25 min
+- [x] **T-17 — Herramienta `leer_ticket`** · RF-17, RF-19, RF-22, RF-23, RF-24, RNF-2 · ~25 min
   `src/services/jira/boards.py` y `src/agents/tools/jira.py`: tablero revisado antes de llamar a Jira, credenciales
   desde `ToolContext.properties` y descripción marcada como información.
   Hecho cuando: `uv run pytest -q tests/jira_tools_test.py -k leer` pasa: estado, tipo, responsable, descripción,
   subtareas e hijos; tablero no permitido sin llamar a Jira y con el mismo texto que un inexistente; Jira caído sin
   detalle; el token no aparece en `caplog`.
-- [ ] **T-18 — Herramienta `buscar_tickets` y registro** · RF-18, RF-20, RF-21 · ~20 min
+- [x] **T-18 — Herramienta `buscar_tickets` y registro** · RF-18, RF-20, RF-21 · ~20 min
   `buscar_tickets(jql)` acotada con `scoped_jql`; `TOOLS` registra `buscar_tickets` y `leer_ticket`.
   Hecho cuando: `uv run pytest -q tests/jira_tools_test.py -k "buscar or registro"` pasa: la búsqueda llega a Jira con
   `project in (…)`, JQL inválido → «no pude buscar», y el registro no tiene herramientas que escriban en Jira.

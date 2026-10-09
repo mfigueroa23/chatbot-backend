@@ -17,7 +17,8 @@ from src.agents.llm import (AreaResult, Catalog, CoordinatorModel, FaqHit, Knowl
 from src.agents.sub_agent import run_sub_agent
 from src.agents.tools.access import can_use_tools, restricted_note
 from src.agents.tools.faq_search import faq_search_tool
-from src.agents.tools.registry import TOOLS, AreaTool, ToolContext, tools_for
+from src.agents.tools.available import TOOLS
+from src.agents.tools.registry import AreaTool, ToolContext, tools_for
 from src.services.property import Properties
 
 logger = logging.getLogger(__name__)

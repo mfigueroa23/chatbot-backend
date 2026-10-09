@@ -33,10 +33,8 @@ def code_tool[A: BaseModel](name: str, description: str, schema: type[A],
         return await fn(schema.model_validate(args), context)
     return AreaTool(name, description, schema.model_json_schema(), run)
 
-# Registro de herramientas en código; un área usa las que nombra business_area.tools (spec 001, RF-27 y RF-28).
-TOOLS: dict[str, AreaTool] = {}
-
-def tools_for(area_name: str, names: Sequence[str], registry: Mapping[str, AreaTool] = TOOLS) -> list[AreaTool]:
+def tools_for(area_name: str, names: Sequence[str], registry: Mapping[str, AreaTool]) -> list[AreaTool]:
+    """Las herramientas del registro que nombra el área (business_area.tools); el registro está en available.py."""
     unknown = [name for name in names if name not in registry]
     if unknown:
         logger.warning("El área %s tiene herramientas que no existen en el registro: %s", area_name, ", ".join(unknown))

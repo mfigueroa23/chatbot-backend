@@ -3,7 +3,8 @@ import pytest
 from langchain_core.messages import ToolCall
 from pydantic import BaseModel
 from src.agents.sub_agent import TOOL_FAILED, run_tool
-from src.agents.tools.registry import TOOLS, ToolContext, code_tool, tools_for
+from src.agents.tools.available import TOOLS
+from src.agents.tools.registry import ToolContext, code_tool, tools_for
 
 
 class NoArgs(BaseModel):

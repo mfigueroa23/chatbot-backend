@@ -1,6 +1,6 @@
 # Tareas 003 — Temas vigentes, nombre del colaborador y EDR en Google Docs
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 7/9 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 8/9 hechas
 
 "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la BD, a
 Drive, a la API de Chat, a Jira ni a Gemini (RNF-3).
@@ -14,8 +14,9 @@ Drive, a la API de Chat, a Jira ni a Gemini (RNF-3).
   `assistant_test` comprueban que el nombre llega y que no sale del bloque.
 
 ## Fase 2 — EDR
-- [ ] **T-3 — Modelo, migración y semillas** · RF-12, RF-19 · `EdrDocumentRecord`; migración con la tabla, el prompt
+- [x] **T-3 — Modelo, migración y semillas** · RF-12, RF-19 · `EdrDocumentRecord`; migración con la tabla, el prompt
   `edr_writer` y las 2 properties. Hecho cuando: `upgrade`, `downgrade -1` y `upgrade` funcionan en la BD local.
+  Aplicada con `upgrade head` en la base remota (2026-10-09); el `downgrade` se revisó con `--sql`, sin correrlo.
 - [x] **T-4 — Documento y plantilla** · RF-9, RF-10, RF-18 · `EdrDocument`, `edr_config` y `render_edr_html` (sandbox).
   Hecho cuando: `edr_document_test` cubre base64 inválido, autoescape, sandbox y `StrictUndefined`.
 - [x] **T-5 — Drive y mensajes de Chat** · RF-10, RF-11 · `DriveClient` y `ChatMessenger`. Hecho cuando: los tests con
@@ -30,4 +31,6 @@ Drive, a la API de Chat, a Jira ni a Gemini (RNF-3).
 
 ## Fase 3 — Cierre
 - [ ] **T-9 — README y despliegue** · copia de las properties, CLI de Proyectos y demo manual (spec, criterios de
-  finalización). README hecho; faltan la migración en la BD remota, la copia de las properties, el CLI y la demo.
+  finalización). Hecho: README, migración en la base remota, copia de las 2 properties (idénticas a las de
+  `chatbot_autofin`) y CLI de Proyectos (4 herramientas, 21 FAQ; se mantienen 2 colaboradores y el tablero DAIA).
+  Falta: desplegar y la demo en Google Chat.

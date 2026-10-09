@@ -5,32 +5,14 @@ from pydantic.alias_generators import to_camel
 class ChatModel(BaseModel):
     model_config = ConfigDict(alias_generator=to_camel, populate_by_name=True)
 
-class ChatUser(ChatModel):
-    email: str | None = None
-    display_name: str | None = None
-
 class ChatThread(ChatModel):
     name: str
 
-class AttachmentDataRef(ChatModel):
-    resource_name: str
-
-class DriveDataRef(ChatModel):
-    drive_file_id: str
-
-class ChatAttachment(ChatModel):
-    """Archivo adjunto a un mensaje: subido a Chat (attachmentDataRef) o enlazado desde Drive (driveDataRef)."""
-    content_name: str = "archivo"
-    content_type: str = ""
-    source: str | None = None
-    attachment_data_ref: AttachmentDataRef | None = None
-    drive_data_ref: DriveDataRef | None = None
-
 class ChatMessage(ChatModel):
     text: str | None = None
+    # En un space, el texto sin la mención al asistente.
     argument_text: str | None = None
     thread: ChatThread | None = None
-    attachment: list[ChatAttachment] = []
 
 class ChatSpace(ChatModel):
     name: str
@@ -44,16 +26,15 @@ class SpacePayload(ChatModel):
     space: ChatSpace | None = None
 
 class AddonChat(ChatModel):
-    user: ChatUser | None = None
     message_payload: MessagePayload | None = None
     added_to_space_payload: SpacePayload | None = None
 
 class AddonEvent(ChatModel):
-    """Evento de una app de Chat creada como complemento de Google Workspace: solo los campos que usa el bot."""
+    """Evento de una app de Chat creada como complemento de Google Workspace: solo los campos que se usan."""
     chat: AddonChat | None = None
 
 def chat_reply(text: str | None) -> dict[str, Any]:
-    # Respuesta síncrona del complemento; sin texto no se publica nada.
+    # Respuesta síncrona del complemento: Chat la publica en el hilo del mensaje (RF-36). Sin texto no se publica nada.
     if not text:
         return {}
     return {"hostAppDataAction": {"chatDataAction": {"createMessageAction": {"message": {"text": text}}}}}

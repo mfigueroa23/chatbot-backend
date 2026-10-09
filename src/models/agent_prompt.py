@@ -3,6 +3,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from src.models.base import Base
 
 class AgentPrompt(Base):
+    """Prompts editables sin desplegar: external_coordinator, internal_coordinator, sub_agent_rules e internal_welcome."""
     __tablename__ = "agent_prompt"
 
     key: Mapped[str] = mapped_column(String(60), primary_key=True)

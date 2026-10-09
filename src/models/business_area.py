@@ -1,5 +1,5 @@
 from enum import StrEnum
-from sqlalchemy import Enum, String, Text, UniqueConstraint
+from sqlalchemy import Enum, String, Text
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.orm import Mapped, mapped_column
 from src.models.base import Base
@@ -9,16 +9,15 @@ class AreaScope(StrEnum):
     external = "external"
 
 class BusinessArea(Base):
+    """Cada área activa es un sub-agente: agregar o desactivar un área no requiere código (RF-4)."""
     __tablename__ = "business_area"
-    __table_args__ = (UniqueConstraint("scope", "name"),)
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    name: Mapped[str] = mapped_column(String(120))
+    name: Mapped[str] = mapped_column(String(120), unique=True)
     description: Mapped[str] = mapped_column(Text)
+    # internal: solo la ve el agente interno (Google Chat); external: solo el externo (chat web).
     scope: Mapped[AreaScope] = mapped_column(Enum(AreaScope, name="area_scope"))
     system_prompt: Mapped[str | None] = mapped_column(Text)
-    # Space de Google Chat donde el área recibe solicitudes y consultas sin respuesta (spaces/…).
-    chat_space: Mapped[str | None] = mapped_column(String(255))
-    active: Mapped[bool] = mapped_column(server_default="true")
-    # Herramientas extra del agente del área (p. ej. jira, edr); vacío en las áreas que solo responden con FAQ.
+    # Nombres del registro de herramientas en código (src/agents/tools.py); vacío si el área solo responde con FAQ.
     tools: Mapped[list[str]] = mapped_column(ARRAY(Text), server_default="{}")
+    active: Mapped[bool] = mapped_column(server_default="true")

@@ -1,52 +1,29 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from fastapi import FastAPI
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from psycopg import AsyncConnection
-from psycopg.rows import DictRow, dict_row
-from psycopg_pool import AsyncConnectionPool
-from src.agents.graph import build_graph, checkpoint_serializer
 from src.config import settings
 from src.database.session import SessionLocal, engine
-from src.models.business_area import AreaScope
-from src.services.realtime import ConnectionHub
-from src.services.sweeper import sweep_forever
-from src.utils.clock import SystemClock
-from src.routers.executive import router as executive_router
 from src.routers.google_chat import router as google_chat_router
 from src.routers.health import router as health_router
-from src.routers.live_chat import router as live_chat_router
 from src.routers.web_chat import router as web_chat_router
+from src.services.retention import purge_expired, run_retention
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    # min_size=0: no abre conexiones hasta que se usa. Las tablas las crea la migración de Alembic, así que no se llama
-    # a .setup().
-    async with AsyncConnectionPool[AsyncConnection[DictRow]](
-        settings.psycopg_conninfo, min_size=0, max_size=10, open=False,
-        kwargs={"autocommit": True, "row_factory": dict_row},
-    ) as pool:
-        app.state.checkpointer = AsyncPostgresSaver(pool, serde=checkpoint_serializer())
-        app.state.external_graph = build_graph(AreaScope.external, app.state.checkpointer)
-        app.state.internal_graph = build_graph(AreaScope.internal, app.state.checkpointer)
-        app.state.hub = ConnectionHub()
-        sweeper = asyncio.create_task(sweep_forever(SessionLocal, SystemClock(), app.state.hub, app.state.checkpointer))
-        yield
-        sweeper.cancel()
-        await app.state.hub.close()
+    retention = asyncio.create_task(run_retention(lambda: purge_expired(SessionLocal)))
+    yield
+    retention.cancel()
+    with suppress(asyncio.CancelledError):
+        await retention
     await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)
-# Tareas en segundo plano de Google Chat que deben sobrevivir a la petición que las creó.
-app.state.chat_tasks = set()
 
 app.include_router(health_router)
-app.include_router(google_chat_router)
-app.include_router(executive_router)
 app.include_router(web_chat_router)
-app.include_router(live_chat_router)
+app.include_router(google_chat_router)
 
 app_logger = logging.getLogger("src")
 app_logger.handlers = logging.getLogger("uvicorn").handlers

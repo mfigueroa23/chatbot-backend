@@ -1,75 +1,61 @@
+"""Sub-agente de un área: resuelve una subtarea con las FAQ de su área y sus herramientas, y devuelve el resultado
+al coordinador. No habla con el usuario ni delega en otros sub-agentes (RF-11)."""
+import asyncio
 import logging
-from dataclasses import dataclass, field
-from typing import Literal
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
-from src.agents.llm import AgentLLM, AreaInfo, CallBudget, FaqHit, FinalText, ProcedureHit
-from src.agents.tools import AreaToolbox
+from collections.abc import Sequence
+from langchain_core.messages import BaseMessage, ToolCall, ToolMessage
+from pydantic import ValidationError
+from src.agents.llm import ANSWER_TOOL, Answer, AreaInfo, AreaResult, Catalog, FaqHit, SubAgentModel, Subtask
+from src.agents.prompts import sub_agent_messages
+from src.agents.tools import AreaTool
 
 logger = logging.getLogger(__name__)
 
-AreaAnswerKind = Literal["answered", "no_answer", "procedure_ask", "procedure_sent", "notification_failed", "gave_up"]
+TOOL_FAILED = "La herramienta no está disponible en este momento."
 
-@dataclass(frozen=True)
-class AreaAnswer:
-    area: AreaInfo
-    kind: AreaAnswerKind
-    text: str | None
-    attempts: dict[int, int]
-    procedure_id: int | None = None  # procedimiento iniciado por la tool, si lo hubo
-    # Contenido del área en que se apoyó la respuesta: el control posterior acepta los datos que vienen de aquí.
-    faqs: list[FaqHit] = field(default_factory=list, compare=False)
-    procedures: list[ProcedureHit] = field(default_factory=list, compare=False)
-    links: list[str] = field(default_factory=list, compare=False)  # enlaces de los EDR guardados
-    documents: list[str] = field(default_factory=list, compare=False)  # lo leído en Jira o guardado en un EDR
+async def run_tool(tools: Sequence[AreaTool], call: ToolCall) -> str:
+    tool = next((tool for tool in tools if tool.name == call["name"]), None)
+    if tool is None:
+        return f"La herramienta {call['name']} no existe."
+    try:
+        return await tool.run(tool.args_schema.model_validate(call["args"]))
+    except Exception as exc:
+        # Sin detalles al modelo ni al usuario (RF-30); el tipo basta para diagnosticar.
+        logger.warning("La herramienta %s falló: %s", tool.name, type(exc).__name__)
+        return TOOL_FAILED
 
-def with_evidence(answer: AreaAnswer, toolbox: AreaToolbox) -> AreaAnswer:
-    procedures = toolbox.procedures + ([toolbox.pending] if toolbox.pending and toolbox.pending not in toolbox.procedures else [])
-    found = answer.kind != "no_answer"
-    return AreaAnswer(answer.area, answer.kind, answer.text, answer.attempts, answer.procedure_id,
-                      list(toolbox.faqs) if found else [], procedures if found else [], list(toolbox.links),
-                      list(toolbox.documents))
+async def solve(model: SubAgentModel, messages: list[BaseMessage], area: AreaInfo, subtask: Subtask,
+                tools: Sequence[AreaTool], max_steps: int) -> AreaResult:
+    not_found = AreaResult(area.id, area.name, subtask.query, False)
+    for step in range(max(max_steps, 1)):
+        # Sin herramientas, o en el último paso, solo puede responder: el número de llamadas queda acotado (RNF-6).
+        answer_only = not tools or step == max_steps - 1
+        reply = await model.step(messages, [] if answer_only else tools, answer_only)
+        final = next((call for call in reply.tool_calls if call["name"] == ANSWER_TOOL), None)
+        if final is not None:
+            try:
+                answer = Answer.model_validate(final["args"])
+            except ValidationError:
+                logger.warning("El sub-agente del área %s respondió con un formato inválido", area.name)
+                return not_found
+            found = answer.encontrado and bool(answer.contenido.strip())
+            return AreaResult(area.id, area.name, subtask.query, found, answer.contenido.strip() if found else "")
+        if not reply.tool_calls:
+            logger.warning("El sub-agente del área %s terminó sin responder", area.name)
+            return not_found
+        outputs = [ToolMessage(await run_tool(tools, call), tool_call_id=call["id"] or "") for call in reply.tool_calls]
+        messages = [*messages, reply, *outputs]
+    return not_found
 
-EDR_SAVED_WITHOUT_SUMMARY = "El EDR quedó guardado; no alcancé a resumir su contenido."
-
-async def run_sub_agent(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMessage], max_steps: int,
-                        budget: CallBudget | None = None) -> AreaAnswer:
-    return with_evidence(await answer_area(llm, toolbox, messages, max_steps, budget), toolbox)
-
-async def answer_area(llm: AgentLLM, toolbox: AreaToolbox, messages: list[BaseMessage], max_steps: int,
-                      budget: CallBudget | None) -> AreaAnswer:
-    area = toolbox.area
-    # Un área sin prompt no puede responder y no se llama al modelo.
-    if not area.system_prompt:
-        return AreaAnswer(area, "no_answer", None, toolbox.attempts)
-    messages = list(messages)
-    for _ in range(max_steps):
-        if budget is not None:
-            budget.spend()
-        step = await llm.step(messages, toolbox.specs())
-        if isinstance(step, FinalText):
-            # Guardarraíl: un texto que no se apoya en contenido del área se descarta.
-            if not toolbox.evidence or not step.text.strip():
-                logger.info("Respuesta del área %s descartada: no se apoyó en FAQ ni procedimientos", area.name)
-                return AreaAnswer(area, "no_answer", None, toolbox.attempts)
-            return AreaAnswer(area, "answered", step.text, toolbox.attempts)
-        messages.append(AIMessage(content=step.text, tool_calls=[
-            {"id": call.id, "name": call.name, "args": call.args, "type": "tool_call"} for call in step.calls]))
-        for call in step.calls:
-            output = await toolbox.execute(call, step.text)
-            messages.append(ToolMessage(content=output, tool_call_id=call.id, name=call.name))
-            if toolbox.result is not None and toolbox.procedure is not None:
-                # La tool de procedimiento es terminal: su plantilla es la respuesta, sin volver al modelo.
-                result, procedure_id = toolbox.result, toolbox.procedure.id
-                match result.kind:
-                    case "ask":
-                        return AreaAnswer(area, "procedure_ask", result.text, result.attempts, procedure_id)
-                    case "sent":
-                        return AreaAnswer(area, "procedure_sent", result.text, result.attempts, procedure_id)
-                    case "failed":
-                        return AreaAnswer(area, "notification_failed", None, result.attempts, procedure_id)
-                return AreaAnswer(area, "gave_up", None, result.attempts, procedure_id)
-    logger.warning("El área %s superó el máximo de %s pasos sin responder", area.name, max_steps)
-    if toolbox.links:
-        # El EDR ya quedó guardado: aunque falte el resumen, el colaborador debe recibir el enlace real.
-        return AreaAnswer(area, "answered", EDR_SAVED_WITHOUT_SUMMARY, toolbox.attempts)
-    return AreaAnswer(area, "no_answer", None, toolbox.attempts)
+async def run_sub_agent(model: SubAgentModel, catalog: Catalog, area: AreaInfo, faqs: Sequence[FaqHit],
+                        subtask: Subtask, tools: Sequence[AreaTool], max_steps: int, timeout: float) -> AreaResult:
+    messages = sub_agent_messages(catalog, area, faqs, subtask)
+    try:
+        async with asyncio.timeout(timeout):
+            return await solve(model, messages, area, subtask, tools, max_steps)
+    except TimeoutError:
+        logger.warning("El sub-agente del área %s superó los %s s", area.name, timeout)
+    except Exception as exc:
+        # Un sub-agente caído no impide responder con las demás áreas (RF-15).
+        logger.warning("El sub-agente del área %s falló: %s", area.name, type(exc).__name__)
+    return AreaResult(area.id, area.name, subtask.query, False)

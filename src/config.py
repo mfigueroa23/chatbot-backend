@@ -24,10 +24,5 @@ class Settings(BaseSettings):
             database=self.DB_NAME,
         )
 
-    @property
-    def psycopg_conninfo(self) -> str:
-        # El checkpointer de LangGraph usa psycopg, no asyncpg: misma BD con otro driver.
-        return self.database_url.set(drivername="postgresql").render_as_string(hide_password=False)
-
 
 settings = Settings()  # pyright: ignore[reportCallIssue]  (.env)

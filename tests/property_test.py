@@ -1,45 +1,65 @@
+import logging
+from typing import Any, cast
 import pytest
-from src.services.property import get_float_property, get_int_property, get_str_property
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.services.property import Properties, get_property, load_properties
+from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.property import PropertyNotFoundError
-from tests.fakes import property_session
+from tests.fakes import PropertySession
+
+
+def as_session(fake: PropertySession) -> AsyncSession:
+    return cast(AsyncSession, cast(Any, fake))
 
 
 @pytest.mark.anyio
-async def test_devuelve_el_valor_presente_con_su_tipo():
-    session = property_session({"rag_top_k": "6", "rag_min_similarity": "0.8", "gemini_model": "flash"})
+async def test_get_property_consulta_la_tabla_en_cada_llamada():
+    fake = PropertySession({"faqs_per_search": "5"})
 
-    assert await get_int_property(session, "rag_top_k", 4) == 6
-    assert await get_float_property(session, "rag_min_similarity", 0.75) == 0.8
-    assert await get_str_property(session, "gemini_model") == "flash"
+    assert await get_property(as_session(fake), "faqs_per_search") == "5"
+    fake.values["faqs_per_search"] = "8"
 
-
-@pytest.mark.anyio
-async def test_devuelve_el_default_si_la_property_no_existe():
-    session = property_session({})
-
-    assert await get_int_property(session, "rag_top_k", 4) == 4
-    assert await get_float_property(session, "rag_min_similarity", 0.75) == 0.75
-    assert await get_str_property(session, "gemini_model", "flash") == "flash"
+    assert await get_property(as_session(fake), "faqs_per_search") == "8"
+    assert fake.queries == 2
 
 
 @pytest.mark.anyio
-async def test_lanza_error_si_no_existe_y_no_hay_default():
+async def test_get_property_lanza_error_si_no_existe():
     with pytest.raises(PropertyNotFoundError):
-        await get_int_property(property_session({}), "rag_top_k")
+        await get_property(as_session(PropertySession({})), "gemini_api_key")
 
 
 @pytest.mark.anyio
-async def test_lanza_error_si_el_valor_no_es_numerico():
-    with pytest.raises(ValueError):
-        await get_int_property(property_session({"rag_top_k": "cuatro"}), "rag_top_k", 4)
+async def test_load_properties_trae_todo_en_una_consulta():
+    fake = PropertySession({"faqs_per_search": "5", "coordinator_model": "flash"})
+
+    properties = await load_properties(as_session(fake))
+
+    assert properties.values == {"faqs_per_search": "5", "coordinator_model": "flash"}
+    assert fake.queries == 1
 
 
 @pytest.mark.anyio
-async def test_un_cambio_en_la_tabla_se_ve_en_la_siguiente_lectura():
-    values = {"rag_top_k": "4"}
-    session = property_session(values)
-    assert await get_int_property(session, "rag_top_k") == 4
+@pytest.mark.parametrize("call", [
+    lambda session: get_property(session, "faqs_per_search"),
+    lambda session: load_properties(session),
+])
+async def test_base_de_datos_caida_lanza_database_unavailable(call):
+    with pytest.raises(DatabaseUnavailableError):
+        await call(as_session(PropertySession({}, down=True)))
 
-    values["rag_top_k"] = "6"
 
-    assert await get_int_property(session, "rag_top_k") == 6
+def test_required_lanza_error_si_falta():
+    with pytest.raises(PropertyNotFoundError):
+        Properties({}).required("gemini_api_key")
+
+
+def test_get_int_usa_el_valor_o_el_default(caplog):
+    properties = Properties({"faqs_per_search": "8", "history_messages": "diez"})
+
+    with caplog.at_level(logging.WARNING, logger="src"):
+        assert properties.get_int("faqs_per_search", 5) == 8
+        assert properties.get_int("max_areas_per_message", 3) == 3
+        assert properties.get_int("history_messages", 10) == 10
+
+    assert "history_messages" in caplog.text and "diez" not in caplog.text

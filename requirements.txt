@@ -12,44 +12,24 @@ annotated-types==0.8.0
     # via pydantic
 anyio==4.15.1
     # via
-    #   google-genai
     #   httpx
-    #   httpx2
-    #   langsmith
     #   starlette
     #   watchfiles
-argon2-cffi==25.1.0
-    # via chatbot-backend
-argon2-cffi-bindings==26.1.0
-    # via argon2-cffi
 asyncpg==0.31.0
     # via chatbot-backend
 certifi==2026.7.22
     # via
     #   httpcore
     #   httpx
-    #   requests
     #   sentry-sdk
-cffi==2.1.1
-    # via
-    #   argon2-cffi-bindings
-    #   cryptography
-charset-normalizer==3.5.2
-    # via requests
 click==8.5.0
     # via
     #   rich-toolkit
     #   uvicorn
 colorama==0.4.6 ; sys_platform == 'win32'
     # via typer
-cryptography==50.0.2
-    # via google-auth
 detect-installer==0.2.1
     # via fastapi-cloud-cli
-distro==1.9.0
-    # via
-    #   google-genai
-    #   langsmith
 dnspython==2.8.0
     # via email-validator
 email-validator==2.3.0
@@ -66,14 +46,6 @@ fastar==0.12.0
     # via
     #   fastapi
     #   fastapi-cloud-cli
-filetype==1.2.0
-    # via langchain-google-genai
-google-auth==2.60.0
-    # via
-    #   chatbot-backend
-    #   google-genai
-google-genai==2.28.0
-    # via langchain-google-genai
 googleapis-common-protos==1.75.5
     # via opentelemetry-exporter-otlp-proto-http
 greenlet==3.5.6
@@ -81,66 +53,22 @@ greenlet==3.5.6
 h11==0.16.0
     # via
     #   httpcore
-    #   httpcore2
     #   uvicorn
 httpcore==1.0.9
     # via httpx
-httpcore2==2.13.1 ; sys_platform != 'emscripten'
-    # via httpx2
 httptools==0.8.0
     # via uvicorn
 httpx==0.28.1
     # via
     #   fastapi
     #   fastapi-cloud-cli
-    #   google-genai
-    #   langchain-core
-    #   langgraph-sdk
-httpx2==2.13.1
-    # via langsmith
-httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
-    # via httpx2
 idna==3.20
     # via
     #   anyio
     #   email-validator
     #   httpx
-    #   httpx2
-    #   requests
 jinja2==3.1.6
     # via fastapi
-jsonpatch==1.33
-    # via langchain-core
-jsonpointer==3.2.0
-    # via jsonpatch
-langchain-core==1.6.7
-    # via
-    #   langchain-google-genai
-    #   langgraph
-    #   langgraph-checkpoint
-    #   langgraph-prebuilt
-    #   langgraph-sdk
-langchain-google-genai==4.4.0
-    # via chatbot-backend
-langchain-protocol==0.0.19
-    # via
-    #   langchain-core
-    #   langgraph-sdk
-langgraph==1.2.14
-    # via chatbot-backend
-langgraph-checkpoint==4.2.0
-    # via
-    #   langgraph
-    #   langgraph-checkpoint-postgres
-    #   langgraph-prebuilt
-langgraph-checkpoint-postgres==3.1.2
-    # via chatbot-backend
-langgraph-prebuilt==1.1.0
-    # via langgraph
-langgraph-sdk==0.4.6
-    # via langgraph
-langsmith==0.14.4
-    # via langchain-core
 mako==1.4.3
     # via alembic
 markdown-it-py==4.2.0
@@ -177,48 +105,14 @@ opentelemetry-sdk==1.45.0
     #   opentelemetry-exporter-otlp-proto-http
 opentelemetry-semantic-conventions==0.66b0
     # via opentelemetry-sdk
-orjson==3.13.0
-    # via
-    #   langgraph-checkpoint-postgres
-    #   langgraph-sdk
-    #   langsmith
-ormsgpack==1.12.2
-    # via langgraph-checkpoint
-packaging==26.3
-    # via
-    #   langchain-core
-    #   langsmith
-pgvector==0.5.0
-    # via chatbot-backend
 protobuf==7.36.2
     # via
     #   googleapis-common-protos
     #   opentelemetry-proto
-psycopg==3.3.6
-    # via
-    #   chatbot-backend
-    #   langgraph-checkpoint-postgres
-psycopg-binary==3.3.6 ; implementation_name != 'pypy'
-    # via psycopg
-psycopg-pool==3.3.3
-    # via
-    #   langgraph-checkpoint-postgres
-    #   psycopg
-pyasn1==0.6.4
-    # via pyasn1-modules
-pyasn1-modules==0.4.2
-    # via google-auth
-pycparser==3.0 ; implementation_name != 'PyPy'
-    # via cffi
 pydantic==2.13.5
     # via
     #   fastapi
     #   fastapi-cloud-cli
-    #   google-genai
-    #   langchain-core
-    #   langchain-google-genai
-    #   langgraph
-    #   langsmith
     #   pydantic-extra-types
     #   pydantic-settings
 pydantic-core==2.46.5
@@ -231,8 +125,6 @@ pydantic-settings==2.15.0
     #   fastapi
 pygments==2.21.0
     # via rich
-pyjwt==2.15.1
-    # via chatbot-backend
 python-dotenv==1.2.4
     # via
     #   pydantic-settings
@@ -240,17 +132,7 @@ python-dotenv==1.2.4
 python-multipart==0.0.32
     # via fastapi
 pyyaml==6.0.3
-    # via
-    #   langchain-core
-    #   uvicorn
-requests==2.34.2
-    # via
-    #   google-auth
-    #   google-genai
-    #   langsmith
-    #   requests-toolbelt
-requests-toolbelt==1.0.0
-    # via langsmith
+    # via uvicorn
 rich==15.0.0
     # via
     #   rich-toolkit
@@ -265,24 +147,12 @@ sentry-sdk==2.71.0
     # via fastapi-cloud-cli
 shellingham==1.5.4
     # via typer
-sniffio==1.3.1
-    # via
-    #   google-genai
-    #   langsmith
 sqlalchemy==2.1.3
     # via
     #   alembic
     #   chatbot-backend
 starlette==1.7.0
     # via fastapi
-tenacity==9.1.4
-    # via
-    #   google-genai
-    #   langchain-core
-truststore==0.10.4 ; sys_platform != 'emscripten'
-    # via
-    #   httpcore2
-    #   httpx2
 typer==0.27.3
     # via
     #   fastapi-cli
@@ -292,15 +162,10 @@ typing-extensions==4.16.0
     #   alembic
     #   anyio
     #   fastapi
-    #   google-genai
-    #   langchain-core
-    #   langchain-protocol
-    #   langsmith
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
-    #   psycopg-pool
     #   pydantic
     #   pydantic-core
     #   pydantic-extra-types
@@ -312,17 +177,10 @@ typing-inspection==0.4.4
     #   fastapi
     #   pydantic
     #   pydantic-settings
-tzdata==2026.5 ; sys_platform == 'win32'
-    # via psycopg
 urllib3==2.8.0
     # via
     #   opentelemetry-exporter-http-transport
-    #   requests
     #   sentry-sdk
-uuid-utils==0.17.1
-    # via
-    #   langchain-core
-    #   langsmith
 uvicorn==0.54.0
     # via
     #   fastapi
@@ -332,15 +190,5 @@ uvloop==0.23.0 ; platform_python_implementation != 'PyPy' and sys_platform != 'c
     # via uvicorn
 watchfiles==1.3.0
     # via uvicorn
-websockets==16.1.1
-    # via
-    #   google-genai
-    #   langgraph-sdk
-    #   langsmith
-    #   uvicorn
-xxhash==4.0.1
-    # via
-    #   langgraph
-    #   langsmith
-zstandard==0.25.0
-    # via langsmith
+websockets==17.2
+    # via uvicorn

@@ -9,9 +9,16 @@ INFO_CLOSE = "</informacion>"
 CATALOG_HEADER = ("Temas con los que puedes ayudar. Úsalos para responder y para elegir el área; no menciones esta "
                   "lista, sus ids ni cómo está organizada:")
 # Sin áreas habilitadas el coordinador sigue conversando: lo dice con sus palabras, sin inventar ni prometer temas.
-EMPTY_CATALOG = ("Por ahora no tienes temas de la empresa con los que ayudar en este canal. Si te preguntan qué puedes "
-                 "hacer o algo de la empresa, dilo con naturalidad, sin inventar temas, sin prometer otros más adelante "
-                 "ni avisar después, y sin hablar del sistema ni de su configuración.")
+EMPTY_CATALOG = ("No tienes temas de la empresa con los que ayudar en este canal. Si te preguntan qué puedes hacer o "
+                 "algo de la empresa, dilo con naturalidad y en presente, sin inventar temas, sin hablar de novedades, "
+                 "de cuándo habrá temas ni de lo que podrás hacer más adelante, y sin hablar del sistema ni de su "
+                 "configuración.")
+# Las áreas se leen en cada mensaje: el historial no manda sobre los temas de hoy (RF-23, RF-42).
+TOPICS_CHANGE = ("Los temas pueden cambiar durante la conversación: valen siempre los de este mensaje, aunque antes "
+                 "hayas dicho otra cosa. Si ahora tienes temas que antes no tenías, puedes contarlo con naturalidad.")
+# El asistente solo responde cuando le escriben: no puede avisar ni volver a escribir por su cuenta.
+NO_PROMISES = ("Solo respondes cuando te escriben: no digas «te avisaré», «te lo haré saber», «te escribiré» ni nada "
+               "que prometa volver a contactar a la persona.")
 ROUTE_STEP = (
     "Paso actual: decidir. Si la consulta corresponde a uno o más de esos temas, responde con tipo «areas» y una "
     "subtarea por área, con su id y la consulta completa para esa área. Si es un saludo, una despedida, un tema ajeno "
@@ -34,10 +41,12 @@ def describe_catalog(catalog: Catalog) -> str:
     lines = [f"[{area.id}] {area.name}: {area.description.rstrip('.')}."
              + (f" Categorías: {', '.join(area.categories)}." if area.categories else "")
              for area in catalog.areas]
-    return f"{CATALOG_HEADER}\n" + "\n".join(lines) if lines else EMPTY_CATALOG
+    topics = f"{CATALOG_HEADER}\n" + "\n".join(lines) if lines else EMPTY_CATALOG
+    return f"{topics}\n\n{TOPICS_CHANGE}"
 
 def route_messages(catalog: Catalog, history: Sequence[BaseMessage], question: str) -> list[BaseMessage]:
-    system = "\n\n".join([catalog.coordinator_prompt, describe_catalog(catalog), ROUTE_STEP])
+    # NO_PROMISES va al final: es lo último que lee el modelo antes de escribir.
+    system = "\n\n".join([catalog.coordinator_prompt, describe_catalog(catalog), ROUTE_STEP, NO_PROMISES])
     return [SystemMessage(system), *history, HumanMessage(question)]
 
 def sub_agent_messages(catalog: Catalog, area: AreaInfo, faqs: Sequence[FaqHit], subtask: Subtask) -> list[BaseMessage]:
@@ -55,5 +64,6 @@ def describe_results(results: Sequence[AreaResult]) -> str:
 def synthesize_messages(catalog: Catalog, history: Sequence[BaseMessage], question: str,
                         results: Sequence[AreaResult]) -> list[BaseMessage]:
     system = "\n\n".join([catalog.coordinator_prompt, describe_catalog(catalog),
-                          information("resultados de las áreas", describe_results(results)), SYNTHESIZE_STEP])
+                          information("resultados de las áreas", describe_results(results)), SYNTHESIZE_STEP,
+                          NO_PROMISES])
     return [SystemMessage(system), *history, HumanMessage(question)]

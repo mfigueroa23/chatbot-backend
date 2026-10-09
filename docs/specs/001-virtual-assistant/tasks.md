@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 30/30 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 31/31 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
@@ -204,3 +204,10 @@ BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/
   «Catálogo»); `upgrade`, `downgrade -1` y `upgrade` funcionan y un prompt editado no se pisa; en vivo, sin áreas
   internas «¿en qué me puedes ayudar?» no inventa temas ni habla de áreas o catálogos, y el web responde de usted y
   sin la lista de temas al final.
+- [x] **T-31 — Temas vigentes por mensaje, sin promesas y coordinador en gemini-3.5-flash-lite** · RF-23, RF-42, RNF-1 · ~30 min
+  `src/agents/prompts.py`: `TOPICS_CHANGE` en el catálogo de `route` y `synthesize`, `NO_PROMISES` al final del prompt y
+  `EMPTY_CATALOG` en presente; `src/agents/gemini.py`: `thinking_level="minimal"` en lugar de `thinking_budget=0`, que
+  `gemini-3.5-flash-lite` rechaza con 400 (D17). `coordinator_model = gemini-3.5-flash-lite` en la BD local.
+  Hecho cuando: `uv run pytest -q tests/prompts_test.py` pasa; en vivo, 3 intentos de habilitar un área a mitad del hilo
+  sin promesas de aviso y con los temas nuevos en la respuesta siguiente; la demo de 22 mensajes da p95 ≤ 10 s
+  (2026-10-09: 5,8 s).

@@ -124,6 +124,8 @@ de su área → los sub-agentes la resuelven y devuelven su resultado → el coo
 - RF-40: EL SISTEMA no entregará al cliente web información de áreas internas, ni nombrará esas áreas.
 - RF-41: SI el canal no tiene áreas habilitadas, ENTONCES EL SISTEMA dirá con sus palabras que por ahora no tiene temas
   de la empresa con los que ayudar, sin inventar ni prometer temas y sin hablar del sistema ni de su configuración.
+- RF-42: CUANDO cambien las áreas habilitadas durante una conversación, EL SISTEMA responderá con las vigentes en ese
+  mensaje, aunque antes haya dicho otra cosa, y no prometerá avisar ni volver a escribir cuando cambien.
 
 ## Requisitos no funcionales
 - RNF-1: El 95 % de las respuestas, web y Google Chat, se entrega en 10 s o menos. El tiempo máximo de respuesta
@@ -156,6 +158,8 @@ de su área → los sub-agentes la resuelven y devuelven su resultado → el coo
 - «Hola» → saludo breve del coordinador, sin subtareas (RF-17).
 - Canal sin áreas habilitadas y «¿en qué me puedes ayudar?» → dice con naturalidad que por ahora no tiene temas, sin
   inventarlos ni mencionar «áreas» o «catálogos» (RF-41, RF-38).
+- En el mismo hilo, sin áreas «¿en qué me puedes ayudar?», se habilita un área y «¿qué nuevos conocimientos tienes?» →
+  la primera respuesta no promete avisar; la segunda cuenta los temas del área recién habilitada (RF-23, RF-42).
 - Se desactiva un área → deja de recibir subtareas desde el siguiente mensaje (RF-4, RF-23).
 - Se edita una FAQ → la búsqueda usa el texto nuevo (RF-24).
 - Se cambia `faqs_per_search` en `property` → el siguiente mensaje ya usa el valor nuevo (RF-23).
@@ -210,3 +214,7 @@ de su área → los sub-agentes la resuelven y devuelven su resultado → el coo
   saludos, temas ajenos, canal sin áreas); los sub-agentes solo se usan cuando se pide algo concreto de un área. Solo
   usa el conocimiento de la BD y responde como una IA, no como un chatbot de los 90 (RF-16, RF-17, RF-41, RNF-8). Se
   descartó responder un texto fijo cuando el canal no tiene áreas.
+- **Temas vigentes por mensaje y modelo del coordinador (2026-10-09, decisión del usuario):** el coordinador usa los
+  temas de cada mensaje aunque el historial diga otra cosa y no promete avisos (RF-42). El coordinador pasa a
+  `gemini-3.5-flash-lite` (property `coordinator_model`); los sub-agentes siguen en `gemini-3.1-flash-lite`. En la
+  demo local el p95 bajó de 7,5 s a 5,8 s.

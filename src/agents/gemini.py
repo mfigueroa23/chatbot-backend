@@ -85,8 +85,9 @@ def gemini_models(properties: Properties) -> GeminiModels:
     timeout = properties.get_int("response_timeout_seconds", 20)
 
     def chat(model: str, thinking: bool) -> ChatGoogleGenerativeAI:
-        # Sin razonamiento extendido en los pasos de decisión (D17): suma segundos y el tope es de 10 s (RNF-1).
-        options: dict[str, Any] = {} if thinking else {"thinking_budget": 0}
+        # Razonamiento mínimo (D17): suma segundos y el tope es de 10 s (RNF-1). thinking_level sirve en Gemini 3.x;
+        # gemini-3.5 rechaza thinking_budget=0.
+        options: dict[str, Any] = {} if thinking else {"thinking_config": {"thinking_level": "minimal"}}
         return ChatGoogleGenerativeAI(model=model, api_key=api_key, timeout=timeout, max_retries=1, **options)
 
     coordinator_chat = chat(properties.required("coordinator_model"), thinking=False)

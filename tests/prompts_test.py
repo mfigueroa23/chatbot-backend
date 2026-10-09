@@ -1,7 +1,7 @@
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from src.agents.llm import AreaInfo, AreaResult, Catalog, FaqHit, Subtask
-from src.agents.prompts import (CATALOG_HEADER, EMPTY_CATALOG, route_messages, sub_agent_messages,
-                                synthesize_messages)
+from src.agents.prompts import (CATALOG_HEADER, EMPTY_CATALOG, NO_PROMISES, TOPICS_CHANGE, route_messages,
+                                sub_agent_messages, synthesize_messages)
 from src.models.business_area import AreaScope
 
 SAC = AreaInfo(1, "Servicio al Cliente", "Pagos y seguros", "Eres SAC.", ("Pagos", "Seguros"))
@@ -69,3 +69,20 @@ def test_el_catalogo_pide_no_citarlo():
     system = str(route_messages(CATALOG, [], "hola")[0].content)
 
     assert CATALOG_HEADER in system and "no menciones esta lista" in system
+
+
+def test_el_coordinador_sabe_que_los_temas_valen_por_mensaje_y_que_no_puede_prometer_avisos():
+    empty = Catalog(AreaScope.internal, "Coordinador interno.", "Reglas.", ())
+    results = [AreaResult(1, "Servicio al Cliente", "cuota", True, "En la web.")]
+
+    for messages in (route_messages(CATALOG, HISTORY, "x"), route_messages(empty, HISTORY, "x"),
+                     synthesize_messages(CATALOG, HISTORY, "x", results)):
+        system = str(messages[0].content)
+        assert TOPICS_CHANGE in system and NO_PROMISES in system
+
+
+def test_la_prohibicion_de_prometer_avisos_es_lo_ultimo_del_prompt():
+    results = [AreaResult(1, "Servicio al Cliente", "cuota", True, "En la web.")]
+
+    for messages in (route_messages(CATALOG, [], "x"), synthesize_messages(CATALOG, [], "x", results)):
+        assert str(messages[0].content).endswith(NO_PROMISES)

@@ -56,8 +56,8 @@ las obligatorias se cargan a mano:
 |---|---|---|
 | `service_name` | Nombre del servicio que devuelve `/health` | — |
 | `gemini_api_key` | API key de Gemini (secreta: ver SECURITY.md) | — (obligatoria) |
-| `coordinator_model` | Modelo de los coordinadores (decidir y redactar); debe admitir `thinking_budget`, p. ej. un Gemini Flash | — (obligatoria) |
-| `sub_agent_model` | Modelo de los sub-agentes de área; mismo requisito | — (obligatoria) |
+| `coordinator_model` | Modelo de los coordinadores (decidir y redactar), p. ej. `gemini-3.5-flash-lite`; debe admitir `thinking_level` (Gemini 3.x) | — (obligatoria) |
+| `sub_agent_model` | Modelo de los sub-agentes de área, p. ej. `gemini-3.1-flash-lite`; mismo requisito | — (obligatoria) |
 | `embedding_model` | Modelo de embeddings de las FAQ, con salida de 768 dimensiones (p. ej. `gemini-embedding-001`) | — (obligatoria) |
 | `max_areas_per_message` | Máximo de áreas (subtareas) por mensaje | `3` |
 | `faqs_per_search` | FAQ que recibe cada sub-agente | `5` |

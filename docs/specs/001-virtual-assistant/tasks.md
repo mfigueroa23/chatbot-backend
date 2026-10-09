@@ -1,17 +1,17 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 0/29 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 2/29 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
 `app.dependency_overrides`.
 
 ## Fase 1 — Base
-- [ ] **T-1 — Agregar las dependencias aprobadas** · (habilita RF-1 a RF-40) · ~10 min
+- [x] **T-1 — Agregar las dependencias aprobadas** · (habilita RF-1 a RF-40) · ~10 min
   `uv add langgraph langchain-google-genai pgvector google-auth`. Requiere la aprobación de la sección 8 del plan.
   Hecho cuando: `uv run python -c "import langgraph, langchain_google_genai, pgvector, google.auth"` termina con 0 y la
   suite sigue verde.
-- [ ] **T-2 — Quitar la caché de `property`** · RF-23, RF-25, RF-26 · ~25 min [P]
+- [x] **T-2 — Quitar la caché de `property`** · RF-23, RF-25, RF-26 · ~25 min [P]
   En `src/services/property.py`: quitar `_cache`, `_loaded_at` y `CACHE_TTL_SECONDS`. `get_property` pasa a hacer un
   `SELECT` por clave, y se agregan `load_properties(session) -> Properties` con `required(key)` y
   `get_int(key, default)` (D18).

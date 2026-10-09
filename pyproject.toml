@@ -10,6 +10,10 @@ dependencies = [
     "alembic>=1.20.0",
     "asyncpg>=0.31.0",
     "fastapi[standard]>=0.142.2",
+    "google-auth>=2.61.0",
+    "langchain-google-genai>=4.4.0",
+    "langgraph>=1.2.14",
+    "pgvector>=0.5.1",
     "pydantic-settings>=2.15.0",
     "sqlalchemy[asyncio]>=2.1.3",
 ]

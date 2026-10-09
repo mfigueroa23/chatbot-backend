@@ -7,6 +7,12 @@ from alembic import context
 from src.config import settings
 from src.models.base import Base
 from src.models.property import Property
+from src.models.business_area import BusinessArea
+from src.models.faq_category import FaqCategory
+from src.models.faq import Faq
+from src.models.agent_prompt import AgentPrompt
+from src.models.conversation import Conversation
+from src.models.message import Message
 
 config = context.config
 

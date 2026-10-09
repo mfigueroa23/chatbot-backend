@@ -1,6 +1,6 @@
 # Tareas 001 — Asistente virtual con agentes por canal y sub-agentes por área (2.0.0)
 
-**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 2/29 hechas
+**Spec:** `spec.md` · **Plan:** `plan.md` · **Estado:** 6/29 hechas
 Cada tarea dura menos de 30 min y deja los tests en verde. Se hacen en orden; `[P]` indica que puede ir en paralelo con
 la anterior. "Verde" significa `uv run pyright` con 0 errores y `uv run pytest` sin fallos. Ningún test se conecta a la
 BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/fakes.py` y
@@ -20,24 +20,24 @@ BD, a Google ni a Gemini (constitución, punto 6): se usan los dobles de `tests/
   `grep -n "_cache\|CACHE_TTL" src/services/property.py` no devuelve nada.
 
 ## Fase 2 — Modelo de datos
-- [ ] **T-3 — Crear los modelos de contenido** · RF-3, RF-4, RF-8, RF-16, RF-22, RF-24, RF-28 · ~25 min
+- [x] **T-3 — Crear los modelos de contenido** · RF-3, RF-4, RF-8, RF-16, RF-22, RF-24, RF-28 · ~25 min
   En `src/models/`: `BusinessArea` (enum `AreaScope`, `tools text[]`, `active`), `FaqCategory`, `Faq` (`content_hash`
   generado, `embedded_hash` y `embedding Vector(768)`) y `AgentPrompt`. La constante `EMBEDDING_DIMENSIONS = 768`.
   Hecho cuando: `uv run pyright` da 0 errores y
   `uv run python -c "import src.models.business_area, src.models.faq_category, src.models.faq, src.models.agent_prompt"`
   termina con 0.
-- [ ] **T-4 — Crear los modelos de conversación** · RF-18, RF-19, RF-20, RF-21 · ~15 min [P]
+- [x] **T-4 — Crear los modelos de conversación** · RF-18, RF-19, RF-20, RF-21 · ~15 min [P]
   `Conversation` (enum `Channel`, `external_key` único, `last_message_at` indexado) y `Message` (enum `MessageRole`,
   índice `(conversation_id, id)`, `CASCADE`).
   Hecho cuando: `uv run pyright` da 0 errores y
   `uv run python -c "import src.models.conversation, src.models.message"` termina con 0.
-- [ ] **T-5 — Crear la migración del esquema** · RF-3, RF-4, RF-8, RF-18, RF-22, RF-24 · ~25 min (depende de T-3 y T-4)
+- [x] **T-5 — Crear la migración del esquema** · RF-3, RF-4, RF-8, RF-18, RF-22, RF-24 · ~25 min (depende de T-3 y T-4)
   `uv run alembic revision --autogenerate -m "create assistant tables"`, revisada a mano: `CREATE EXTENSION IF NOT
   EXISTS vector`, los enums, la columna generada `content_hash`, los índices y `server_default` de `tools` y `active`.
   En el `downgrade` se borran las tablas y los enums, pero no la extensión.
   Hecho cuando: contra una BD local vacía, `uv run alembic upgrade head`, `uv run alembic downgrade -1` y otra vez
   `uv run alembic upgrade head` terminan sin error.
-- [ ] **T-6 — Sembrar las properties y los prompts iniciales** · RF-22, RF-25, RF-37 · ~25 min
+- [x] **T-6 — Sembrar las properties y los prompts iniciales** · RF-22, RF-25, RF-37 · ~25 min
   Migración `seed assistant defaults`: las properties no secretas de la sección 5 del plan con sus valores por
   defecto, y `agent_prompt` con `external_coordinator`, `internal_coordinator`, `sub_agent_rules` e `internal_welcome`
   (D9), incluidas las reglas de seguridad de RF-38 y RF-39. Sin API keys ni cuentas de servicio.

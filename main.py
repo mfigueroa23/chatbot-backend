@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from src.config import settings
 from src.database.session import engine
 from src.routers.health import router as health_router
+from src.routers.chat import route as chat_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
@@ -14,6 +15,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(lifespan=lifespan)
 
 app.include_router(health_router)
+app.include_router(chat_router)
 
 app_logger = logging.getLogger("src")
 app_logger.handlers = logging.getLogger("uvicorn").handlers

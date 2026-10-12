@@ -1,8 +1,8 @@
-"""create property table
+"""adding property table
 
-Revision ID: 53e8891ae5d9
+Revision ID: 2bc8f13eb018
 Revises: 
-Create Date: 2026-10-06 16:53:28.779641
+Create Date: 2026-10-11 23:27:57.433754
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '53e8891ae5d9'
+revision: str = '2bc8f13eb018'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -24,8 +24,9 @@ def upgrade() -> None:
     op.create_table('property',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('key', sa.String(length=255), nullable=False),
-    sa.Column('value', sa.String(length=255), nullable=False),
-    sa.PrimaryKeyConstraint('id')
+    sa.Column('value', sa.Text(), nullable=False),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('key')
     )
     # ### end Alembic commands ###
 

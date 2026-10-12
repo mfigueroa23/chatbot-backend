@@ -24,5 +24,8 @@ class Settings(BaseSettings):
             database=self.DB_NAME,
         )
 
+    @property
+    def checkpointer_url(self) -> str:
+        return self.database_url.set(drivername="postgresql").render_as_string(hide_password=False)
 
 settings = Settings()  # pyright: ignore[reportCallIssue]  (.env)

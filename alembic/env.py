@@ -8,6 +8,9 @@ from src.config import settings
 from src.models.base import Base
 from src.models.property import Property
 from src.models.agents import Agents
+from src.models.areas import Area
+from src.models.faq_categories import FaqCategory
+from src.models.faqs import Faq
 
 config = context.config
 

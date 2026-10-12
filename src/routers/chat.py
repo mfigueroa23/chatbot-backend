@@ -18,11 +18,17 @@ logger = logging.getLogger(__name__)
 async def chat(request: Request, response: Response, message: ChatRequest, session: SessionDep) -> ChatResponse:
   try:
     llm = await LLM.create(session)
-    prompt = await get_prompt(session, "Coordinator Agent")
+    prompt = await get_prompt(session, "Agente Externo")
     result = await request.app.state.graph.ainvoke(
       { "messages": [HumanMessage(message.mensaje)] },
       config = { "configurable": { "thread_id": message.chat_id } },
-      context = AgentContext(llm = llm.llm, system_prompt = prompt)
+      context = AgentContext(
+        llm = llm.llm,
+        system_prompt = prompt,
+        embeddings = llm.embeddings,
+        area="Servicio al Cliente",
+        audiencia="externo"
+      )
     )
     return ChatResponse(respuesta = result["messages"][-1].text)
   except (PropertyNotFoundError, AgentNotFoundError) as exc:

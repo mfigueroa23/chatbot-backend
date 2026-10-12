@@ -1,0 +1,41 @@
+from dataclasses import dataclass
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import AsyncSession
+from src.models.areas import Area
+from src.models.faq_categories import FaqCategory
+from src.models.faqs import Faq
+from src.utils.exceptions.database import DatabaseUnavailableError
+
+@dataclass
+class FaqResult:
+    category: str
+    question: str
+    answer: str
+    distance: float
+
+async def search_faqs(
+  session: AsyncSession,
+  vector: list[float],
+  area: str, audiencia: str,
+  k: int = 4,
+  max_distance: float = 0.47
+) -> list[FaqResult]:
+  try:
+    distance = Faq.embedding.cosine_distance(vector)
+    result = await session.execute(
+      select(FaqCategory.name, Faq.question, Faq.answer, distance.label("distance"))
+      .join(FaqCategory, FaqCategory.id == Faq.category_id)
+      .join(Area, Area.id == FaqCategory.area_id)
+      .where(
+        Area.name == area,
+        Area.audiencia == audiencia,
+        Faq.embedding.is_not(None),
+        distance < max_distance,
+      )
+      .order_by(distance)
+      .limit(k)
+    )
+    return [FaqResult(*row) for row in result.all()]
+  except (SQLAlchemyError, OSError) as exc:
+    raise DatabaseUnavailableError(str(exc)) from exc

@@ -7,6 +7,7 @@ from alembic import context
 from src.config import settings
 from src.models.base import Base
 from src.models.property import Property
+from src.models.agents import Agents
 
 config = context.config
 

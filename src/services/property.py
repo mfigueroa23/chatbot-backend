@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 async def get_property(session: AsyncSession, key: str) -> str:
     try:
-        logger.debug("Obteniendo propiedad '%s'", key)
+        logger.debug(f"Obteniendo propiedad '{key}'")
         result = await session.execute(
             select(Property.value).where(Property.key == key)
         )

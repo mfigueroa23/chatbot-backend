@@ -126,7 +126,9 @@ langchain-protocol==0.0.19
     #   langchain-core
     #   langgraph-sdk
 langgraph==1.2.14
-    # via langchain
+    # via
+    #   chatbot-backend
+    #   langchain
 langgraph-checkpoint==4.2.0
     # via
     #   langgraph

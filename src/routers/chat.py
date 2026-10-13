@@ -27,7 +27,7 @@ async def chat(request: Request, response: Response, message: ChatRequest, sessi
       raise AgentNotFoundError(f"sub-agentes de la audiencia '{AUDIENCIA}'")
     result = await request.app.state.graph.ainvoke(
       { "messages": [HumanMessage(message.mensaje)] },
-      config = { "configurable": { "thread_id": message.chat_id } },
+      config = { "configurable": { "thread_id": str(message.chat_id) } },
       context = CoordinatorContext(
         llm = llm.llm,
         system_prompt = prompt,

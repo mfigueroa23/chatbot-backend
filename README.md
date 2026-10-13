@@ -1,6 +1,13 @@
 # chatbot-backend
 
-Backend de ChatBot, construido con FastAPI, SQLAlchemy (async) y PostgreSQL.
+Backend de ChatBot, construido con FastAPI, SQLAlchemy (async), LangGraph, Gemini y PostgreSQL.
+
+## Arquitectura
+
+- Hay dos coordinadores: `Agente Externo` atiende a los clientes por `/chat` y `Agente Interno` a los colaboradores por Google Chat.
+- Cada coordinador delega la consulta en el sub-agente del área que corresponde (un sub-agente por área, según la audiencia `externo` o `interno`).
+- Cada sub-agente busca en las preguntas frecuentes de su área con similitud coseno (pgvector) antes de responder.
+- Los prompts, áreas y sub-agentes se configuran en la base de datos. El historial de cada conversación se guarda en PostgreSQL con el checkpointer de LangGraph.
 
 ## Requisitos
 
@@ -32,13 +39,19 @@ cp .env.example .env
 | `DB_NAME` | Nombre de la base de datos | — |
 | `LOG_LEVEL` | `DEBUG`, `INFO`, `WARNING`, `ERROR` o `CRITICAL` (en mayúsculas) | `INFO` |
 
-Las properties se cachean en memoria y se recargan cada 60 segundos, así que un cambio en la tabla se aplica sin reiniciar la aplicación.
+Las properties se leen de la base de datos en cada petición (sin caché), así que un cambio en la tabla se aplica desde la siguiente petición sin reiniciar la aplicación.
 
 Properties usadas actualmente:
 
 | Key | Uso |
 |---|---|
 | `service_name` | Nombre del servicio que devuelve `/health` |
+| `google_api_key` | API key de Gemini |
+| `google_model` | Modelo de chat de Gemini |
+| `google_embedding_model` | Modelo de embeddings de las preguntas frecuentes |
+| `google_chat_audience` | Audiencia (`aud`) esperada en el ID token del complemento de Google Chat |
+| `google_chat_addon_service_account` | Correo de la cuenta de servicio del complemento de Google Chat |
+| `google_chat_welcome` | Mensaje de bienvenida al agregar el asistente a un space |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
 
@@ -64,6 +77,26 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 |---|---|---|
 | `GET` | `/` | Liveness: responde `true` si el proceso está vivo, sin consultar la base de datos |
 | `GET` | `/health` | Verifica la base de datos. `200` si está disponible, `503` si no |
+| `POST` | `/chat` | Chat web con el coordinador externo. Recibe `chat_id` (UUID generado por el cliente) y `mensaje` |
+| `POST` | `/api/v1/google-chat/events` | Eventos del complemento de Google Chat con el coordinador interno. Exige el ID token del complemento en `Authorization: Bearer`, si no es válido responde `401` |
+
+## Base de datos
+
+| Tabla | Qué contiene |
+|---|---|
+| `property` | Configuración de la aplicación (`key` / `value`) |
+| `agents` | Prompts de los agentes. Con `area_id` vacío es un coordinador, con `area_id` es el sub-agente de esa área |
+| `areas` | Áreas con su descripción y audiencia (`externo` o `interno`) |
+| `faq_categories` | Categorías de preguntas frecuentes de cada área |
+| `faqs` | Preguntas frecuentes con su embedding. `status` es `re-index` si falta generar el embedding e `index` si ya está indexada |
+
+Las tablas del checkpointer las crea LangGraph al arrancar la aplicación y no se versionan con alembic.
+
+Para generar los embeddings de las preguntas frecuentes en estado `re-index`:
+
+```bash
+uv run python -m src.rag.reindex
+```
 
 ## Migraciones
 
@@ -81,7 +114,7 @@ Revisa siempre el archivo generado en `alembic/versions/` antes de aplicarlo.
 uv run pytest
 ```
 
-Los tests nunca se conectan a la base de datos: reemplazan la sesión con `app.dependency_overrides`. Igual necesitan las variables `DB_*` (del `.env` o del entorno) porque `Settings` las exige al importar la app.
+Los tests nunca se conectan a la base de datos, a Google ni a Gemini: reemplazan la sesión con `app.dependency_overrides` o responden antes de consultarla. Igual necesitan las variables `DB_*` (del `.env` o del entorno) porque `Settings` las exige al importar la app.
 
 ## CI/CD
 
@@ -108,9 +141,11 @@ main.py                     App FastAPI, lifespan y configuración de logs
 entrypoint.sh               Entrypoint del contenedor: aplica migraciones y arranca la API
 src/
 ├── config.py               Settings leídos del .env
+├── agents/                 Coordinador, sub-agente, modelo de IA y tools (LangGraph)
 ├── database/session.py     Engine y sesión por request (SessionDep)
 ├── models/                 Modelos ORM de SQLAlchemy
-├── interfaces/             Modelos Pydantic de respuesta
+├── interfaces/             Modelos Pydantic de request y respuesta
+├── rag/                    Re-indexación de los embeddings de preguntas frecuentes
 ├── routers/                Endpoints HTTP
 ├── services/               Lógica de negocio y acceso a datos
 └── utils/exceptions/       Excepciones propias del proyecto

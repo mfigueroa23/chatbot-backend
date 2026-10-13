@@ -14,9 +14,12 @@ dependencies = [
     "langchain[google-genai]>=1.4.4",
     "langgraph>=1.2.14",
     "langgraph-checkpoint-postgres>=3.1.2",
+    "openpyxl>=3.1.5",
     "pgvector>=0.5.1",
     "psycopg[binary,pool]>=3.3.6",
     "pydantic-settings>=2.15.0",
+    "python-docx>=1.2.0",
+    "python-pptx>=1.0.2",
     "sqlalchemy[asyncio]>=2.1.3",
 ]
 

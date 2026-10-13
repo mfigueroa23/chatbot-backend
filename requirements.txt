@@ -3,7 +3,7 @@
 agent-detector==2.0.0
     # via fastapi-cloud-cli
 alembic==1.20.0
-    # via chatbot-backend
+    # via virtual-assistant
 annotated-doc==0.0.5
     # via
     #   fastapi
@@ -19,7 +19,7 @@ anyio==4.15.1
     #   starlette
     #   watchfiles
 asyncpg==0.32.0
-    # via chatbot-backend
+    # via virtual-assistant
 certifi==2026.7.22
     # via
     #   httpcore
@@ -55,7 +55,7 @@ email-validator==2.3.0
 et-xmlfile==2.0.0
     # via openpyxl
 fastapi==0.143.0
-    # via chatbot-backend
+    # via virtual-assistant
 fastapi-cli==0.0.32
     # via fastapi
 fastapi-cloud-cli==0.26.0
@@ -68,8 +68,8 @@ filetype==1.2.0
     # via langchain-google-genai
 google-auth==2.61.0
     # via
-    #   chatbot-backend
     #   google-genai
+    #   virtual-assistant
 google-genai==2.29.0
     # via langchain-google-genai
 googleapis-common-protos==1.75.5
@@ -114,7 +114,7 @@ jsonpatch==1.35
 jsonpointer==3.2.1
     # via jsonpatch
 langchain==1.4.4
-    # via chatbot-backend
+    # via virtual-assistant
 langchain-core==1.6.9
     # via
     #   langchain
@@ -131,15 +131,15 @@ langchain-protocol==0.0.19
     #   langgraph-sdk
 langgraph==1.2.14
     # via
-    #   chatbot-backend
     #   langchain
+    #   virtual-assistant
 langgraph-checkpoint==4.2.0
     # via
     #   langgraph
     #   langgraph-checkpoint-postgres
     #   langgraph-prebuilt
 langgraph-checkpoint-postgres==3.1.2
-    # via chatbot-backend
+    # via virtual-assistant
 langgraph-prebuilt==1.1.0
     # via langgraph
 langgraph-sdk==0.4.6
@@ -163,7 +163,7 @@ mdurl==0.1.2
 nodeenv==1.11.0
     # via pyright
 openpyxl==3.1.5
-    # via chatbot-backend
+    # via virtual-assistant
 opentelemetry-api==1.45.1
     # via
     #   fastapi
@@ -203,7 +203,7 @@ packaging==26.3
     #   langsmith
     #   pytest
 pgvector==0.5.1
-    # via chatbot-backend
+    # via virtual-assistant
 pillow==12.3.0
     # via python-pptx
 pluggy==1.6.0
@@ -214,8 +214,8 @@ protobuf==7.36.2
     #   opentelemetry-proto
 psycopg==3.3.6
     # via
-    #   chatbot-backend
     #   langgraph-checkpoint-postgres
+    #   virtual-assistant
 psycopg-binary==3.3.6 ; implementation_name != 'pypy'
     # via psycopg
 psycopg-pool==3.3.3
@@ -246,8 +246,8 @@ pydantic-extra-types==2.11.1
     # via fastapi
 pydantic-settings==2.15.0
     # via
-    #   chatbot-backend
     #   fastapi
+    #   virtual-assistant
 pygments==2.21.0
     # via
     #   pytest
@@ -255,7 +255,7 @@ pygments==2.21.0
 pyright==1.1.414
 pytest==9.1.1
 python-docx==1.2.0
-    # via chatbot-backend
+    # via virtual-assistant
 python-dotenv==1.2.4
     # via
     #   pydantic-settings
@@ -263,7 +263,7 @@ python-dotenv==1.2.4
 python-multipart==0.0.32
     # via fastapi
 python-pptx==1.0.2
-    # via chatbot-backend
+    # via virtual-assistant
 pyyaml==6.0.3
     # via
     #   langchain-core
@@ -299,7 +299,7 @@ sniffio==1.3.1
 sqlalchemy==2.1.4
     # via
     #   alembic
-    #   chatbot-backend
+    #   virtual-assistant
 starlette==1.7.0
     # via fastapi
 tenacity==9.1.4

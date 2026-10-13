@@ -1,6 +1,6 @@
-# chatbot-backend
+# virtual-assistant
 
-Backend de ChatBot, construido con FastAPI, SQLAlchemy (async), LangGraph, Gemini y PostgreSQL.
+Backend de asistente virtual, construido con FastAPI, SQLAlchemy (async), LangGraph, Gemini y PostgreSQL.
 
 ## Arquitectura
 

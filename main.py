@@ -11,6 +11,7 @@ from src.config import settings
 from src.database.session import engine
 from src.routers.health import router as health_router
 from src.routers.chat import route as chat_router
+from src.routers.google_chat import router as google_chat_router
 
 async def check_connection(conn: AsyncConnection[DictRow]) -> None:
     await conn.execute("SELECT 1")
@@ -36,6 +37,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.include_router(health_router)
 app.include_router(chat_router)
+app.include_router(google_chat_router)
 
 app_logger = logging.getLogger("src")
 app_logger.handlers = logging.getLogger("uvicorn").handlers

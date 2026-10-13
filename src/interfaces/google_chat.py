@@ -8,11 +8,22 @@ class ChatModel(BaseModel):
 class ChatThread(ChatModel):
   name: str
 
+class AttachmentDataRef(ChatModel):
+  resource_name: str
+
+class ChatAttachment(ChatModel):
+  content_name: str = "archivo"
+  content_type: str = ""
+  # UPLOADED_CONTENT si se subió al chat (trae attachmentDataRef) o DRIVE_FILE si es un enlace de Drive.
+  source: str | None = None
+  attachment_data_ref: AttachmentDataRef | None = None
+
 class ChatMessage(ChatModel):
   text: str | None = None
   # En un space, el texto sin la mención al asistente.
   argument_text: str | None = None
   thread: ChatThread | None = None
+  attachment: list[ChatAttachment] = []
 
 class ChatSpace(ChatModel):
   name: str

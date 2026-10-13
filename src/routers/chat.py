@@ -8,26 +8,32 @@ from src.utils.exceptions.property import PropertyNotFoundError
 from src.utils.exceptions.agents import AgentNotFoundError
 from src.interfaces.chat import ChatRequest, ChatResponse
 from src.agents.llm import LLM
-from src.services.agents import get_prompt
-from src.agents.context import AgentContext
+from src.agents.context import CoordinatorContext
+from src.services.agents import get_prompt, list_sub_agents
 
 route = APIRouter(tags=['Chat'])
 logger = logging.getLogger(__name__)
+
+AUDIENCIA = "externo"
+COORDINADOR = "Agente Externo"
 
 @route.post("/chat", responses={ 500: { "model": ChatResponse }, 503: { "model": ChatResponse } })
 async def chat(request: Request, response: Response, message: ChatRequest, session: SessionDep) -> ChatResponse:
   try:
     llm = await LLM.create(session)
-    prompt = await get_prompt(session, "Agente Externo")
+    prompt = await get_prompt(session, COORDINADOR)
+    sub_agents = await list_sub_agents(session, audiencia = AUDIENCIA)
+    if not sub_agents:
+      raise AgentNotFoundError(f"sub-agentes de la audiencia '{AUDIENCIA}'")
     result = await request.app.state.graph.ainvoke(
       { "messages": [HumanMessage(message.mensaje)] },
       config = { "configurable": { "thread_id": message.chat_id } },
-      context = AgentContext(
+      context = CoordinatorContext(
         llm = llm.llm,
         system_prompt = prompt,
         embeddings = llm.embeddings,
-        area="Servicio al Cliente",
-        audiencia="externo"
+        audiencia = AUDIENCIA,
+        sub_agents = { sub_agent.area: sub_agent for sub_agent in sub_agents }
       )
     )
     return ChatResponse(respuesta = result["messages"][-1].text)

@@ -6,7 +6,7 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from psycopg import AsyncConnection
 from psycopg.rows import DictRow, dict_row
 from psycopg_pool import AsyncConnectionPool
-from src.agents.graph import builder
+from src.agents.coordinator import coordinator_builder
 from src.config import settings
 from src.database.session import engine
 from src.routers.health import router as health_router
@@ -28,7 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     ) as pool:
         checkpointer = AsyncPostgresSaver(pool)
         await checkpointer.setup()
-        app.state.graph = builder.compile(checkpointer = checkpointer)
+        app.state.graph = coordinator_builder.compile(checkpointer = checkpointer)
         yield
     await engine.dispose()
 

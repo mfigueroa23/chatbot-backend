@@ -7,11 +7,10 @@ from src.services.faq import search_faqs
 async def search_faq(query: str, runtime: ToolRuntime[AgentContext]) -> str:
   """Busca en las preguntas frecuentes oficiales del área asignada.
 
-  Úsala siempre que el cliente pregunte algo sobre sus créditos, pagos,
-  trámites, seguros o canales de atención, antes de responder.
+  Úsala siempre antes de responder cualquier consulta sobre Autofin.
 
   Args:
-      query: La consulta del cliente como una pregunta completa y autocontenida en español.
+      query: La consulta del usuario como una pregunta completa y autocontenida en español.
   """
   context = runtime.context
   vector = await context.embeddings.aembed_query(query)

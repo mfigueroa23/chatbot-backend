@@ -52,6 +52,7 @@ Properties usadas actualmente:
 | `google_chat_audience` | Audiencia (`aud`) esperada en el ID token del complemento de Google Chat |
 | `google_chat_addon_service_account` | Correo de la cuenta de servicio del complemento de Google Chat |
 | `google_chat_welcome` | Mensaje de bienvenida al agregar el asistente a un space |
+| `google_chat_service_account_json` | JSON de la cuenta de servicio de la app de Chat (`client_email`, `private_key`, `token_uri`) para descargar los archivos adjuntos con el scope `chat.bot`. Es un secreto. Si falta o no es válido, los archivos quedan como no leídos y se responde igual el texto |
 
 > Los valores de la tabla `property` se guardan en texto plano. Revisa [SECURITY.md](SECURITY.md) antes de guardar secretos.
 
@@ -79,6 +80,13 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 | `GET` | `/health` | Verifica la base de datos. `200` si está disponible, `503` si no |
 | `POST` | `/chat` | Chat web con el coordinador externo. Recibe `chat_id` (UUID generado por el cliente) y `mensaje` |
 | `POST` | `/api/v1/google-chat/events` | Eventos del complemento de Google Chat con el coordinador interno. Exige el ID token del complemento en `Authorization: Bearer`, si no es válido responde `401` |
+
+### Archivos adjuntos en Google Chat
+
+- Se leen los archivos subidos al chat: JPG, PNG, WebP y PDF (los transcribe Gemini), Word (`.docx`), Excel (`.xlsx`), PowerPoint (`.pptx`), texto, Markdown, CSV y JSON. Los enlaces de Drive no se leen.
+- Cada archivo se convierte a texto una vez y se suma al mensaje como `[Archivo adjunto: nombre]`, así queda en el historial y sirve para los mensajes siguientes.
+- Un archivo de más de 20 MB no se descarga y el texto de más de 30.000 caracteres se lee en parte. Un archivo con problemas queda con una línea de estado y no impide leer los demás.
+- Google Chat espera la respuesta en menos de 30 segundos: si leer los archivos y responder supera los 25 segundos, se responde un mensaje de demora.
 
 ## Base de datos
 

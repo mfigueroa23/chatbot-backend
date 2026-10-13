@@ -1,13 +1,19 @@
 import re
 import time
+from typing import Any
 import httpx
-from google.auth import exceptions, jwt
+from google.auth import crypt, exceptions, jwt
 from src.interfaces.google_chat import AddonEvent
+from src.services.attachments import MAX_BYTES, Attachment
+from src.utils.exceptions.attachments import AttachmentTooLargeError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
 
 # El complemento de Google Workspace firma cada evento con un ID token de Google.
 GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v1/certs"
 GOOGLE_ISSUERS = { "accounts.google.com", "https://accounts.google.com" }
+# Los archivos subidos al chat se descargan con la cuenta de servicio de la app de Chat.
+CHAT_SCOPE = "https://www.googleapis.com/auth/chat.bot"
+CHAT_MEDIA_URL = "https://chat.googleapis.com/v1/media"
 
 # Caché de los certificados públicos de Google respetando el max-age que indica Google.
 _certs: dict[str, str] = {}
@@ -53,3 +59,42 @@ def message_text(event: AddonEvent) -> str:
   # En un space solo cuenta el texto que acompaña a la mención, en un mensaje directo el texto completo.
   text = payload.message.text if is_dm else payload.message.argument_text
   return (text or "").strip()
+
+def attachments_of(event: AddonEvent) -> list[Attachment]:
+  payload = event.chat.message_payload if event.chat else None
+  if payload is None or payload.message is None:
+    return []
+  # Solo se descargan los archivos subidos al chat, un enlace de Drive queda sin resource_name.
+  return [
+    Attachment(item.content_name, item.content_type,
+               item.attachment_data_ref.resource_name if item.source != "DRIVE_FILE" and item.attachment_data_ref else None)
+    for item in payload.message.attachment
+  ]
+
+async def service_account_token(service_account: dict[str, Any], http: httpx.AsyncClient) -> str:
+  # Flujo JWT-bearer con httpx: el transporte de google.auth es síncrono y bloquearía el servidor.
+  signer = crypt.RSASigner.from_service_account_info(service_account)
+  token_uri = service_account["token_uri"]
+  now = int(time.time())
+  assertion = jwt.encode(signer, {
+    "iss": service_account["client_email"], "scope": CHAT_SCOPE, "aud": token_uri, "iat": now, "exp": now + 3600
+  })
+  response = await http.post(token_uri, data = {
+    "grant_type": "urn:ietf:params:oauth:grant-type:jwt-bearer", "assertion": assertion.decode()
+  })
+  response.raise_for_status()
+  return response.json()["access_token"]
+
+async def download(resource_name: str, token: str, http: httpx.AsyncClient) -> bytes:
+  # Chat no informa el tamaño del archivo: se corta la descarga al pasar el máximo en vez de cargarlo entero.
+  chunks: list[bytes] = []
+  size = 0
+  headers = { "Authorization": f"Bearer {token}" }
+  async with http.stream("GET", f"{CHAT_MEDIA_URL}/{resource_name}", params = { "alt": "media" }, headers = headers) as response:
+    response.raise_for_status()
+    async for chunk in response.aiter_bytes():
+      size += len(chunk)
+      if size > MAX_BYTES:
+        raise AttachmentTooLargeError(resource_name)
+      chunks.append(chunk)
+  return b"".join(chunks)

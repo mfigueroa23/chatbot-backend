@@ -1,28 +1,42 @@
-import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from psycopg import AsyncConnection
+from psycopg.rows import DictRow, dict_row
+from psycopg_pool import AsyncConnectionPool
+from src.agents.coordinator import coordinator_builder
 from src.config import settings
-from src.database.session import SessionLocal, engine
-from src.routers.google_chat import router as google_chat_router
+from src.database.session import engine
 from src.routers.health import router as health_router
-from src.routers.web_chat import router as web_chat_router
-from src.services.retention import purge_expired, run_retention
+from src.routers.chat import route as chat_router
+from src.routers.google_chat import router as google_chat_router
+
+async def check_connection(conn: AsyncConnection[DictRow]) -> None:
+    await conn.execute("SELECT 1")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    retention = asyncio.create_task(run_retention(lambda: purge_expired(SessionLocal)))
-    yield
-    retention.cancel()
-    with suppress(asyncio.CancelledError):
-        await retention
+    async with AsyncConnectionPool(
+        settings.checkpointer_url,
+        connection_class = AsyncConnection[DictRow],
+        kwargs = { "autocommit": True, "prepare_threshold": 0, "row_factory": dict_row },
+        check = check_connection,
+        min_size = 1,
+        max_size = 2,
+        open = False
+    ) as pool:
+        checkpointer = AsyncPostgresSaver(pool)
+        await checkpointer.setup()
+        app.state.graph = coordinator_builder.compile(checkpointer = checkpointer)
+        yield
     await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)
 
 app.include_router(health_router)
-app.include_router(web_chat_router)
+app.include_router(chat_router)
 app.include_router(google_chat_router)
 
 app_logger = logging.getLogger("src")

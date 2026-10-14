@@ -5,7 +5,7 @@ from src.agents.graph import sub_agent_graph
 
 @tool(parse_docstring=True)
 async def delegar_area(area: str, consulta: str, runtime: ToolRuntime[CoordinatorContext]) -> str:
-  """Deriva la consulta al especialista de un área de Autofin y devuelve su respuesta.
+  """Deriva la consulta al especialista de un área y devuelve su respuesta.
 
   Args:
       area: Nombre exacto de una de las áreas disponibles.

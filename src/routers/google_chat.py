@@ -30,8 +30,6 @@ COORDINADOR = "Agente Interno"
 NO_DISPONIBLE = "Servicio no disponible. Intenta de nuevo más tarde"
 DEMORA = "Me tomó demasiado tiempo revisar tu mensaje. Intenta de nuevo, por ejemplo con un archivo más pequeño"
 SIN_TEXTO = "Revisa el archivo adjunto"
-# Google Chat espera la respuesta síncrona en menos de 30 segundos.
-TIEMPO_MAXIMO = 25
 
 async def verify_token(session: AsyncSession, credentials: HTTPAuthorizationCredentials | None) -> None:
   # Sin token se rechaza antes de leer la configuración.
@@ -68,6 +66,7 @@ async def google_chat_events(
   session: SessionDep,
   credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)]
 ) -> dict[str, Any]:
+  tiempo_maximo: int | None = None
   try:
     await verify_token(session, credentials)
     if event.chat is not None and event.chat.added_to_space_payload is not None:
@@ -78,7 +77,8 @@ async def google_chat_events(
     adjuntos = attachments_of(event)
     if not thread_id or not (mensaje or adjuntos):
       return {}
-    async with asyncio.timeout(TIEMPO_MAXIMO):
+    tiempo_maximo = int(await get_property(session, "google_timeout"))
+    async with asyncio.timeout(tiempo_maximo):
       # El texto de los archivos se suma al mensaje y queda en el historial como texto.
       if adjuntos:
         mensaje = f"{mensaje or SIN_TEXTO}\n\n{await read_files(session, adjuntos)}"
@@ -88,7 +88,7 @@ async def google_chat_events(
     raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Token de Google no válido") from exc
   # Google Chat solo muestra la respuesta si es 200, por eso los errores se responden como mensaje.
   except TimeoutError:
-    logger.warning("Se superaron los %s segundos para responder en Google Chat", TIEMPO_MAXIMO)
+    logger.warning("Se superaron los %s segundos para responder en Google Chat", tiempo_maximo)
     return chat_reply(DEMORA)
   except (PropertyNotFoundError, AgentNotFoundError) as exc:
     logger.error("Agente mal configurado: %s", exc)

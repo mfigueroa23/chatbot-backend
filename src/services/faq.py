@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.models.areas import Area
 from src.models.faq_categories import FaqCategory
 from src.models.faqs import Faq
+from src.services.property import get_property
 from src.utils.exceptions.database import DatabaseUnavailableError
 
 @dataclass
@@ -18,11 +19,11 @@ async def search_faqs(
   session: AsyncSession,
   vector: list[float],
   area: str, audiencia: str,
-  k: int = 4,
-  max_distance: float = 0.47
 ) -> list[FaqResult]:
   try:
     distance = Faq.embedding.cosine_distance(vector)
+    k = int(await get_property(session, 'top_k'))
+    max_distance = float(await get_property(session, 'max_distance'))
     result = await session.execute(
       select(FaqCategory.name, Faq.question, Faq.answer, distance.label("distance"))
       .join(FaqCategory, FaqCategory.id == Faq.category_id)

@@ -16,7 +16,7 @@ T00 ─► T01 ─► T02 ─┐
 
 ## Bloqueante
 
-- [ ] **T00 — Aprobar la desviación de la constitución 6 (D4)**
+- [x] **T00 — Aprobar la desviación de la constitución 6 (D4)**
   - RF: RF-06
   - Depende de: —
   - Qué: confirmar que el umbral de aviso y el tiempo máximo se leen de la tabla `property` y no de `Settings`.

@@ -25,7 +25,7 @@ T00 ─► T01 ─► T02 ─┐
 
 ## Piezas base
 
-- [ ] **T01 — Remitente en el esquema del evento**
+- [x] **T01 — Remitente en el esquema del evento**
   - RF: RF-05
   - Depende de: T00
   - Qué: `ChatUser` (`name`, `type`) y `ChatMessage.sender` en `src/interfaces/google_chat.py`.

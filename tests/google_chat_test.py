@@ -81,6 +81,24 @@ def test_text_usa_argument_text_en_un_space_y_el_texto_en_un_dm():
     assert message_text(AddonEvent.model_validate(dm_event())) == "¿cómo pago?"
 
 
+def test_sender_se_lee_del_evento():
+    payload = space_event()
+    payload["chat"]["messagePayload"]["message"]["sender"] = {"name": "users/123", "type": "HUMAN"}
+
+    message = AddonEvent.model_validate(payload).chat.message_payload.message  # pyright: ignore[reportOptionalMemberAccess] -- el evento de prueba siempre trae chat y messagePayload
+
+    assert message is not None
+    assert message.sender is not None
+    assert message.sender.name == "users/123"
+
+
+def test_sender_es_none_si_el_evento_no_lo_trae():
+    message = AddonEvent.model_validate(space_event()).chat.message_payload.message  # pyright: ignore[reportOptionalMemberAccess] -- el evento de prueba siempre trae chat y messagePayload
+
+    assert message is not None
+    assert message.sender is None
+
+
 def test_endpoint_sin_token_responde_401_antes_de_leer_la_configuracion():
     response = TestClient(app).post("/api/v1/google-chat/events", json=space_event())
 

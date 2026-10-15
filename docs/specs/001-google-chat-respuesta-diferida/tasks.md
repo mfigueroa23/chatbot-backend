@@ -113,14 +113,14 @@ T00 ─► T01 ─► T02 ─┐
 
 ## Cierre
 
-- [ ] **T11 — Verificación y versión**
+- [x] **T11 — Verificación y versión**
   - RF: todos (criterios de finalización)
   - Depende de: T08, T09, T10
   - Qué: verificación completa y subida de versión (constitución 9).
   - Hecho cuando: `uv run pytest` y `uv run pyright` terminan sin errores y `uv run alembic check` no reporta diferencias.
     Además, `pyproject.toml` dice `version = "3.2.0"` y `uv.lock` quedó actualizado por `uv sync`.
 
-- [ ] **T12 — Prueba manual en Google Chat**
+- [x] **T12 — Prueba manual en Google Chat**
   - RF: RF-01, RF-02, RF-04, RF-05, RF-07
   - Depende de: T11
   - Qué: en el entorno de prueba, cargar `google_chat_notice_seconds` y subir `google_timeout`; luego probar en un space y en un DM.

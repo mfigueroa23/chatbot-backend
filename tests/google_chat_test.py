@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.ext.asyncio import AsyncSession
 from main import app
+from src.routers import google_chat as google_chat_router
 from src.interfaces.google_chat import AddonEvent
 from src.services import google_chat
 from src.services.attachments import Attachment
@@ -123,6 +124,37 @@ def test_endpoint_sin_token_responde_401_antes_de_leer_la_configuracion():
     response = TestClient(app).post("/api/v1/google-chat/events", json=space_event())
 
     assert response.status_code == 401
+
+
+def test_endpoint_delega_en_answer_y_devuelve_su_respuesta(monkeypatch):
+    calls: list[tuple[float, float]] = []
+
+    async def fake_verify_token(session, credentials):
+        return None
+
+    async def fake_read_thresholds(session):
+        return 10.0, 120.0
+
+    async def fake_answer(graph, event, notice, maximum):
+        calls.append((notice, maximum))
+        return {"respuesta": "de answer"}
+
+    monkeypatch.setattr(google_chat_router, "verify_token", fake_verify_token)
+    monkeypatch.setattr(google_chat_router, "read_thresholds", fake_read_thresholds)
+    monkeypatch.setattr(google_chat_router, "answer", fake_answer)
+    monkeypatch.setattr(app.state, "graph", object(), raising=False)
+
+    response = TestClient(app).post("/api/v1/google-chat/events", json=space_event())
+
+    assert response.status_code == 200
+    assert response.json() == {"respuesta": "de answer"}
+    assert calls == [(10.0, 120.0)]
+
+
+def test_router_no_llama_al_asistente_ni_lee_adjuntos():
+    assert not hasattr(google_chat_router, "ask")
+    assert not hasattr(google_chat_router, "read_attachments")
+    assert not hasattr(google_chat_router, "read_files")
 
 
 def test_attachments_solo_descarga_los_archivos_subidos_al_chat():

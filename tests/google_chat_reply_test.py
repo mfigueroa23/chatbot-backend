@@ -6,7 +6,8 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.interfaces.google_chat import AddonEvent, chat_reply
 from src.services import google_chat_reply
-from src.services.google_chat_reply import AVISO, DEMORA, NO_DISPONIBLE, answer, pending, process, read_thresholds
+from src.services.google_chat_reply import (
+    AVISO, DEMORA, NO_DISPONIBLE, answer, cancel_pending, pending, process, read_thresholds)
 from src.utils.exceptions.agents import AgentNotFoundError
 from src.utils.exceptions.database import DatabaseUnavailableError
 from src.utils.exceptions.property import PropertyNotFoundError
@@ -206,3 +207,16 @@ async def test_answer_atiende_por_separado_dos_mensajes_de_la_misma_conversacion
 
     assert published == [("spaces/AAA", "<users/123> ok"), ("spaces/AAA", "<users/123> ok")]
     assert not pending
+
+
+@pytest.mark.anyio
+async def test_cancel_pending_cancela_las_solicitudes_en_curso(monkeypatch, published):
+    monkeypatch.setattr(google_chat_reply, "ask", asking(asyncio.Event()))
+    await answer(GRAPH, space_event(), 0.01, 1)
+    await answer(GRAPH, dm_event(), 0.01, 1)
+    tasks = list(pending)
+
+    assert await cancel_pending() == 2
+    assert len(tasks) == 2 and all(task.cancelled() for task in tasks)
+    assert not pending
+    assert published == []

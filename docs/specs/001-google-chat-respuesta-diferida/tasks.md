@@ -90,21 +90,21 @@ T00 ─► T01 ─► T02 ─┐
 
 ## Integración
 
-- [ ] **T08 — Router delgado**
+- [x] **T08 — Router delgado**
   - RF: RF-01, RF-13
   - Depende de: T07
   - Qué: `src/routers/google_chat.py` solo verifica el token, atiende la bienvenida y los eventos vacíos, y delega en `answer`.
   - Hecho cuando: `test_endpoint_sin_token_responde_401_antes_de_leer_la_configuracion` sigue pasando. Un test del
     endpoint con `answer` falso devuelve exactamente lo que da `answer`. El router ya no importa `ask` ni `read_attachments`.
 
-- [ ] **T09 — Cancelar las solicitudes en curso al apagar**
+- [x] **T09 — Cancelar las solicitudes en curso al apagar**
   - RF: — (decisión D7)
   - Depende de: T07
   - Qué: el `lifespan` de `main.py` llama a `cancel_pending()` y registra cuántas solicitudes se cancelaron.
   - Hecho cuando: un test con dos tareas bloqueadas comprueba que `cancel_pending()` devuelve 2, que las tareas quedan
     `cancelled()` y que el registro queda vacío.
 
-- [ ] **T10 — Documentar las properties**
+- [x] **T10 — Documentar las properties**
   - RF: RF-06
   - Depende de: T00
   - Qué: la tabla de properties del `README.md`.

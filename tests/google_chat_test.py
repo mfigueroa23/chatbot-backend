@@ -1,14 +1,20 @@
+import json
+import logging
+from typing import cast
 import httpx
 import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.ext.asyncio import AsyncSession
 from main import app
 from src.interfaces.google_chat import AddonEvent
 from src.services import google_chat
 from src.services.attachments import Attachment
 from src.services.google_chat import (
-    CHAT_SCOPE, attachments_of, conversation_key, download, message_text, service_account_token, verify_addon_token)
+    CHAT_SCOPE, attachments_of, chat_token, conversation_key, create_message, download, mention_of, message_text, service_account_token,
+    verify_addon_token)
 from src.utils.exceptions.attachments import AttachmentTooLargeError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
+from src.utils.exceptions.property import PropertyNotFoundError
 
 AUDIENCE = "https://chatbot.example/api/v1/google-chat/events"
 ACCOUNT = "service-1@gcp-sa-gsuiteaddons.iam.gserviceaccount.com"
@@ -99,6 +105,20 @@ def test_sender_es_none_si_el_evento_no_lo_trae():
     assert message.sender is None
 
 
+def with_sender(payload: dict) -> dict:
+    payload["chat"]["messagePayload"]["message"]["sender"] = {"name": "users/123", "type": "HUMAN"}
+    return payload
+
+
+def test_mention_of_menciona_al_remitente_en_un_space():
+    assert mention_of(AddonEvent.model_validate(with_sender(space_event()))) == "<users/123>"
+
+
+def test_mention_of_es_vacio_en_un_dm_y_sin_remitente():
+    assert mention_of(AddonEvent.model_validate(with_sender(dm_event()))) == ""
+    assert mention_of(AddonEvent.model_validate(space_event())) == ""
+
+
 def test_endpoint_sin_token_responde_401_antes_de_leer_la_configuracion():
     response = TestClient(app).post("/api/v1/google-chat/events", json=space_event())
 
@@ -162,3 +182,43 @@ async def test_download_con_el_token_y_corta_al_pasar_el_maximo(monkeypatch):
     assert data == b"x" * 1000
     assert seen[0].url.path == "/v1/media/spaces/A/attachments/1" and seen[0].url.params["alt"] == "media"
     assert seen[0].headers["Authorization"] == "Bearer ya29.token"
+
+
+@pytest.mark.anyio
+async def test_create_message_publica_en_el_space_sin_hilo():
+    seen: list[httpx.Request] = []
+    async with mock_http(b"{}", seen) as http:
+        await create_message("spaces/AAA", "<users/123> ok", "ya29.token", http)
+
+    assert seen[0].method == "POST"
+    assert str(seen[0].url) == "https://chat.googleapis.com/v1/spaces/AAA/messages"
+    assert seen[0].headers["Authorization"] == "Bearer ya29.token"
+    body = json.loads(seen[0].content)
+    assert body == {"text": "<users/123> ok"} and "thread" not in body
+
+
+@pytest.mark.anyio
+async def test_create_message_lanza_error_si_chat_rechaza_la_publicacion():
+    async with httpx.AsyncClient(transport=httpx.MockTransport(lambda request: httpx.Response(403))) as http:
+        with pytest.raises(httpx.HTTPStatusError):
+            await create_message("spaces/AAA", "ok", "ya29.token", http)
+
+
+async def missing_property(session, key):
+    raise PropertyNotFoundError(key)
+
+
+async def invalid_json(session, key):
+    return "no es json"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("fake_property", [missing_property, invalid_json])
+async def test_chat_token_es_none_y_registra_error_sin_la_cuenta_de_servicio(monkeypatch, caplog, fake_property):
+    monkeypatch.setattr(google_chat, "get_property", fake_property)
+
+    async with mock_http(b"", []) as http:
+        token = await chat_token(cast(AsyncSession, None), http)
+
+    assert token is None
+    assert any(record.levelno == logging.ERROR for record in caplog.records)

@@ -1,5 +1,4 @@
 import asyncio
-import json
 import logging
 from typing import Annotated, Any
 import httpx
@@ -7,14 +6,13 @@ import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
-from src.agents.llm import LLM
 from src.database.session import SessionDep
 from src.interfaces.google_chat import AddonEvent, chat_reply
 from src.services.assistant import ask
-from src.services.attachments import Attachment, read_attachments
 from src.services.google_chat import (
-  attachments_of, conversation_key, download, message_text, service_account_token, verify_addon_token
+  attachments_of, conversation_key, message_text, verify_addon_token
 )
+from src.services.google_chat_reply import AUDIENCIA, COORDINADOR, DEMORA, NO_DISPONIBLE, SIN_TEXTO, read_files
 from src.services.property import get_property
 from src.utils.exceptions.agents import AgentNotFoundError
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -25,12 +23,6 @@ router = APIRouter(prefix="/api/v1", tags=["Google Chat"])
 logger = logging.getLogger(__name__)
 bearer = HTTPBearer(auto_error=False)
 
-AUDIENCIA = "interno"
-COORDINADOR = "Agente Interno"
-NO_DISPONIBLE = "Servicio no disponible. Intenta de nuevo más tarde"
-DEMORA = "Me tomó demasiado tiempo revisar tu mensaje. Intenta de nuevo, por ejemplo con un archivo más pequeño"
-SIN_TEXTO = "Revisa el archivo adjunto"
-
 async def verify_token(session: AsyncSession, credentials: HTTPAuthorizationCredentials | None) -> None:
   # Sin token se rechaza antes de leer la configuración.
   if credentials is None:
@@ -40,24 +32,6 @@ async def verify_token(session: AsyncSession, credentials: HTTPAuthorizationCred
   service_account = await get_property(session, "google_chat_addon_service_account")
   async with httpx.AsyncClient(timeout = 10) as http:
     await verify_addon_token(credentials.credentials, audience, service_account, http)
-
-async def read_files(session: AsyncSession, adjuntos: list[Attachment]) -> str:
-  llm = await LLM.create(session)
-  async with httpx.AsyncClient(timeout = 20) as http:
-    try:
-      service_account = json.loads(await get_property(session, "google_chat_service_account_json"))
-      token = await service_account_token(service_account, http)
-    except Exception as exc:
-      # Sin la cuenta de servicio los archivos quedan como "no se pudo leer" y se responde igual el texto.
-      logger.error("No se pudo obtener el token de la cuenta de servicio de Google Chat: %s", type(exc).__name__)
-      token = None
-
-    async def download_file(resource_name: str) -> bytes:
-      if token is None:
-        raise RuntimeError("Falta el token de la cuenta de servicio de Google Chat")
-      return await download(resource_name, token, http)
-
-    return await read_attachments(adjuntos, download_file, llm.llm)
 
 @router.post("/google-chat/events", responses={ 401: { "description": "Token de Google no válido" } })
 async def google_chat_events(

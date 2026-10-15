@@ -6,6 +6,7 @@ Ordenadas por dependencia: una tarea solo empieza cuando sus dependencias están
 Cada tarea que cambia comportamiento incluye su test (constitución 4) y deja `uv run pyright` en 0 errores (constitución 3).
 
 ## Grafo
+
 ```
 T00 ─► T01 ─► T02 ─┐
        T03 ────────┤
@@ -32,21 +33,21 @@ T00 ─► T01 ─► T02 ─┐
   - Hecho cuando: un test valida un evento con `sender.name = "users/123"` y lee ese valor. El mismo evento sin
     `sender` da `None`, y los tests existentes de `tests/google_chat_test.py` siguen pasando.
 
-- [ ] **T02 — Mención al remitente**
+- [x] **T02 — Mención al remitente**
   - RF: RF-05
   - Depende de: T01
   - Qué: `mention_of(event)` en `src/services/google_chat.py`.
   - Hecho cuando: los tests de `tests/google_chat_test.py` comprueban que da `"<users/123>"` en un `SPACE`, y
     `""` en un `DIRECT_MESSAGE` y en un evento sin remitente.
 
-- [ ] **T03 — Publicar un mensaje nuevo en el space**
+- [x] **T03 — Publicar un mensaje nuevo en el space**
   - RF: RF-04, RF-09
   - Depende de: T00
   - Qué: `create_message(space, texto, token, http)` en `src/services/google_chat.py`.
   - Hecho cuando: un test con `httpx.MockTransport` comprueba un `POST` a `https://chat.googleapis.com/v1/spaces/AAA/messages`
     con `Authorization: Bearer <token>` y un cuerpo sin la clave `thread`. Una respuesta 403 lanza `httpx.HTTPStatusError`.
 
-- [ ] **T04 — Token de la cuenta de servicio reutilizable**
+- [x] **T04 — Token de la cuenta de servicio reutilizable**
   - RF: — (soporte de RF-04 y RF-09)
   - Depende de: T00
   - Qué: extraer `chat_token(session, http)` de `read_files`. Devuelve `None` y registra el error en el log cuando falta la
@@ -54,7 +55,7 @@ T00 ─► T01 ─► T02 ─┐
   - Hecho cuando: un test sin `google_chat_service_account_json` da `None` y deja un registro de nivel `ERROR`, y los
     tests de adjuntos existentes pasan sin cambios.
 
-- [ ] **T05 — Procesar la solicitud**
+- [x] **T05 — Procesar la solicitud**
   - RF: RF-07, RF-08, RF-10
   - Depende de: T04
   - Qué: nuevo `src/services/google_chat_reply.py` con `process(...)`. Se mueven ahí `read_files` y las constantes
@@ -65,7 +66,7 @@ T00 ─► T01 ─► T02 ─┐
     - Si `ask` lanza `AgentNotFoundError` o `DatabaseUnavailableError`, se obtiene `NO_DISPONIBLE`.
     - Con un `ask` bloqueado y un máximo de 0.01 s, se obtiene `DEMORA` y la tarea de `ask` queda cancelada.
 
-- [ ] **T06 — Lectura de umbrales**
+- [x] **T06 — Lectura de umbrales**
   - RF: RF-06
   - Depende de: T00
   - Qué: leer `google_chat_notice_seconds` (10 si falta) y `google_timeout` (máximo; si falta, `PropertyNotFoundError` como hoy).
@@ -130,19 +131,19 @@ T00 ─► T01 ─► T02 ─┐
     - Ningún mensaje muestra trazas internas.
 
 ## Cobertura de RF
-| RF | Tareas |
-|---|---|
-| RF-01 | T07, T08, T12 |
-| RF-02 | T07, T12 |
-| RF-03 | T07 |
-| RF-04 | T03, T07, T12 |
-| RF-05 | T01, T02, T07, T12 |
-| RF-06 | T00, T06, T10 |
-| RF-07 | T05, T12 |
-| RF-08 | T05 |
-| RF-09 | T03, T07 |
-| RF-10 | T05 |
-| RF-11 | T07 |
-| RF-12 | T07 |
-| RF-13 | T08 |
 
+| RF    | Tareas             |
+| ----- | ------------------ |
+| RF-01 | T07, T08, T12      |
+| RF-02 | T07, T12           |
+| RF-03 | T07                |
+| RF-04 | T03, T07, T12      |
+| RF-05 | T01, T02, T07, T12 |
+| RF-06 | T00, T06, T10      |
+| RF-07 | T05, T12           |
+| RF-08 | T05                |
+| RF-09 | T03, T07           |
+| RF-10 | T05                |
+| RF-11 | T07                |
+| RF-12 | T07                |
+| RF-13 | T08                |

@@ -1,12 +1,18 @@
+import json
+import logging
 import re
 import time
 from typing import Any
 import httpx
 from google.auth import crypt, exceptions, jwt
+from sqlalchemy.ext.asyncio import AsyncSession
 from src.interfaces.google_chat import AddonEvent
 from src.services.attachments import MAX_BYTES, Attachment
+from src.services.property import get_property
 from src.utils.exceptions.attachments import AttachmentTooLargeError
 from src.utils.exceptions.google_chat import InvalidGoogleTokenError
+
+logger = logging.getLogger(__name__)
 
 # El complemento de Google Workspace firma cada evento con un ID token de Google.
 GOOGLE_CERTS_URL = "https://www.googleapis.com/oauth2/v1/certs"
@@ -14,6 +20,7 @@ GOOGLE_ISSUERS = { "accounts.google.com", "https://accounts.google.com" }
 # Los archivos subidos al chat se descargan con la cuenta de servicio de la app de Chat.
 CHAT_SCOPE = "https://www.googleapis.com/auth/chat.bot"
 CHAT_MEDIA_URL = "https://chat.googleapis.com/v1/media"
+CHAT_API_URL = "https://chat.googleapis.com/v1"
 
 # Caché de los certificados públicos de Google respetando el max-age que indica Google.
 _certs: dict[str, str] = {}
@@ -60,6 +67,15 @@ def message_text(event: AddonEvent) -> str:
   text = payload.message.text if is_dm else payload.message.argument_text
   return (text or "").strip()
 
+def mention_of(event: AddonEvent) -> str:
+  # En un space el mensaje diferido menciona al remitente; en un mensaje directo o sin remitente no hace falta.
+  payload = event.chat.message_payload if event.chat else None
+  if payload is None or payload.message is None or payload.message.sender is None:
+    return ""
+  if payload.space is not None and payload.space.space_type == "DIRECT_MESSAGE":
+    return ""
+  return f"<{payload.message.sender.name}>"
+
 def attachments_of(event: AddonEvent) -> list[Attachment]:
   payload = event.chat.message_payload if event.chat else None
   if payload is None or payload.message is None:
@@ -85,6 +101,15 @@ async def service_account_token(service_account: dict[str, Any], http: httpx.Asy
   response.raise_for_status()
   return response.json()["access_token"]
 
+async def chat_token(session: AsyncSession, http: httpx.AsyncClient) -> str | None:
+  # Sin la cuenta de servicio no se puede descargar ni publicar en Chat; quien llama decide cómo seguir.
+  try:
+    service_account = json.loads(await get_property(session, "google_chat_service_account_json"))
+    return await service_account_token(service_account, http)
+  except Exception as exc:
+    logger.error("No se pudo obtener el token de la cuenta de servicio de Google Chat: %s", type(exc).__name__)
+    return None
+
 async def download(resource_name: str, token: str, http: httpx.AsyncClient) -> bytes:
   # Chat no informa el tamaño del archivo: se corta la descarga al pasar el máximo en vez de cargarlo entero.
   chunks: list[bytes] = []
@@ -98,3 +123,9 @@ async def download(resource_name: str, token: str, http: httpx.AsyncClient) -> b
         raise AttachmentTooLargeError(resource_name)
       chunks.append(chunk)
   return b"".join(chunks)
+
+async def create_message(space: str, text: str, token: str, http: httpx.AsyncClient) -> None:
+  # Sin "thread" Google Chat publica el mensaje fuera del hilo original.
+  headers = { "Authorization": f"Bearer {token}" }
+  response = await http.post(f"{CHAT_API_URL}/{space}/messages", json = { "text": text }, headers = headers)
+  response.raise_for_status()

@@ -18,8 +18,15 @@ class ChatAttachment(ChatModel):
   source: str | None = None
   attachment_data_ref: AttachmentDataRef | None = None
 
+class ChatUser(ChatModel):
+  # users/{id}: se usa para mencionar al remitente con <users/{id}>.
+  name: str
+  # HUMAN o BOT.
+  type: str | None = None
+
 class ChatMessage(ChatModel):
   text: str | None = None
+  sender: ChatUser | None = None
   # En un space, el texto sin la mención al asistente.
   argument_text: str | None = None
   thread: ChatThread | None = None

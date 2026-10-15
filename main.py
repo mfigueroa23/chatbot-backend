@@ -12,6 +12,7 @@ from src.database.session import engine
 from src.routers.health import router as health_router
 from src.routers.chat import route as chat_router
 from src.routers.google_chat import router as google_chat_router
+from src.services.google_chat_reply import cancel_pending
 
 async def check_connection(conn: AsyncConnection[DictRow]) -> None:
     await conn.execute("SELECT 1")
@@ -31,6 +32,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await checkpointer.setup()
         app.state.graph = coordinator_builder.compile(checkpointer = checkpointer)
         yield
+        # Antes de cerrar el pool: las respuestas diferidas en curso lo usan. Se cancelan y queda en el log cuántas.
+        await cancel_pending()
     await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)

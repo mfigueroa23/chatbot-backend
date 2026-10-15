@@ -75,7 +75,7 @@ T00 ─► T01 ─► T02 ─┐
 
 ## Orquestación
 
-- [ ] **T07 — Decidir entre respuesta síncrona y diferida, y entregar**
+- [x] **T07 — Decidir entre respuesta síncrona y diferida, y entregar**
   - RF: RF-01, RF-02, RF-03, RF-04, RF-05, RF-09, RF-11, RF-12
   - Depende de: T02, T03, T05, T06
   - Qué: `answer(...)`, `deliver(...)`, el registro de tareas pendientes y `cancel_pending()` en `google_chat_reply.py`.

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Any
 import httpx
 import psycopg
 from langgraph.graph import MessagesState
@@ -8,10 +9,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from src.agents.context import CoordinatorContext
 from src.agents.llm import LLM
 from src.database.session import SessionLocal
-from src.interfaces.google_chat import AddonEvent
+from src.interfaces.google_chat import AddonEvent, chat_reply
 from src.services.assistant import ask
 from src.services.attachments import Attachment, read_attachments
-from src.services.google_chat import attachments_of, chat_token, conversation_key, download, message_text
+from src.services.google_chat import (
+  attachments_of, chat_token, conversation_key, create_message, download, mention_of, message_text
+)
 from src.services.property import get_property
 from src.utils.exceptions.agents import AgentNotFoundError
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -26,6 +29,9 @@ DEMORA = "Me tomó demasiado tiempo revisar tu mensaje. Intenta de nuevo, por ej
 SIN_TEXTO = "Revisa el archivo adjunto"
 AVISO = "Estoy revisando tu solicitud. Te enviaré la respuesta en un mensaje nuevo cuando esté lista"
 AVISO_POR_DEFECTO = 10.0
+
+# Entregas en curso: mantiene la referencia para que no las elimine el recolector y permite cancelarlas al apagar.
+pending: set[asyncio.Task[None]] = set()
 
 async def read_thresholds(session: AsyncSession) -> tuple[float, float]:
   # Sin caché: un cambio en las properties se aplica desde el siguiente evento.
@@ -76,3 +82,50 @@ async def process(graph: CompiledStateGraph[MessagesState, CoordinatorContext], 
   except Exception:
     logger.exception("Ha ocurrido un error al responder en Google Chat")
     return NO_DISPONIBLE
+
+async def deliver(processing: asyncio.Task[str], event: AddonEvent) -> None:
+  # Publica el resultado como mensaje nuevo en el space; si falla solo queda en el log, sin reintentos.
+  text = await processing
+  mention = mention_of(event)
+  payload = event.chat.message_payload if event.chat else None
+  space = payload.space if payload else None
+  if space is None:
+    logger.error("No se pudo publicar la respuesta diferida: el evento no trae el space")
+    return
+  try:
+    async with SessionLocal() as session, httpx.AsyncClient(timeout = 20) as http:
+      token = await chat_token(session, http)
+      if token is None:
+        return
+      await create_message(space.name, f"{mention} {text}" if mention else text, token, http)
+  except httpx.HTTPError as exc:
+    logger.error("No se pudo publicar la respuesta diferida en Google Chat: %s", type(exc).__name__)
+  except Exception:
+    logger.exception("Ha ocurrido un error al publicar la respuesta diferida en Google Chat")
+
+async def answer(
+  graph: CompiledStateGraph[MessagesState, CoordinatorContext], event: AddonEvent, notice: float, maximum: float
+) -> dict[str, Any]:
+  # La decisión entre respuesta síncrona y diferida se toma una sola vez: como máximo un aviso y un mensaje final.
+  processing = asyncio.create_task(process(graph, event, maximum))
+  if notice >= maximum:
+    # El máximo llega antes que el aviso: se responde en el hilo como siempre, con la respuesta o la demora.
+    return chat_reply(await processing)
+  done, _ = await asyncio.wait({ processing }, timeout = notice)
+  if processing in done:
+    return chat_reply(processing.result())
+  delivery = asyncio.create_task(deliver(processing, event))
+  pending.add(delivery)
+  delivery.add_done_callback(pending.discard)
+  return chat_reply(AVISO)
+
+async def cancel_pending() -> int:
+  # Las solicitudes en curso se pierden al apagar (mejor esfuerzo); queda constancia en el log.
+  tasks = list(pending)
+  for task in tasks:
+    task.cancel()
+  await asyncio.gather(*tasks, return_exceptions = True)
+  pending.clear()
+  if tasks:
+    logger.warning("Se cancelaron %s solicitudes de Google Chat en curso al apagar", len(tasks))
+  return len(tasks)

@@ -58,7 +58,7 @@ T01 ─┬─► T02 ─► T08 ────────────────
     - si el falso lanza `DatabaseUnavailableError` o `RuntimeError` → 200 sin cabeceras CORS, un registro de nivel
       `ERROR` en `caplog` y el cuerpo sin detalles del error.
 
-- [ ] **T05 — Origen permitido: delegar en `CORSMiddleware`**
+- [x] **T05 — Origen permitido: delegar en `CORSMiddleware`**
   - RF: RF-02, RF-03, RF-06, RF-07, RF-10, RF-11
   - Depende de: T04
   - Qué: cuando el origen está permitido, delegar en `CORSMiddleware(app, allow_origins=[origin],

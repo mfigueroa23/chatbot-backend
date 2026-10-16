@@ -7,6 +7,7 @@ from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 from main import app
 from src.middlewares import cors as cors_middleware
+from src.routers import chat as chat_router
 from src.models.cors_origins import CorsOrigin
 from src.services.cors import is_origin_allowed
 from src.utils.exceptions.database import DatabaseUnavailableError
@@ -146,3 +147,85 @@ def test_error_al_consultar_se_trata_como_no_permitido_y_se_registra(monkeypatch
     assert cors_headers(response) == {}
     assert any(record.levelno == logging.ERROR and record.name == cors_middleware.__name__ for record in caplog.records)
     assert "10.0.0.5" not in response.text and "detalle interno" not in response.text
+
+
+def spy_ask(monkeypatch) -> list[str]:
+    """Reemplaza ask en el router de chat para comprobar que el preflight no ejecuta el endpoint."""
+    calls: list[str] = []
+
+    async def fake_ask(graph, session, coordinator, audiencia, thread_id, mensaje):
+        calls.append(mensaje)
+        return "ok"
+
+    monkeypatch.setattr(chat_router, "ask", fake_ask)
+    return calls
+
+
+def preflight(path: str, origin: str = ALLOWED, headers: str | None = "content-type, x-algo"):
+    request_headers = {"Origin": origin, "Access-Control-Request-Method": "POST"}
+    if headers is not None:
+        request_headers["Access-Control-Request-Headers"] = headers
+    return TestClient(app).options(path, headers=request_headers)
+
+
+def test_origen_permitido_recibe_su_origen_y_vary_origin(monkeypatch):
+    fake_origins(monkeypatch, {ALLOWED})
+
+    response = TestClient(app).get("/", headers={"Origin": ALLOWED})
+
+    assert response.status_code == 200
+    assert response.json() is True
+    assert response.headers["access-control-allow-origin"] == ALLOWED
+    assert "Origin" in [value.strip() for value in response.headers["vary"].split(",")]
+
+
+def test_preflight_permitido_acepta_metodo_y_cabeceras_sin_ejecutar_el_endpoint(monkeypatch):
+    fake_origins(monkeypatch, {ALLOWED})
+    calls = spy_ask(monkeypatch)
+
+    response = preflight("/chat")
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == ALLOWED
+    assert "POST" in [method.strip() for method in response.headers["access-control-allow-methods"].split(",")]
+    assert response.headers["access-control-allow-headers"] == "content-type, x-algo"
+    assert calls == []
+
+
+def test_origen_permitido_nunca_recibe_credenciales_ni_comodin(monkeypatch):
+    fake_origins(monkeypatch, {ALLOWED})
+
+    responses = [TestClient(app).get("/", headers={"Origin": ALLOWED}), preflight("/chat")]
+
+    for response in responses:
+        assert "access-control-allow-credentials" not in response.headers
+        assert response.headers["access-control-allow-origin"] != "*"
+
+
+@pytest.mark.parametrize("variant", [
+    "http://app.ejemplo.com",
+    "https://app.ejemplo.com:8443",
+    "https://sub.app.ejemplo.com",
+    "https://app.ejemplo.com/",
+    "https://APP.ejemplo.com",
+])
+def test_variantes_del_origen_registrado_no_reciben_cabeceras(monkeypatch, variant):
+    fake = fake_origins(monkeypatch, {ALLOWED})
+
+    response = TestClient(app).get("/", headers={"Origin": variant})
+
+    assert fake.calls == [variant]
+    assert cors_headers(response) == {}
+
+
+def test_deshabilitar_un_origen_aplica_desde_la_siguiente_peticion(monkeypatch):
+    fake = fake_origins(monkeypatch, {ALLOWED})
+    client = TestClient(app)
+
+    first = client.get("/", headers={"Origin": ALLOWED})
+    fake.allowed.clear()
+    second = client.get("/", headers={"Origin": ALLOWED})
+
+    assert first.headers["access-control-allow-origin"] == ALLOWED
+    assert cors_headers(second) == {}
+    assert fake.calls == [ALLOWED, ALLOWED]

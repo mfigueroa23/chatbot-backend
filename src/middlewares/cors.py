@@ -1,5 +1,6 @@
 import logging
 from starlette.datastructures import Headers
+from starlette.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 from src.database.session import SessionLocal
 from src.services.cors import is_origin_allowed
@@ -36,5 +37,13 @@ class DatabaseCORSMiddleware:
             await self.app(scope, receive, send)
             return
 
-        # Origen permitido: las cabeceras CORS se agregan en la tarea T05 del plan 002.
-        await self.app(scope, receive, send)
+        # Starlette arma las cabeceras (preflight, Vary, eco de cabeceras) solo para este origen; sin credenciales
+        # nunca emite Access-Control-Allow-Credentials y con un origen explícito nunca responde "*".
+        cors = CORSMiddleware(
+            self.app,
+            allow_origins = [origin],
+            allow_methods = ["*"],
+            allow_headers = ["*"],
+            allow_credentials = False,
+        )
+        await cors(scope, receive, send)

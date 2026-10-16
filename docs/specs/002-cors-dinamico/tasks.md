@@ -24,7 +24,7 @@ T01 ─┬─► T02 ─► T08 ────────────────
   - Hecho cuando: un test en `tests/cors_test.py` comprueba sobre `CorsOrigin.__table__` que `origin` es no nulo y
     tiene la restricción única `uq_cors_origins_origin`, y que `enabled` es no nulo con default de servidor `true`.
 
-- [ ] **T02 — Migración de la tabla**
+- [x] **T02 — Migración de la tabla**
   - RF: RF-01
   - Depende de: T01
   - Qué: `uv run alembic revision --autogenerate -m "cors_origins"`, revisar el archivo generado (solo crea la tabla

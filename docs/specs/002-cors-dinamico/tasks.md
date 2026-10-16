@@ -99,14 +99,14 @@ T01 ─┬─► T02 ─► T08 ────────────────
 
 ## Cierre
 
-- [ ] **T09 — Verificación y versión**
+- [x] **T09 — Verificación y versión**
   - RF: todos (criterios de finalización)
   - Depende de: T07, T08
   - Qué: verificación completa y subida de versión (constitución 9).
   - Hecho cuando: `uv run pytest` y `uv run pyright` terminan sin errores, `uv run alembic check` no reporta
     diferencias, `pyproject.toml` dice `version = "3.3.0"` y `uv.lock` quedó actualizado por `uv sync`.
 
-- [ ] **T10 — Prueba manual con la BD local**
+- [x] **T10 — Prueba manual con la BD local**
   - RF: RF-02, RF-03, RF-04, RF-05, RF-07, RF-08
   - Depende de: T09
   - Qué: con `uv run fastapi dev`, insertar `http://localhost:5173` en `cors_origins` y probar con `curl`.

@@ -46,7 +46,7 @@ T01 ─┬─► T02 ─► T08 ────────────────
 
 ## Middleware
 
-- [ ] **T04 — Middleware base, fail-closed y registro**
+- [x] **T04 — Middleware base, fail-closed y registro**
   - RF: RF-04, RF-08, RF-09
   - Depende de: T03
   - Qué: `DatabaseCORSMiddleware` ASGI puro en `src/middlewares/cors.py`: sin `Origin` pasa directo a la app; con

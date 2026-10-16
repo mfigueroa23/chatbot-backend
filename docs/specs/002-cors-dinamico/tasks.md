@@ -34,7 +34,7 @@ T01 ─┬─► T02 ─► T08 ────────────────
 
 ## Servicio
 
-- [ ] **T03 — Consulta de origen permitido**
+- [x] **T03 — Consulta de origen permitido**
   - RF: RF-06, RF-07, RF-09
   - Depende de: T01
   - Qué: `is_origin_allowed(session, origin) -> bool` en `src/services/cors.py`: un `SELECT` por `origin` exacto y

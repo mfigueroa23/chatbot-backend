@@ -10,5 +10,5 @@ Principios innegociables. Toda spec, plan y tarea debe cumplirlos.
 6. **Configuración:** secretos y parámetros entran solo por `Settings` (`src/config.py`); no se versiona `.env` ni se hardcodean credenciales.
 7. **Errores:** el cliente recibe mensajes en español y el código HTTP correcto; nunca trazas ni detalles internos.
 8. **Idioma:** código en inglés y `snake_case`; comentarios, docs y respuestas en español.
-9. **Entrega:** cada tarea sube la versión semver en `pyproject.toml` y ejecuta `uv sync`; el CI (`test.yaml`) debe pasar antes del merge.
+9. **Entrega:** cada spec, al terminar todas sus tareas, sube la versión semver en `pyproject.toml` y ejecuta `uv sync`, en un solo commit junto con `uv.lock`; las tareas intermedias no cambian la versión. El CI (`test.yaml`) debe pasar antes del merge.
 10. **Despliegue:** la imagen Docker arranca sin pasos manuales y expone `/health` para las probes de Kubernetes.

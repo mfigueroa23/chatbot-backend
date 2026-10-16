@@ -1,12 +1,15 @@
 import logging
 from starlette.datastructures import Headers
 from starlette.middleware.cors import CORSMiddleware
+from starlette.responses import PlainTextResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 from src.database.session import SessionLocal
 from src.services.cors import is_origin_allowed
 from src.utils.exceptions.database import DatabaseUnavailableError
 
 logger = logging.getLogger(__name__)
+
+ORIGEN_NO_PERMITIDO = "Origen no permitido"
 
 async def origin_allowed(origin: str) -> bool:
     # Falla cerrado: cualquier error al consultar deja el origen como no permitido (decisión D7 del plan 002).
@@ -30,10 +33,20 @@ class DatabaseCORSMiddleware:
             await self.app(scope, receive, send)
             return
 
-        origin = Headers(scope=scope).get("origin")
+        headers = Headers(scope=scope)
+        origin = headers.get("origin")
         # Sin Origin (Google Chat, probes de Kubernetes) no se consulta la tabla ni se emiten cabeceras CORS.
-        # Con un origen no permitido la petición se procesa igual y el navegador bloquea la respuesta.
-        if origin is None or not await origin_allowed(origin):
+        if origin is None:
+            await self.app(scope, receive, send)
+            return
+
+        if not await origin_allowed(origin):
+            if scope["method"] == "OPTIONS" and "access-control-request-method" in headers:
+                # Preflight rechazado aquí y no en Starlette, que lo responde con cabeceras CORS y en inglés.
+                response = PlainTextResponse(ORIGEN_NO_PERMITIDO, status_code=400)
+                await response(scope, receive, send)
+                return
+            # Con un origen no permitido la petición se procesa igual y el navegador bloquea la respuesta.
             await self.app(scope, receive, send)
             return
 

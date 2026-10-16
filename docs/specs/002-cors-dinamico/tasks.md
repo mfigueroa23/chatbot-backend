@@ -72,7 +72,7 @@ T01 ─┬─► T02 ─► T08 ────────────────
     - dos peticiones seguidas con el falso cambiando de `True` a `False` → la primera con cabeceras, la segunda sin, y
       el falso se llamó dos veces.
 
-- [ ] **T06 — Preflight rechazado**
+- [x] **T06 — Preflight rechazado**
   - RF: RF-05
   - Depende de: T04
   - Qué: si la petición es preflight (`OPTIONS` + `Access-Control-Request-Method`) y el origen no está permitido o la

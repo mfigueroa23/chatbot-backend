@@ -229,3 +229,17 @@ def test_deshabilitar_un_origen_aplica_desde_la_siguiente_peticion(monkeypatch):
     assert first.headers["access-control-allow-origin"] == ALLOWED
     assert cors_headers(second) == {}
     assert fake.calls == [ALLOWED, ALLOWED]
+
+
+@pytest.mark.parametrize("error", [None, DatabaseUnavailableError("connection refused 10.0.0.5")])
+def test_preflight_no_permitido_responde_400_en_espanol_sin_cabeceras_cors(monkeypatch, error):
+    fake_origins(monkeypatch, {ALLOWED}, error)
+    calls = spy_ask(monkeypatch)
+
+    response = preflight("/chat", origin="https://otro.ejemplo.com")
+
+    assert response.status_code == 400
+    assert response.text == cors_middleware.ORIGEN_NO_PERMITIDO
+    assert cors_headers(response) == {}
+    assert "vary" not in response.headers
+    assert calls == []

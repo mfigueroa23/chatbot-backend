@@ -16,7 +16,7 @@ T01 ─┬─► T02 ─► T08 ────────────────
 
 ## Datos
 
-- [ ] **T01 — Modelo `CorsOrigin`**
+- [x] **T01 — Modelo `CorsOrigin`**
   - RF: RF-01
   - Depende de: —
   - Qué: `src/models/cors_origins.py` con la tabla `cors_origins` (`id`, `origin` `String(255)` único y no nulo,

@@ -11,6 +11,7 @@ from src.models.agents import Agents
 from src.models.areas import Area
 from src.models.faq_categories import FaqCategory
 from src.models.faqs import Faq
+from src.models.cors_origins import CorsOrigin
 
 config = context.config
 

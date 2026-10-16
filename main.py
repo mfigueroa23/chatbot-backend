@@ -9,6 +9,7 @@ from psycopg_pool import AsyncConnectionPool
 from src.agents.coordinator import coordinator_builder
 from src.config import settings
 from src.database.session import engine
+from src.middlewares.cors import DatabaseCORSMiddleware
 from src.routers.health import router as health_router
 from src.routers.chat import route as chat_router
 from src.routers.google_chat import router as google_chat_router
@@ -37,6 +38,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     await engine.dispose()
 
 app = FastAPI(lifespan=lifespan)
+app.add_middleware(DatabaseCORSMiddleware)
 
 app.include_router(health_router)
 app.include_router(chat_router)

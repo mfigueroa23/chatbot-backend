@@ -28,4 +28,8 @@ y desplegado en kubernetes.
 ## Al terminar cualquier tarea
 - Ejecutar los test y lint
 - Verficar que las migraciones esten aplicadas
-- Aplicar cambio de version segun convencion en `pyproyect.toml` y aplicar `uv sync`
+- No subir la version ni regenerar `uv.lock` en tareas intermedias de una spec
+
+## Al terminar todas las tareas de una spec
+- Aplicar cambio de version segun convencion en `pyproject.toml` y aplicar `uv sync`
+- El cambio de version y el `uv.lock` regenerado van en un solo commit: `chore(release): Bump version to vX.Y.Z`

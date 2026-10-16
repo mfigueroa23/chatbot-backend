@@ -108,6 +108,25 @@ Documentación interactiva de la API: <http://127.0.0.1:8000/docs>
 | `areas` | Áreas con su descripción y audiencia (`externo` o `interno`) |
 | `faq_categories` | Categorías de preguntas frecuentes de cada área |
 | `faqs` | Preguntas frecuentes con su embedding. `status` es `re-index` si falta generar el embedding e `index` si ya está indexada |
+| `cors_origins` | Orígenes que pueden consumir la API desde el navegador (CORS). `enabled` es `true` por defecto |
+
+### Orígenes CORS
+
+La API solo emite cabeceras CORS a los orígenes registrados y habilitados en `cors_origins`. La tabla se consulta en cada petición que trae la cabecera `Origin` (sin caché), así que un cambio aplica desde la siguiente petición sin reiniciar la aplicación. Las peticiones sin `Origin` (Google Chat, probes de Kubernetes) no la consultan.
+
+El origen se compara de forma exacta con el que envía el navegador: `esquema://host[:puerto]`, en minúsculas, sin barra final ni ruta y sin el puerto por defecto (`https://app.ejemplo.com`, `http://localhost:5173`). No se admiten comodines ni subdominios: cada origen va en su propia fila.
+
+```sql
+-- Habilitar un origen
+INSERT INTO cors_origins (origin) VALUES ('https://app.ejemplo.com');
+
+-- Deshabilitarlo sin borrarlo
+UPDATE cors_origins SET enabled = false WHERE origin = 'https://app.ejemplo.com';
+```
+
+Un origen no permitido recibe la respuesta sin cabeceras CORS (el navegador la bloquea) y su preflight se responde con `400`. Si la base de datos falla al consultar, el origen se trata como no permitido. No se envían credenciales (`Access-Control-Allow-Credentials`).
+
+> No registres el origen `null`: lo envían iframes con sandbox y archivos locales (`file://`), y habilitarlo abriría la API a cualquiera de ellos.
 
 Las tablas del checkpointer las crea LangGraph al arrancar la aplicación y no se versionan con alembic.
 
@@ -164,6 +183,7 @@ src/
 ├── database/session.py     Engine y sesión por request (SessionDep)
 ├── models/                 Modelos ORM de SQLAlchemy
 ├── interfaces/             Modelos Pydantic de request y respuesta
+├── middlewares/            Middlewares ASGI (CORS con los orígenes de la base de datos)
 ├── rag/                    Re-indexación de los embeddings de preguntas frecuentes
 ├── routers/                Endpoints HTTP
 ├── services/               Lógica de negocio y acceso a datos

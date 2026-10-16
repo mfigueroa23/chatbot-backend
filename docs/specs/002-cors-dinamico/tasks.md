@@ -89,7 +89,7 @@ T01 ─┬─► T02 ─► T08 ────────────────
 
 ## Documentación
 
-- [ ] **T08 — README**
+- [x] **T08 — README**
   - RF: RF-01, RF-06
   - Depende de: T02
   - Qué: fila `cors_origins` en "Base de datos" con el formato del origen y ejemplos de `INSERT`/`UPDATE`; advertencia

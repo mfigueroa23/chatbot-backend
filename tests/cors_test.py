@@ -243,3 +243,13 @@ def test_preflight_no_permitido_responde_400_en_espanol_sin_cabeceras_cors(monke
     assert cors_headers(response) == {}
     assert "vary" not in response.headers
     assert calls == []
+
+
+@pytest.mark.parametrize("path", ["/chat", "/api/v1/google-chat/events", "/health"])
+def test_cors_aplica_a_todas_las_rutas_de_la_api(monkeypatch, path):
+    fake_origins(monkeypatch, {ALLOWED})
+
+    response = preflight(path)
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == ALLOWED

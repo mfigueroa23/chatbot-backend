@@ -80,7 +80,7 @@ T01 ─┬─► T02 ─► T08 ────────────────
   - Hecho cuando: un preflight a `/chat` desde un origen no permitido → 400, cuerpo igual a `ORIGEN_NO_PERMITIDO`, sin
     ninguna cabecera `Access-Control-*` ni `Vary`, y el endpoint no se ejecuta.
 
-- [ ] **T07 — Cobertura de todas las rutas**
+- [x] **T07 — Cobertura de todas las rutas**
   - RF: RF-12
   - Depende de: T05, T06
   - Qué: comprobar que el middleware global alcanza todos los routers registrados en `main.py`.
